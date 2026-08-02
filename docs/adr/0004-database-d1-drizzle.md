@@ -1,8 +1,8 @@
 # ADR-0004: Database — Cloudflare D1 (SQLite) + Drizzle ORM
 
-- **Status:** Proposed
+- **Status:** Accepted (amended 2026-08-02: FTS5 + unique `canonical_url` index added via [ADR-0009](./0009-retrieval-insight-layer.md))
 - **Date:** 2026-08-02
-- **Related:** [ADR-0003](./0003-runtime-cloudflare-workers-vite-plugin.md), [ADR-0007](./0007-single-user-local-first.md)
+- **Related:** [ADR-0003](./0003-runtime-cloudflare-workers-vite-plugin.md), [ADR-0007](./0007-single-user-local-first.md), [ADR-0009](./0009-retrieval-insight-layer.md)
 
 ## Context
 
@@ -13,8 +13,8 @@ We need durable storage for entries and settings. The workload is single-user an
 Use **Cloudflare D1** (serverless SQLite) with **Drizzle ORM** and **drizzle-kit** migrations.
 
 - Schema and migrations live in `packages/db`.
-- Workflow: `drizzle-kit generate` (SQL migration files) → `wrangler d1 migrations apply til` (local and remote).
-- Tables per the [tech design](../tech-design.md#7-data-model-d1): `entries`, `settings`.
+- Workflow: `drizzle-kit generate` (SQL migration files) → `wrangler d1 migrations apply til` (local and remote). The FTS5 virtual table + sync triggers ([ADR-0009](./0009-retrieval-insight-layer.md)) are hand-written migration files in the same directory.
+- Tables per the [tech design](../tech-design.md#7-data-model-d1): `entries` (unique index on `canonical_url` for dedupe), `settings`, `entries_fts`.
 
 ## Alternatives considered
 

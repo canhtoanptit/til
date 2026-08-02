@@ -1,8 +1,8 @@
 # ADR-0006: Content extraction — `env.AI.toMarkdown()` default, Browser Rendering fallback
 
-- **Status:** Proposed
+- **Status:** Accepted (amended 2026-08-02: accessed via an `Extractor` seam)
 - **Date:** 2026-08-02
-- **Related:** [ADR-0003](./0003-runtime-cloudflare-workers-vite-plugin.md)
+- **Related:** [ADR-0003](./0003-runtime-cloudflare-workers-vite-plugin.md), [ADR-0005](./0005-byok-llmclient-abstraction.md)
 
 ## Context
 
@@ -11,6 +11,8 @@ The core loop needs clean article text/markdown from an arbitrary URL, produced 
 ## Decision
 
 Default to Cloudflare's native **`env.AI.toMarkdown()`** to convert fetched HTML to markdown. Reserve **Browser Rendering** (`/markdown` endpoint / `@cloudflare/puppeteer`) as a **fallback for JavaScript-heavy pages**, added in a later milestone. When both are unavailable/blocked, fail the entry gracefully (`status = failed`) with a retry path.
+
+Extraction is accessed through an **`Extractor` interface in `packages/core`** (mirroring `LLMClient`, [ADR-0005](./0005-byok-llmclient-abstraction.md)) so `toMarkdown` stays the one-line default rather than a hard dependency — swappable for Browser Rendering, Readability-in-isolate, or an external reader (e.g. Jina Reader) without touching the pipeline.
 
 ## Alternatives considered
 

@@ -1,6 +1,6 @@
 # ADR-0008: Repository — pnpm workspaces + Turborepo monorepo
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-08-02
 - **Related:** [ADR-0003](./0003-runtime-cloudflare-workers-vite-plugin.md), [ADR-0001](./0001-cross-platform-web-first-tauri2.md)
 
@@ -16,7 +16,7 @@ Use a **pnpm workspaces + Turborepo** monorepo.
 apps/web            # SPA + Worker (@cloudflare/vite-plugin)
 packages/core       # domain types, ingest, LLMClient + Pi adapter
 packages/db         # Drizzle schema + migrations
-# later: packages/ui (shared components incl. pi-web-ui), apps/native (Tauri)
+# later: packages/ui (shared components incl. M3 chat UI), apps/native (Tauri)
 ```
 
 - pnpm workspaces for dependency management and internal package linking.
@@ -36,4 +36,4 @@ packages/db         # Drizzle schema + migrations
 
 **Negative / caveats**
 - Monorepo tooling overhead (workspace config, Turbo pipeline).
-- Care needed so Worker-bound packages stay Workers-compatible (no stray Node-only deps beyond the intended `nodejs_compat` for Pi).
+- Care needed so Worker-bound packages stay Workers-compatible (no stray Node-only deps — `nodejs_compat` is not enabled, [ADR-0005 v2](./0005-byok-llmclient-abstraction.md)).
