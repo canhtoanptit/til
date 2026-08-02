@@ -1,0 +1,44 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build output
+dist/
+build/
+out/
+*.tsbuildinfo
+
+# Caches
+.turbo/
+.cache/
+.vite/
+coverage/
+
+# Cloudflare Workers / Wrangler (local state, D1 sqlite, generated types)
+.wrangler/
+.mf/
+worker-configuration.d.ts
+
+# Secrets & env (BYOK keys, local vars)
+.dev.vars
+.dev.vars.*
+.env
+.env.*
+!.env.example
+
+# Tauri (desktop/mobile — added in M4)
+src-tauri/target/
+src-tauri/gen/
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
