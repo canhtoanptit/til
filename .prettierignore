@@ -1,0 +1,9 @@
+node_modules
+dist
+build
+.turbo
+.wrangler
+coverage
+pnpm-lock.yaml
+*.tsbuildinfo
+README.md

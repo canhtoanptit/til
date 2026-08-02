@@ -20,6 +20,7 @@
 5. Integration bugs found in P5 become **patch briefs** (scoped like phase briefs), not free-form fixes.
 6. After each phase, record in §6 (changelog): date, agent, deviations, chosen dependency versions (from lockfile).
 7. Never `wrangler deploy`, never create remote CF resources, never commit/push unless the repo owner explicitly asks.
+8. **Model policy:** implementation agents run on **Opus by default** (owner's call 2026-08-02: quality over token cost; requested `opus-4-8`). The Agent tool takes tier names, so dispatch with `model: "opus"` — it resolves to the newest Opus available in the harness. Downshifting a trivial task (e.g. P6 runbook prep) requires owner approval.
 
 **Agent ground rules (include in every brief):**
 
@@ -49,13 +50,26 @@ Binding names are contractual; exact plugin wiring follows current `@cloudflare/
 {
   "name": "til",
   "main": "src/worker/index.ts",
-  "compatibility_date": "2026-07-01",            // no nodejs_compat (ADR-0005)
-  "assets": { "binding": "ASSETS", "not_found_handling": "single-page-application", "run_worker_first": ["/api/*"] },
-  "d1_databases": [{ "binding": "DB", "database_name": "til", "database_id": "local-placeholder", "migrations_dir": "../../packages/db/migrations" }],
+  "compatibility_date": "2026-07-01", // no nodejs_compat (ADR-0005)
+  "assets": {
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"],
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "til",
+      "database_id": "local-placeholder",
+      "migrations_dir": "../../packages/db/migrations",
+    },
+  ],
   "ai": { "binding": "AI" },
-  "vectorize": [{ "binding": "VECTORIZE", "index_name": "til-entries" }]
+  "vectorize": [{ "binding": "VECTORIZE", "index_name": "til-entries" }],
 }
 ```
+
+> **P0 amendment (accepted):** the `ai` and `vectorize` bindings are **commented out** in the scaffold with `// P3: enable` notes — neither has local emulation, and `vite dev` refuses to start a remote proxy session without `CLOUDFLARE_API_TOKEN`. P3 must re-enable them and either export `CLOUDFLARE_API_TOKEN` (or `wrangler login`) for local dev, or inject stub `AI`/`VECTORIZE` implementations in tests/dev. `Env` in `env.ts` already declares both, so no type changes are needed when re-enabling.
 
 ```ts
 // apps/web/src/worker/env.ts
@@ -64,7 +78,7 @@ export interface Env {
   AI: Ai;
   VECTORIZE: VectorizeIndex;
   ASSETS: Fetcher;
-  APP_TOKEN: string;               // secret; local dev: .dev.vars → APP_TOKEN=dev-token
+  APP_TOKEN: string; // secret; local dev: .dev.vars → APP_TOKEN=dev-token
 }
 ```
 
@@ -74,37 +88,41 @@ export interface Env {
 
 ```ts
 // packages/db/src/schema.ts  (drizzle-orm/sqlite-core)
-export const entries = sqliteTable('entries', {
-  id: text('id').primaryKey(),                       // crypto.randomUUID()
-  url: text('url').notNull(),
-  canonicalUrl: text('canonical_url').notNull(),
-  title: text('title'),
-  sourceDomain: text('source_domain'),
-  contentMarkdown: text('content_markdown'),
-  summary: text('summary'),
-  takeaway: text('takeaway'),
-  question: text('question'),
-  tags: text('tags').notNull().default('[]'),        // JSON string[]
-  status: text('status').notNull().default('pending'), // 'pending' | 'ready' | 'failed'
-  error: text('error'),
-  createdAt: integer('created_at').notNull(),        // epoch ms
-  updatedAt: integer('updated_at').notNull(),
-}, (t) => [
-  uniqueIndex('entries_canonical_url_uq').on(t.canonicalUrl),
-  index('entries_status_idx').on(t.status),
-  index('entries_created_at_idx').on(t.createdAt),
-]);
+export const entries = sqliteTable(
+  "entries",
+  {
+    id: text("id").primaryKey(), // crypto.randomUUID()
+    url: text("url").notNull(),
+    canonicalUrl: text("canonical_url").notNull(),
+    title: text("title"),
+    sourceDomain: text("source_domain"),
+    contentMarkdown: text("content_markdown"),
+    summary: text("summary"),
+    takeaway: text("takeaway"),
+    question: text("question"),
+    tags: text("tags").notNull().default("[]"), // JSON string[]
+    status: text("status").notNull().default("pending"), // 'pending' | 'ready' | 'failed'
+    error: text("error"),
+    createdAt: integer("created_at").notNull(), // epoch ms
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (t) => [
+    uniqueIndex("entries_canonical_url_uq").on(t.canonicalUrl),
+    index("entries_status_idx").on(t.status),
+    index("entries_created_at_idx").on(t.createdAt),
+  ],
+);
 
-export const settings = sqliteTable('settings', {
-  id: integer('id').primaryKey(),                    // always 1
-  provider: text('provider').notNull(),              // 'openai' | 'anthropic'
-  model: text('model').notNull(),
-  apiKey: text('api_key').notNull(),
-  cfAccountId: text('cf_account_id').notNull(),
-  cfGatewayId: text('cf_gateway_id').notNull(),
-  cfAigToken: text('cf_aig_token'),
-  createdAt: integer('created_at').notNull(),
-  updatedAt: integer('updated_at').notNull(),
+export const settings = sqliteTable("settings", {
+  id: integer("id").primaryKey(), // always 1
+  provider: text("provider").notNull(), // 'openai' | 'anthropic'
+  model: text("model").notNull(),
+  apiKey: text("api_key").notNull(),
+  cfAccountId: text("cf_account_id").notNull(),
+  cfGatewayId: text("cf_gateway_id").notNull(),
+  cfAigToken: text("cf_aig_token"),
+  createdAt: integer("created_at").notNull(),
+  updatedAt: integer("updated_at").notNull(),
 });
 ```
 
@@ -136,14 +154,14 @@ END;
 ```ts
 export interface Digest {
   title: string;
-  summary: string;      // ≤ ~150 words
-  takeaway: string;     // 1–2 sentences, the single most interesting point
-  question: string;     // a follow-up worth exploring
-  tags: string[];       // 3–6, lowercase-kebab-case
+  summary: string; // ≤ ~150 words
+  takeaway: string; // 1–2 sentences, the single most interesting point
+  question: string; // a follow-up worth exploring
+  tags: string[]; // 3–6, lowercase-kebab-case
 }
 
 export interface LLMSettings {
-  provider: 'openai' | 'anthropic';
+  provider: "openai" | "anthropic";
   model: string;
   apiKey: string;
   cfAccountId: string;
@@ -152,24 +170,37 @@ export interface LLMSettings {
 }
 
 export interface LLMClient {
-  digest(markdown: string, meta: { url: string; title?: string }): Promise<Digest>;
+  digest(
+    markdown: string,
+    meta: { url: string; title?: string },
+  ): Promise<Digest>;
   ping(): Promise<{ ok: boolean; detail?: string }>;
 }
 
 export interface Extractor {
-  toMarkdown(html: string, url: string): Promise<{ markdown: string; title?: string }>;
+  toMarkdown(
+    html: string,
+    url: string,
+  ): Promise<{ markdown: string; title?: string }>;
 }
 
 // Factory. impl default 'ai-sdk'; 'direct' selectable for fallback/testing.
-export function createLLMClient(settings: LLMSettings, opts?: { impl?: 'ai-sdk' | 'direct'; fetchImpl?: typeof fetch }): LLMClient;
+export function createLLMClient(
+  settings: LLMSettings,
+  opts?: { impl?: "ai-sdk" | "direct"; fetchImpl?: typeof fetch },
+): LLMClient;
 
 // Gateway base URL (no trailing slash), per provider:
 // https://gateway.ai.cloudflare.com/v1/{cfAccountId}/{cfGatewayId}/{provider}
 export function gatewayBaseURL(settings: LLMSettings): string;
 
 // URL utilities
-export function normalizeUrl(raw: string): { url: string; canonicalUrl: string; sourceDomain: string }; // strips utm_*/fbclid/gclid, lowercases host, drops fragments
-export function assertSafeUrl(raw: string): URL;   // throws UnsafeUrlError: non-http(s), localhost, IP-literal in loopback/private/link-local ranges
+export function normalizeUrl(raw: string): {
+  url: string;
+  canonicalUrl: string;
+  sourceDomain: string;
+}; // strips utm_*/fbclid/gclid, lowercases host, drops fragments
+export function assertSafeUrl(raw: string): URL; // throws UnsafeUrlError: non-http(s), localhost, IP-literal in loopback/private/link-local ranges
 export class UnsafeUrlError extends Error {}
 export class ExtractionError extends Error {}
 export class DigestError extends Error {}
@@ -225,15 +256,15 @@ P0 scaffold ──► P1 db ────┐
         └────► P4 frontend ─────────┘   (P4 parallel with P1/P2/P3; builds against C5 only)
 ```
 
-| Phase | Scope | Parallel with | Est. size |
-|---|---|---|---|
-| P0 | Repo scaffold + Worker/SPA skeleton | — | S |
-| P1 | `@til/db` schema + migrations + FTS | P2, P4 | S |
-| P2 | `@til/core` domain + both LLM clients | P1, P4 | M |
-| P3 | Worker API + ingest pipeline | P4 | M |
-| P4 | React SPA | P1, P2, P3 | M |
-| P5 | Integration + TDR §13 verification | — (needs all) | S–M |
-| P6 | M1.5 deploy hardening | — | S (mostly human) |
+| Phase | Scope                                 | Parallel with | Est. size        |
+| ----- | ------------------------------------- | ------------- | ---------------- |
+| P0    | Repo scaffold + Worker/SPA skeleton   | —             | S                |
+| P1    | `@til/db` schema + migrations + FTS   | P2, P4        | S                |
+| P2    | `@til/core` domain + both LLM clients | P1, P4        | M                |
+| P3    | Worker API + ingest pipeline          | P4            | M                |
+| P4    | React SPA                             | P1, P2, P3    | M                |
+| P5    | Integration + TDR §13 verification    | — (needs all) | S–M              |
+| P6    | M1.5 deploy hardening                 | —             | S (mostly human) |
 
 ---
 
@@ -265,13 +296,14 @@ P0 scaffold ──► P1 db ────┐
 **Contracts:** C1, C4 (+ gateway URL shape from TDR §10).
 **Scope:** `packages/core/**` only.
 **Steps (order matters — the learning artifact):**
+
 1. Types, errors, `gatewayBaseURL`, `normalizeUrl`, `assertSafeUrl` (+ exhaustive unit tests: tracker stripping, IPv4/IPv6 private ranges, localhost, schemes).
 2. **`DirectLLMClient` first**: raw `fetch`, both provider dialects per C4, strict parse into `Digest` (validate: all fields present, tags 3–6 array of strings) → `DigestError` on mismatch.
 3. `AISDKClient`: `ai` v6 + `@ai-sdk/openai` + `@ai-sdk/anthropic` (exact-pinned), **explicit provider instances only** (grep-check: no plain string model IDs), structured output via the current v6 API (`generateObject` is deprecated — prefer the Output API per the pinned version's docs).
 4. `createLLMClient` factory; shared digest prompt (content-is-untrusted-data clause per C4).
 5. Tests: mock `fetchImpl`; golden request assertions per provider (URL, headers, body schema) and response parsing for both clients; `ping()` behavior on 401/timeout.
-**Out of scope:** embeddings (Worker-side, P3); anything outside `packages/core`.
-**DoD:** `pnpm --filter @til/core build && typecheck && test` clean; `grep -rn "from 'ai'" apps/ packages/db` returns nothing (SDK contained in core).
+   **Out of scope:** embeddings (Worker-side, P3); anything outside `packages/core`.
+   **DoD:** `pnpm --filter @til/core build && typecheck && test` clean; `grep -rn "from 'ai'" apps/ packages/db` returns nothing (SDK contained in core).
 
 ### P3 — Worker API (`apps/web/src/worker`)
 
@@ -311,24 +343,27 @@ P0 scaffold ──► P1 db ────┐
 ## 5. M2–M4 outline briefs (finalize after M1 retro)
 
 **M2 — digest pipeline (3 briefs).** Contracts to freeze first: `digests` table + DTO; Workflow step interfaces; source-adapter interface (`fetchCandidates(query, window): Candidate[]`).
-- *P7 sources:* HN/Reddit/web adapters behind the adapter interface (respect robots/ToS; free tiers only; decide search API at kickoff — TDR §16).
-- *P8 workflow:* Cloudflare Workflow `digest-run` (plan → fetch per source → rank into evidence clusters → synthesize via `LLMClient` → store) + cron trigger + `GET/POST /api/digests*` routes. Durable steps, per-step retries.
-- *P9 UI:* digest feed + detail views.
+
+- _P7 sources:_ HN/Reddit/web adapters behind the adapter interface (respect robots/ToS; free tiers only; decide search API at kickoff — TDR §16).
+- _P8 workflow:_ Cloudflare Workflow `digest-run` (plan → fetch per source → rank into evidence clusters → synthesize via `LLMClient` → store) + cron trigger + `GET/POST /api/digests*` routes. Durable steps, per-step retries.
+- _P9 UI:_ digest feed + detail views.
 
 **M3 — chat agent (3 briefs).** Contracts to freeze first: tool schemas (`search_entries(query, topK, filters?)` hybrid Vectorize+FTS+RRF; `get_entry(id)`; `stats(kind, window)` SQL aggregations — all **read-only**); chat message DTO; DO binding name `CHAT`.
-- *P10 retrieval lib:* hybrid search + RRF merge + stats queries in `packages/core` (pure functions over injected deps) + tests.
-- *P11 chat DO:* Agents SDK `AIChatAgent`; hand-rolled bounded tool loop over AI SDK `streamText` (reference reading: `pi-agent-core` source; ADR-0005); tools from P10; session persistence; WebSocket/SSE endpoint.
-- *P12 chat UI:* AI Elements or assistant-ui; token-authed connection; tool-call rendering.
 
-**M4 — distribution.** *P13:* PWA manifest + service worker + installability audit. *P14:* Tauri 2 wrap — configurable `VITE_API_BASE`, CORS middleware for the Tauri origin (ADR-0001), platform builds. Store distribution only if wanted.
+- _P10 retrieval lib:_ hybrid search + RRF merge + stats queries in `packages/core` (pure functions over injected deps) + tests.
+- _P11 chat DO:_ Agents SDK `AIChatAgent`; hand-rolled bounded tool loop over AI SDK `streamText` (reference reading: `pi-agent-core` source; ADR-0005); tools from P10; session persistence; WebSocket/SSE endpoint.
+- _P12 chat UI:_ AI Elements or assistant-ui; token-authed connection; tool-call rendering.
+
+**M4 — distribution.** _P13:_ PWA manifest + service worker + installability audit. _P14:_ Tauri 2 wrap — configurable `VITE_API_BASE`, CORS middleware for the Tauri origin (ADR-0001), platform builds. Store distribution only if wanted.
 
 ---
 
 ## 6. Changelog & version registry
 
-| Date | Phase | Agent | Outcome / deviations | Versions locked |
-|---|---|---|---|---|
-| 2026-08-02 | — | — | Plan created | — |
+| Date       | Phase | Agent | Outcome / deviations | Versions locked |
+| ---------- | ----- | ----- | -------------------- | --------------- |
+| 2026-08-02 | —     | —     | Plan created         | —               |
+| 2026-08-02 | P0    | opus subagent (a6b2b2b7) | **Done, DoD verified by orchestrator** (fresh `--force` runs + dev-server curl: `/api/health` 200, SPA served). Deviations accepted: `ai`+`vectorize` bindings commented until P3 (see C2 amendment); workers-types over `wrangler types` codegen; separate bare `vitest.config.ts` (CF plugin rejects vitest's `resolve.external` — use `@cloudflare/vitest-pool-workers` when binding-level tests are needed); lib stubs build with `tsc --noEmit` (benign turbo output warnings); `.npmrc` allows esbuild/workerd postinstall (pnpm 10 blocks by default); prettier normalized `docs/**` formatting. Note: `react-router` v8 has no `-dom` package; Tailwind v4 configures via CSS, no config file. | pnpm 10.5.2 · turbo 2.10.8 · ts 5.9.3 · vite 8.2.0 · @cloudflare/vite-plugin 1.50.0 · wrangler 4.118.0 · hono 4.12.33 · react 19.2.8 · react-router 8.3.0 · @tanstack/react-query 5.101.4 · tailwindcss 4.3.3 · vitest 4.1.10 · eslint 9.39.5 |
 
 ---
 

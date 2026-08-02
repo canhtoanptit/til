@@ -20,7 +20,10 @@ Keep the thin boundary in `packages/core`:
 
 ```ts
 export interface LLMClient {
-  digest(markdown: string, meta: { url: string; title?: string }): Promise<Digest>;
+  digest(
+    markdown: string,
+    meta: { url: string; title?: string },
+  ): Promise<Digest>;
   ping(): Promise<{ ok: boolean; detail?: string }>;
 }
 ```
@@ -41,10 +44,12 @@ The M3 chat loop is hand-rolled over AI SDK primitives (a bounded loop over `str
 ## Consequences
 
 **Positive**
+
 - Risk contained: implementations swap without rearchitecture; clean seam for testing (mock `LLMClient`).
 - `nodejs_compat` dropped → smaller bundle, no compat surprises (supersedes the v1 caveat and the related note in [ADR-0003](./0003-runtime-cloudflare-workers-vite-plugin.md)).
 - The two-implementation diff is a deliberate learning artifact.
 
 **Negative / caveats**
+
 - One extra abstraction layer to maintain; the interface must stay task-shaped (`digest`, `ping`, later `answer`) rather than leaking SDK types.
 - Two implementations to keep passing the same contract tests.

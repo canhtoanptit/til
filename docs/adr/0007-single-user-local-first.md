@@ -29,11 +29,13 @@ Ship **single-user, single-tenant, self-hosted** (the term "local-first" is reti
 ## Consequences
 
 **Positive**
+
 - Still the simplest viable model; ~15 lines of middleware buys a closed attack surface.
 - Threat model is now honest: the deploy boundary, not the feature set, is what triggers the auth requirement.
 - Token auth already fits the M4 remote-client model ([ADR-0001](./0001-cross-platform-web-first-tauri2.md)).
 
 **Negative / caveats**
+
 - A token to manage (rotate by `wrangler secret put APP_TOKEN` + re-enter in UI).
 - Key-at-rest in D1 remains a consciously accepted risk until M1.5; D1 exports/console show it in plaintext.
 - Going multi-user later still requires scoping every table and query by user — designed for, but not free.

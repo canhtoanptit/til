@@ -1,0 +1,26 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "til",
+  "main": "src/worker/index.ts",
+  "compatibility_date": "2026-07-01",
+  "assets": {
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"],
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "til",
+      "database_id": "local-placeholder",
+      "migrations_dir": "../../packages/db/migrations",
+    },
+  ],
+  // P3: enable — the AI binding has no local emulation and requires
+  // CLOUDFLARE_API_TOKEN + a remote proxy session, which blocks unauthenticated
+  // local `vite dev`. Turn this on when wiring the summarize/RAG path.
+  // "ai": { "binding": "AI" }
+  // P3: enable — Vectorize has no local emulation in miniflare/wrangler dev.
+  // Leaving this out until P3 wires the RAG path against a real remote index.
+  // "vectorize": [{ "binding": "VECTORIZE", "index_name": "til-entries" }]
+}

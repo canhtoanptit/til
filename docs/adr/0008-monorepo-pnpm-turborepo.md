@@ -31,9 +31,11 @@ packages/db         # Drizzle schema + migrations
 ## Consequences
 
 **Positive**
+
 - Shared types across client/worker/core/db; enforced module boundaries.
 - Incremental, cached builds; a clean home for future `ui` and `native` packages.
 
 **Negative / caveats**
+
 - Monorepo tooling overhead (workspace config, Turbo pipeline).
 - Care needed so Worker-bound packages stay Workers-compatible (no stray Node-only deps — `nodejs_compat` is not enabled, [ADR-0005 v2](./0005-byok-llmclient-abstraction.md)).

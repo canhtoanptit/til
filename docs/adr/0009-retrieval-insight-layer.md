@@ -8,11 +8,11 @@
 
 The problem statement promises a **searchable feed** and a chat agent that answers questions **grounded in TIL history** with insights and recommendations (M3). The v1 data model had no index of any kind. Three distinct access patterns must be served, and only one of them is RAG:
 
-| Query type | Example | Mechanism |
-|---|---|---|
-| Semantic | "what have I learned about consensus algorithms?" | Vector similarity |
-| Keyword / exact | "that arxiv paper on speculative decoding" | Full-text search (BM25-ish) |
-| Analytical | "what did I learn most this month? am I consistent?" | SQL aggregation — not retrieval at all |
+| Query type      | Example                                              | Mechanism                              |
+| --------------- | ---------------------------------------------------- | -------------------------------------- |
+| Semantic        | "what have I learned about consensus algorithms?"    | Vector similarity                      |
+| Keyword / exact | "that arxiv paper on speculative decoding"           | Full-text search (BM25-ish)            |
+| Analytical      | "what did I learn most this month? am I consistent?" | SQL aggregation — not retrieval at all |
 
 Constraints: corpus is small (~10³ short entries); everything runs in one Worker; **Anthropic has no embeddings API**, so a BYOK-Anthropic user breaks any "use the provider for everything" plan; Vectorize caps vectors at 1536 dimensions.
 
@@ -37,11 +37,13 @@ Build the layer from Cloudflare-native pieces, populated **at ingest time from M
 ## Consequences
 
 **Positive**
+
 - Retrieval-ready index from day one; all pieces free-tier at this scale; no new accounts or keys.
 - Embeddings decoupled from the BYOK provider — provider switches never invalidate the index.
 - The hybrid search + insight tools are exactly the "AI system engineering" the project is for.
 
 **Negative / caveats**
+
 - Two indexes to keep consistent with D1 (Vectorize upsert/delete on status transitions; FTS via triggers). Consistency is eventual by a few seconds — acceptable for one user.
 - Changing the embedding model later means re-embedding everything — record the model name per vector (metadata) from the start.
 - FTS5 virtual tables and triggers are hand-written migrations (drizzle-kit cannot generate them).

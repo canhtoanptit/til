@@ -25,10 +25,12 @@ Use **Cloudflare D1** (serverless SQLite) with **Drizzle ORM** and **drizzle-kit
 ## Consequences
 
 **Positive**
+
 - Native to Cloudflare; zero extra infra; local D1 in dev via miniflare.
 - Typed schema end-to-end; straightforward migrations.
 
 **Negative / caveats**
+
 - SQLite semantics (fine for this app's access patterns — no heavy concurrent writes).
 - D1 size/row and query limits to keep in mind as the feed grows.
 - A migration discipline to maintain (generate + apply on every schema change).

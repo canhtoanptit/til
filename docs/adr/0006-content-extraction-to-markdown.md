@@ -22,10 +22,12 @@ Extraction is accessed through an **`Extractor` interface in `packages/core`** (
 ## Consequences
 
 **Positive**
+
 - Least code, cheap, no bundle cost; simplest path to a working slice.
 - Clear, known upgrade path (Browser Rendering) for JS-heavy pages.
 
 **Negative / caveats**
+
 - Depends on the Workers **AI** binding.
 - **Universal limits:** paywalls, bot-protection (challenges/IP rate-limits), and heavy client-side rendering will defeat `toMarkdown` — some URLs simply won't ingest; the UI must surface this, not hang.
 - Extraction/Browser-Rendering usage likely implies a **paid Workers plan**.
