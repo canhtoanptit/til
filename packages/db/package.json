@@ -11,11 +11,20 @@
   "scripts": {
     "build": "tsc --noEmit",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint src",
-    "test": "vitest run --passWithNoTests"
+    "lint": "eslint src test drizzle.config.ts",
+    "test": "vitest run --passWithNoTests",
+    "db:generate": "drizzle-kit generate"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "5.20260801.1",
+    "@types/better-sqlite3": "^9.6.0",
+    "@types/node": "^26.1.2",
+    "better-sqlite3": "^13.0.2",
+    "drizzle-kit": "^0.31.10",
     "typescript": "5.9.3",
     "vitest": "4.1.10"
+  },
+  "dependencies": {
+    "drizzle-orm": "^0.45.2"
   }
 }
