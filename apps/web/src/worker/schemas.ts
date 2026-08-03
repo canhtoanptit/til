@@ -1,7 +1,23 @@
 import { z } from "zod";
+import {
+  MAX_MAX_ITEMS,
+  MAX_WINDOW_DAYS,
+  MIN_MAX_ITEMS,
+  MIN_WINDOW_DAYS,
+} from "./digest.js";
 
 export const createEntrySchema = z.object({
   url: z.string().min(1),
+});
+
+export const runDigestSchema = z.object({
+  windowDays: z
+    .number()
+    .int()
+    .min(MIN_WINDOW_DAYS)
+    .max(MAX_WINDOW_DAYS)
+    .optional(),
+  maxItems: z.number().int().min(MIN_MAX_ITEMS).max(MAX_MAX_ITEMS).optional(),
 });
 
 export const settingsSchema = z.object({
@@ -18,3 +34,4 @@ export const settingsSchema = z.object({
 
 export type CreateEntryBody = z.infer<typeof createEntrySchema>;
 export type SettingsBody = z.infer<typeof settingsSchema>;
+export type RunDigestBody = z.infer<typeof runDigestSchema>;

@@ -36,6 +36,53 @@ export interface CreateEntryResponse {
   status: EntryStatus;
 }
 
+export type DigestStatus = "pending" | "ready" | "failed";
+
+export interface DigestEvidenceDTO {
+  url: string;
+  sourceName: string;
+  title: string;
+}
+
+export interface DigestItemDTO {
+  rank: number;
+  title: string;
+  url: string;
+  sourceName: string;
+  sourceDomain: string;
+  score: number;
+  why: string | null;
+  evidence: DigestEvidenceDTO[];
+}
+
+export interface DigestSummaryDTO {
+  id: string;
+  runAt: number;
+  windowDays: number;
+  status: DigestStatus;
+  title: string | null;
+  intro: string | null;
+  itemCount: number;
+  error: string | null;
+}
+
+export interface DigestDetailDTO extends DigestSummaryDTO {
+  items: DigestItemDTO[];
+}
+
+export interface DigestListResponse {
+  items: DigestSummaryDTO[];
+}
+
+export interface RunDigestInput {
+  windowDays?: number;
+  maxItems?: number;
+}
+
+export interface RunDigestResponse {
+  id: string;
+}
+
 export type LLMProvider = "openai" | "anthropic" | "groq";
 
 export interface SettingsDTO {
@@ -248,6 +295,24 @@ export const api = {
   },
   search(q: string, signal?: AbortSignal): Promise<SearchResults> {
     return request("/api/search", { query: { q, limit: 20 }, signal });
+  },
+  listDigests(
+    params: { limit?: number; signal?: AbortSignal } = {},
+  ): Promise<DigestListResponse> {
+    return request("/api/digests", {
+      query: { limit: params.limit ?? 20 },
+      signal: params.signal,
+    });
+  },
+  getDigest(id: string, signal?: AbortSignal): Promise<DigestDetailDTO> {
+    return request(`/api/digests/${encodeURIComponent(id)}`, { signal });
+  },
+  runDigest(input: RunDigestInput = {}): Promise<RunDigestResponse> {
+    // Always send an object: a JSON body validator would reject an empty body.
+    return request("/api/digests/run", { method: "POST", body: input });
+  },
+  deleteDigest(id: string): Promise<void> {
+    return request(`/api/digests/${encodeURIComponent(id)}`, { method: "DELETE" });
   },
   getSettings(signal?: AbortSignal): Promise<SettingsDTO | null> {
     return request<SettingsDTO>("/api/settings", { signal }).catch((e: unknown) => {

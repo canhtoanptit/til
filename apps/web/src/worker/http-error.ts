@@ -5,7 +5,8 @@ export type ApiErrorCode =
   | "duplicate_url"
   | "not_found"
   | "validation_error"
-  | "llm_error";
+  | "llm_error"
+  | "workflow_error";
 
 export interface ApiErrorBody {
   error: { code: ApiErrorCode; message: string };

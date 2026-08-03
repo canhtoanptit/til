@@ -143,6 +143,19 @@ export function createEntriesRouter() {
   router.get("/:id", async (c) => {
     const deps = c.get("deps");
     const id = c.req.param("id");
+    // WHY: without this the detail page polls a zombie ingest forever, since the
+    // client only stops polling when status leaves 'pending'.
+    const sweepNow = deps.now();
+    await deps.db
+      .update(entries)
+      .set({ status: "failed", error: "ingest timed out", updatedAt: sweepNow })
+      .where(
+        and(
+          eq(entries.id, id),
+          eq(entries.status, "pending"),
+          lt(entries.updatedAt, sweepNow - STALE_PENDING_MS),
+        ),
+      );
     const rows = await deps.db
       .select()
       .from(entries)

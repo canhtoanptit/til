@@ -16,6 +16,17 @@
       "migrations_dir": "../../packages/db/migrations",
     },
   ],
+  "workflows": [
+    {
+      "name": "til-digest",
+      "binding": "DIGEST",
+      "class_name": "DigestWorkflow",
+    },
+  ],
+  "triggers": {
+    // M2: weekly "interesting things" digest, Monday 08:00 UTC.
+    "crons": ["0 8 * * 1"],
+  },
   // P3: enable — the AI binding has no local emulation and requires
   // CLOUDFLARE_API_TOKEN + a remote proxy session, which blocks unauthenticated
   // local `vite dev`. Turn this on when wiring the summarize/RAG path.

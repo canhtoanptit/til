@@ -1,6 +1,8 @@
 export type {
   Candidate,
   Digest,
+  DigestItemDraft,
+  DigestSynthesis,
   EvidenceCluster,
   Extractor,
   FetchCandidatesOptions,
@@ -8,7 +10,12 @@ export type {
   LLMSettings,
   ScoredCluster,
   SourceAdapter,
+  SynthesisInput,
 } from "./types.js";
+export {
+  MAX_SYNTHESIS_PROMPT_CHARS,
+  parseSynthesis,
+} from "./prompt.js";
 export {
   DigestError,
   ExtractionError,

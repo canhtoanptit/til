@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildTestApp } from "./test-harness.js";
+import { buildTestApp, makeStubLLM } from "./test-harness.js";
 
 describe("settings routes", () => {
   it("GET returns 404 when unset", async () => {
@@ -131,12 +131,11 @@ describe("settings routes", () => {
     const t = buildTestApp({
       llmFactory: (s) => {
         seen.push(s.apiKey);
-        return {
+        return makeStubLLM({
           digest: async () => {
             throw new Error("no");
           },
-          ping: async () => ({ ok: true }),
-        };
+        });
       },
     });
     await t.request("/api/settings", {
@@ -263,12 +262,11 @@ describe("settings routes", () => {
     const t = buildTestApp({
       llmFactory: (s) => {
         seen.push(`${s.apiKey}|${s.cfAigToken ?? ""}`);
-        return {
+        return makeStubLLM({
           digest: async () => {
             throw new Error("no");
           },
-          ping: async () => ({ ok: true }),
-        };
+        });
       },
     });
     await t.request("/api/settings", {
@@ -399,15 +397,16 @@ describe("settings routes", () => {
   it("POST /test calls ping and returns result", async () => {
     let pinged = false;
     const t = buildTestApp({
-      llmFactory: () => ({
-        digest: async () => {
-          throw new Error("no");
-        },
-        ping: async () => {
-          pinged = true;
-          return { ok: false, detail: "nope" };
-        },
-      }),
+      llmFactory: () =>
+        makeStubLLM({
+          digest: async () => {
+            throw new Error("no");
+          },
+          ping: async () => {
+            pinged = true;
+            return { ok: false, detail: "nope" };
+          },
+        }),
     });
     await t.request("/api/settings", {
       method: "PUT",

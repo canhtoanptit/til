@@ -15,11 +15,36 @@ export interface LLMSettings {
   cfAigToken?: string;
 }
 
+export interface SynthesisInput {
+  canonicalUrl: string;
+  title: string;
+  sources: string[];
+  publishedAt: number;
+  score: number;
+  snippet?: string;
+}
+
+export interface DigestItemDraft {
+  canonicalUrl: string;
+  title: string;
+  why: string;
+}
+
+export interface DigestSynthesis {
+  title: string;
+  intro: string;
+  items: DigestItemDraft[];
+}
+
 export interface LLMClient {
   digest(
     markdown: string,
     meta: { url: string; title?: string },
   ): Promise<Digest>;
+  synthesizeDigest(
+    inputs: SynthesisInput[],
+    opts: { windowDays: number; maxItems: number },
+  ): Promise<DigestSynthesis>;
   ping(): Promise<{ ok: boolean; detail?: string }>;
 }
 

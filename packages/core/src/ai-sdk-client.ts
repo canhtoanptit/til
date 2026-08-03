@@ -6,12 +6,22 @@ import { generateText, Output } from "ai";
 import { z } from "zod";
 import { DigestError } from "./errors.js";
 import {
+  buildSynthesisUserMessage,
   buildUserMessage,
   DIGEST_SYSTEM_PROMPT,
   jsonModeSystemPrompt,
   parseDigest,
+  parseSynthesis,
+  SYNTHESIS_SYSTEM_PROMPT,
+  synthesisJsonModeSystemPrompt,
 } from "./prompt.js";
-import type { Digest, LLMClient, LLMSettings } from "./types.js";
+import type {
+  Digest,
+  DigestSynthesis,
+  LLMClient,
+  LLMSettings,
+  SynthesisInput,
+} from "./types.js";
 import { gatewayBaseURL } from "./url.js";
 
 const digestSchema = z.object({
@@ -20,6 +30,18 @@ const digestSchema = z.object({
   takeaway: z.string(),
   question: z.string(),
   tags: z.array(z.string()).min(3).max(6),
+});
+
+const synthesisSchema = z.object({
+  title: z.string(),
+  intro: z.string(),
+  items: z.array(
+    z.object({
+      canonicalUrl: z.string(),
+      title: z.string(),
+      why: z.string(),
+    }),
+  ),
 });
 
 export class AISDKClient implements LLMClient {
@@ -58,6 +80,37 @@ export class AISDKClient implements LLMClient {
       if (err instanceof DigestError) throw err;
       throw new DigestError(
         `AI SDK digest failed: ${describeError(err)}`,
+      );
+    }
+  }
+
+  async synthesizeDigest(
+    inputs: SynthesisInput[],
+    opts: { windowDays: number; maxItems: number },
+  ): Promise<DigestSynthesis> {
+    const user = buildSynthesisUserMessage(inputs, opts);
+    const jsonMode = this.settings.provider === "groq";
+    try {
+      const { output } = await generateText({
+        model: this.model,
+        system: jsonMode
+          ? synthesisJsonModeSystemPrompt()
+          : SYNTHESIS_SYSTEM_PROMPT,
+        prompt: user,
+        ...(jsonMode
+          ? { providerOptions: { groq: { structuredOutputs: false } } }
+          : {}),
+        output: Output.object({
+          schema: synthesisSchema,
+          name: "digest_synthesis",
+          description: "Selected and ordered items for the weekly digest.",
+        }),
+      });
+      return parseSynthesis(output, inputs, opts.maxItems);
+    } catch (err) {
+      if (err instanceof DigestError) throw err;
+      throw new DigestError(
+        `AI SDK synthesis failed: ${describeError(err)}`,
       );
     }
   }

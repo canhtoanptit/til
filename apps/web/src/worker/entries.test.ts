@@ -192,6 +192,36 @@ describe("GET /api/entries", () => {
     expect(stale?.status).toBe("failed");
     expect(stale?.error).toBe("ingest timed out");
   });
+
+  it("sweeps a stale pending row on the detail route so polling terminates", async () => {
+    const now = 5_000_000_000;
+    const staleAt = now - 11 * 60 * 1000;
+    const t = buildTestApp({ now: () => now });
+    await insertEntry(t.deps.db, {
+      id: "zombie",
+      status: "pending",
+      createdAt: staleAt,
+      updatedAt: staleAt,
+    });
+    const res = await t.request("/api/entries/zombie");
+    const body = (await res.json()) as { status: string; error: string | null };
+    expect(body.status).toBe("failed");
+    expect(body.error).toBe("ingest timed out");
+  });
+
+  it("leaves a fresh pending row alone on the detail route", async () => {
+    const now = 5_000_000_000;
+    const t = buildTestApp({ now: () => now });
+    await insertEntry(t.deps.db, {
+      id: "fresh",
+      status: "pending",
+      createdAt: now - 1_000,
+      updatedAt: now - 1_000,
+    });
+    const res = await t.request("/api/entries/fresh");
+    const body = (await res.json()) as { status: string };
+    expect(body.status).toBe("pending");
+  });
 });
 
 describe("GET /api/entries/:id", () => {

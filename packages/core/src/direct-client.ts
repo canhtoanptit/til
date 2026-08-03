@@ -1,5 +1,6 @@
 import { DigestError } from "./errors.js";
 import {
+  buildSynthesisUserMessage,
   buildUserMessage,
   DIGEST_JSON_SCHEMA,
   DIGEST_SYSTEM_PROMPT,
@@ -7,11 +8,25 @@ import {
   DIGEST_TOOL_NAME,
   jsonModeSystemPrompt,
   parseDigest,
+  parseSynthesis,
+  SYNTHESIS_JSON_SCHEMA,
+  SYNTHESIS_SYSTEM_PROMPT,
+  SYNTHESIS_TOOL_DESCRIPTION,
+  SYNTHESIS_TOOL_NAME,
+  synthesisJsonModeSystemPrompt,
 } from "./prompt.js";
-import type { Digest, LLMClient, LLMSettings } from "./types.js";
+import type {
+  Digest,
+  DigestSynthesis,
+  LLMClient,
+  LLMSettings,
+  SynthesisInput,
+} from "./types.js";
 import { gatewayBaseURL } from "./url.js";
 
 const ANTHROPIC_VERSION = "2023-06-01";
+const ANTHROPIC_DIGEST_MAX_TOKENS = 2048;
+const ANTHROPIC_SYNTHESIS_MAX_TOKENS = 4096;
 
 export class DirectLLMClient implements LLMClient {
   private readonly settings: LLMSettings;
@@ -34,6 +49,20 @@ export class DirectLLMClient implements LLMClient {
       return this.digestGroq(user);
     }
     return this.digestAnthropic(user);
+  }
+
+  async synthesizeDigest(
+    inputs: SynthesisInput[],
+    opts: { windowDays: number; maxItems: number },
+  ): Promise<DigestSynthesis> {
+    const user = buildSynthesisUserMessage(inputs, opts);
+    if (this.settings.provider === "openai") {
+      return this.synthesizeOpenAI(user, inputs, opts.maxItems);
+    }
+    if (this.settings.provider === "groq") {
+      return this.synthesizeGroq(user, inputs, opts.maxItems);
+    }
+    return this.synthesizeAnthropic(user, inputs, opts.maxItems);
   }
 
   async ping(): Promise<{ ok: boolean; detail?: string }> {
@@ -162,7 +191,7 @@ export class DirectLLMClient implements LLMClient {
       headers: this.anthropicHeaders(),
       body: JSON.stringify({
         model: this.settings.model,
-        max_tokens: 2048,
+        max_tokens: ANTHROPIC_DIGEST_MAX_TOKENS,
         system: DIGEST_SYSTEM_PROMPT,
         messages: [{ role: "user", content: user }],
         tools: [
@@ -186,8 +215,132 @@ export class DirectLLMClient implements LLMClient {
     }
 
     const body = (await safeReadJson(response)) as unknown;
-    const input = extractAnthropicToolInput(body);
+    const input = extractAnthropicToolInput(body, DIGEST_TOOL_NAME);
     return parseDigest(input);
+  }
+
+  private async synthesizeOpenAI(
+    user: string,
+    inputs: readonly SynthesisInput[],
+    maxItems: number,
+  ): Promise<DigestSynthesis> {
+    const base = gatewayBaseURL(this.settings);
+    const response = await this.fetchImpl(`${base}/chat/completions`, {
+      method: "POST",
+      headers: this.bearerHeaders(),
+      body: JSON.stringify({
+        model: this.settings.model,
+        messages: [
+          { role: "system", content: SYNTHESIS_SYSTEM_PROMPT },
+          { role: "user", content: user },
+        ],
+        response_format: {
+          type: "json_schema",
+          json_schema: {
+            name: "digest_synthesis",
+            strict: true,
+            schema: SYNTHESIS_JSON_SCHEMA,
+          },
+        },
+      }),
+    });
+
+    if (!response.ok) {
+      const detail = await safeReadText(response);
+      throw new DigestError(
+        `OpenAI request failed with HTTP ${response.status}${
+          detail ? `: ${detail}` : ""
+        }`,
+      );
+    }
+
+    const body = (await safeReadJson(response)) as unknown;
+    const content = extractOpenAIContent(body);
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(content);
+    } catch {
+      throw new DigestError("OpenAI response content was not valid JSON.");
+    }
+    return parseSynthesis(parsed, inputs, maxItems);
+  }
+
+  private async synthesizeGroq(
+    user: string,
+    inputs: readonly SynthesisInput[],
+    maxItems: number,
+  ): Promise<DigestSynthesis> {
+    const base = gatewayBaseURL(this.settings);
+    const response = await this.fetchImpl(`${base}/chat/completions`, {
+      method: "POST",
+      headers: this.bearerHeaders(),
+      body: JSON.stringify({
+        model: this.settings.model,
+        messages: [
+          { role: "system", content: synthesisJsonModeSystemPrompt() },
+          { role: "user", content: user },
+        ],
+        response_format: { type: "json_object" },
+      }),
+    });
+
+    if (!response.ok) {
+      const detail = await safeReadText(response);
+      throw new DigestError(
+        `Groq request failed with HTTP ${response.status}${
+          detail ? `: ${detail}` : ""
+        }`,
+      );
+    }
+
+    const body = (await safeReadJson(response)) as unknown;
+    const content = extractOpenAIContent(body);
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(content);
+    } catch {
+      throw new DigestError("Groq response content was not valid JSON.");
+    }
+    return parseSynthesis(parsed, inputs, maxItems);
+  }
+
+  private async synthesizeAnthropic(
+    user: string,
+    inputs: readonly SynthesisInput[],
+    maxItems: number,
+  ): Promise<DigestSynthesis> {
+    const base = gatewayBaseURL(this.settings);
+    const response = await this.fetchImpl(`${base}/v1/messages`, {
+      method: "POST",
+      headers: this.anthropicHeaders(),
+      body: JSON.stringify({
+        model: this.settings.model,
+        max_tokens: ANTHROPIC_SYNTHESIS_MAX_TOKENS,
+        system: SYNTHESIS_SYSTEM_PROMPT,
+        messages: [{ role: "user", content: user }],
+        tools: [
+          {
+            name: SYNTHESIS_TOOL_NAME,
+            description: SYNTHESIS_TOOL_DESCRIPTION,
+            input_schema: SYNTHESIS_JSON_SCHEMA,
+          },
+        ],
+        tool_choice: { type: "tool", name: SYNTHESIS_TOOL_NAME },
+      }),
+    });
+
+    if (!response.ok) {
+      const detail = await safeReadText(response);
+      throw new DigestError(
+        `Anthropic request failed with HTTP ${response.status}${
+          detail ? `: ${detail}` : ""
+        }`,
+      );
+    }
+
+    const body = (await safeReadJson(response)) as unknown;
+    const input = extractAnthropicToolInput(body, SYNTHESIS_TOOL_NAME);
+    return parseSynthesis(input, inputs, maxItems);
   }
 
   private bearerHeaders(): Record<string, string> {
@@ -241,7 +394,7 @@ function extractOpenAIContent(body: unknown): string {
   return content;
 }
 
-function extractAnthropicToolInput(body: unknown): unknown {
+function extractAnthropicToolInput(body: unknown, toolName: string): unknown {
   if (body === null || typeof body !== "object") {
     throw new DigestError("Anthropic response body was not an object.");
   }
@@ -252,12 +405,12 @@ function extractAnthropicToolInput(body: unknown): unknown {
   for (const block of content) {
     if (block === null || typeof block !== "object") continue;
     const rec = block as Record<string, unknown>;
-    if (rec.type === "tool_use" && rec.name === DIGEST_TOOL_NAME) {
+    if (rec.type === "tool_use" && rec.name === toolName) {
       return rec.input;
     }
   }
   throw new DigestError(
-    `Anthropic response had no ${DIGEST_TOOL_NAME} tool_use block.`,
+    `Anthropic response had no ${toolName} tool_use block.`,
   );
 }
 

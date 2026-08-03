@@ -393,7 +393,27 @@ DigestDetailDTO  = DigestSummaryDTO & { items: { rank, title, url, sourceName, s
 ```
 Auth + error envelope identical to C5. Synthesis prompt reuses the untrusted-content rule from C4 (candidate titles/snippets are untrusted data).
 
-**Briefs:** _P7 sources_ (`packages/core`: 4 adapters + clustering/scoring + tests, no CF deps) ∥ _P8 digests schema_ (`packages/db`: C8 migration + types). Then _P9 workflow+API_ (`apps/web`: Workflow class, cron, routes per C10) ∥ _P10 digest UI_ (`apps/web/src/client`: list + detail, manual run button, against C10).
+#### C11 — digest synthesis (extends the `LLMClient` seam; `packages/core`)
+
+The worker must not import `ai` directly (ADR-0002 guardrail 3), so synthesis is a new method on the existing seam:
+
+```ts
+export interface SynthesisInput {          // one per ranked cluster, already scored
+  canonicalUrl: string; title: string; sources: string[];
+  publishedAt: number; score: number; snippet?: string;
+}
+export interface DigestItemDraft { canonicalUrl: string; title: string; why: string; }
+export interface DigestSynthesis { title: string; intro: string; items: DigestItemDraft[]; }
+
+export interface LLMClient {
+  digest(markdown: string, meta: { url: string; title?: string }): Promise<Digest>;
+  synthesizeDigest(inputs: SynthesisInput[], opts: { windowDays: number; maxItems: number }): Promise<DigestSynthesis>;
+  ping(): Promise<{ ok: boolean; detail?: string }>;
+}
+```
+Validation (both impls): `items` are dropped unless their `canonicalUrl` appears in `inputs` (no hallucinated links), `items.length ≤ maxItems`, order is the LLM's ranking; malformed output → `DigestError`. Candidate titles/snippets are **untrusted data** — same clause as C4. Groq keeps json_object + schema-in-prompt (P5.3).
+
+**Briefs:** _P9a synthesis_ (`packages/core`: C11 on both clients) ∥ _P7 sources_ (`packages/core`: 4 adapters + clustering/scoring + tests, no CF deps) ∥ _P8 digests schema_ (`packages/db`: C8 migration + types). Then _P9 workflow+API_ (`apps/web`: Workflow class, cron, routes per C10) ∥ _P10 digest UI_ (`apps/web/src/client`: list + detail, manual run button, against C10).
 
 ### M3 — chat agent
 
@@ -418,6 +438,10 @@ Per owner's decision to finish the full flow locally first, the deploy phase run
 | Date       | Phase | Agent | Outcome / deviations | Versions locked |
 | ---------- | ----- | ----- | -------------------- | --------------- |
 | 2026-08-02 | —     | —     | Plan created         | —               |
+| 2026-08-03 | P9a   | opus subagent (aa9b5b58) | **Done, DoD verified** (core 230 tests, +78). C11 `synthesizeDigest` on both clients, all three dialects; new `SYNTHESIS_*` prompt/schema; `parseSynthesis` drops hallucinated `canonicalUrl`s, de-dupes, truncates to `maxItems`. Prompt cap 24k chars with an explicit "N omitted" note; dates rendered as UTC `YYYY-MM-DD` (no `Date.now()` in core). Deviation accepted: JSON schema omits `minItems`/`maxItems` (OpenAI strict mode rejects them) — bound enforced in `parseSynthesis`. | — |
+| 2026-08-03 | P9b   | opus subagent (a4a052b7) | **Done, DoD verified + LIVE RUN CONFIRMED** (web 74→78 tests). `DigestWorkflow` (WorkflowEntrypoint) with steps plan→fetch-per-source (Promise.allSettled, isolated)→rank→synthesize→persist, per-step retries; weekly cron `0 8 * * 1`; 4 routes per C10. **`vite dev` handled the Workflow binding with no API token — Workflows are fully local, unlike AI/Vectorize.** Live: one real run produced a `ready` digest, 5 ranked items, HN+Lobsters corroboration, one Groq synthesis call. Key decisions: `plan` step freezes `runAt` so retries can't drift the window; digest row id generated in `startDigestRun` before triggering (no 404 window for the UI poll); `persist` deletes existing items first (replay-safe); empty candidate pool → `failed` without an LLM call. Deviations accepted: `workflow_error` code added; `runDigest` returns `{status:'failed'}` rather than throwing. **Trap recorded:** drizzle renders raw `sql` columns unqualified in single-table selects — correlated subquery counts silently returned 0; fixed with leftJoin+groupBy (watch in P11). | — |
+| 2026-08-03 | P10   | opus subagent (a3c293af) | **Done, DoD verified** (isolated client typecheck clean; the 4 errors it saw were P9a's interface landing mid-flight, healed by P9b). Digest list + detail pages, `DigestCard`, `digest-format` helpers, nav entry, "Run now" → 202 → navigate. Polls at 2 s while `pending` (list polls only while a row is pending; detail per C7), stops on terminal state. Smoke-tested via headless Chrome incl. contract-shaped fixtures. Filed two integration gaps — one real, fixed below. | no new deps |
+| 2026-08-03 | P10.1 | orchestrator patch | **Done** (web 78 tests). Fixed the gap P10 found: only the *list* routes swept stale `pending` rows, so opening a zombie run/ingest directly polled forever. Extracted `sweepStalePending(deps, id?)` for digests and added the id-scoped sweep to **both** detail routes (`/api/digests/:id`, `/api/entries/:id`) + 4 tests (stale→failed, fresh→untouched, both routes). | — |
 | 2026-08-03 | P7    | opus subagent (a6dabf48, resumed as aca2ab4f) | **Done, DoD verified by orchestrator** (core 152 tests; strict greps clean: no `node:` imports, no `DOMParser`, no un-mocked fetch in tests). 4 adapters (`sources/hn|lobsters|arxiv|rss.ts` + `http/xml/registry`) + `ranking.ts`. First run died on a transient 529 after writing all implementation but **zero tests**; resumed with a test-only brief → 65 new tests, no impl bugs found. Real values (differ from brief assumptions — treat as the contract now): HN `minPoints` default 50, strict `points>50`; only HN/arXiv push `limit` to the wire (Lobsters/RSS filter client-side); Lobsters URL fallback is 3-step (`url`→`comments_url`→`/s/{short_id}`); scoring = `0.4·recency + 0.4·popularity(log1p, per-source max, 0.5 neutral when absent) + 0.2·corroboration(saturates at 3 sources)`, ties by `canonicalUrl`; title-merge Jaccard ≥0.8 **and** ≥3 tokens both sides; RSS errors two-tier (`rss:<host>` per feed via `onFeedError`, `rss` only when all fail). Default RSS feeds: Cloudflare blog, jvns.ca, simonwillison.net. | fast-xml-parser |
 | 2026-08-03 | P8    | opus subagent (a8fb944b) | **Done, DoD verified by orchestrator** (db 16 tests: FK-violation rejection under `PRAGMA foreign_keys=ON`, cascade delete, `(digestId, rank)` ordering, M1 FTS behavior untouched). C8 implemented; migration `0002_digests.sql` with FK cascade + both indexes. **Naming resolved:** row types export as `DigestRun`/`NewDigestRun` + `DigestItem`/`NewDigestItem` (tables `digests`/`digestItems`) to avoid collision with `@til/core`'s per-entry `Digest` — **P9 must use these names.** Also hit the same 529; work was complete before it. | — |
 | 2026-08-03 | P5.3  | orchestrator patch | **Done** (138 tests). Real ingest failed: most Groq models reject `response_format: json_schema` (`llama-3.3-70b-versatile` included). Fix: AI SDK client sets `providerOptions.groq.structuredOutputs = false` and uses the schema-in-prompt system message for Groq — the direct client's proven approach, extracted to a shared `jsonModeSystemPrompt()`. `parseDigest` remains the real validator, so provider-side enforcement is never load-bearing. Regression test asserts the wire body is never `json_schema` and that the system prompt carries the schema. Gateway-token leg confirmed working by this failure (request reached Groq). | no new deps |

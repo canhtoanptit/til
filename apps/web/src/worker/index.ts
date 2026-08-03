@@ -1,42 +1,30 @@
-import { createDb } from "@til/db";
-import { createLLMClient } from "@til/core";
 import { createApp } from "./app.js";
-import type { Deps } from "./deps.js";
+import { buildDeps, type ExecCtx } from "./build-deps.js";
+import { describeError, startDigestRun } from "./digest-run.js";
 import type { Env } from "./env.js";
-import { selectExtractor } from "./extractors.js";
-import { fetchPage } from "./fetch-page.js";
-import { embeddingTextFor, WorkersAIEmbedder } from "./vectorize.js";
 
-type ExecCtx = { waitUntil: (p: Promise<unknown>) => void };
-
-function buildDeps(env: Env, ctx: ExecCtx): Deps {
-  // WHY: `env.AI` and `env.VECTORIZE` bindings are commented out in wrangler.jsonc
-  // for local dev; the typed shape claims they exist. Guard at runtime.
-  const ai = (env as unknown as { AI?: unknown }).AI ?? null;
-  const vectorize = (env as unknown as { VECTORIZE?: unknown }).VECTORIZE ?? null;
-  const db = createDb(env.DB);
-  const extractor = selectExtractor(ai);
-  const embedder = ai ? new WorkersAIEmbedder(ai as never) : null;
-
-  return {
-    db,
-    now: () => Date.now(),
-    llmFactory: (settings) => createLLMClient(settings),
-    extractor,
-    vectorize: (vectorize as Deps["vectorize"]) ?? null,
-    embed: async (input) => {
-      if (!embedder) return null;
-      const text = embeddingTextFor(input);
-      return embedder.embed(text);
-    },
-    fetchPage,
-    waitUntil: (p) => ctx.waitUntil(p),
-    fetchImpl: (typeof fetch === "function"
-      ? fetch.bind(globalThis)
-      : globalThis.fetch) as typeof fetch,
-  };
-}
+export { DigestWorkflow } from "./digest-workflow.js";
 
 const app = createApp((c) => buildDeps(c.env as Env, c.executionCtx as ExecCtx));
 
-export default app;
+export default {
+  fetch: app.fetch,
+  async scheduled(
+    controller: { cron: string; scheduledTime: number },
+    env: Env,
+    ctx: ExecCtx,
+  ): Promise<void> {
+    const deps = buildDeps(env, ctx);
+    try {
+      const started = await startDigestRun(deps, {});
+      console.log(
+        `[cron ${controller.cron}] digest run ${started.id} started (window ${started.windowDays}d)`,
+      );
+    } catch (err) {
+      console.error(
+        `[cron ${controller.cron}] could not start digest run:`,
+        describeError(err),
+      );
+    }
+  },
+};

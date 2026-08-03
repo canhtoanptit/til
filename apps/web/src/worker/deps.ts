@@ -1,5 +1,6 @@
 import type { Db } from "@til/db";
 import type { Extractor, LLMClient, LLMSettings } from "@til/core";
+import type { AdaptersFactory, DigestWorkflowBinding } from "./digest.js";
 import type { VectorizeLike } from "./vectorize.js";
 
 export interface FetchPageFn {
@@ -21,6 +22,8 @@ export interface Deps {
   fetchPage: FetchPageFn;
   waitUntil: (p: Promise<unknown>) => void;
   fetchImpl: typeof fetch;
+  adapters: AdaptersFactory;
+  digestWorkflow: DigestWorkflowBinding | null;
 }
 
 export interface AppToken {
