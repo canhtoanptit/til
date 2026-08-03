@@ -57,6 +57,12 @@ Your output must match the digest schema exactly:
 
 Write in the language of the article. Do not mention that the input was truncated even if it was.`;
 
+// WHY: json_object mode (Groq, and OpenAI's json mode) rejects requests whose
+// messages never mention JSON, and enforces no schema — so the schema is inlined.
+export function jsonModeSystemPrompt(): string {
+  return `${DIGEST_SYSTEM_PROMPT}\n\nReturn ONLY a single JSON object (no prose, no code fences) that conforms to this JSON schema:\n${JSON.stringify(DIGEST_JSON_SCHEMA)}`;
+}
+
 export function buildUserMessage(
   markdown: string,
   meta: { url: string; title?: string },

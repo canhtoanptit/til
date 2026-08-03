@@ -5,6 +5,7 @@ import {
   DIGEST_SYSTEM_PROMPT,
   DIGEST_TOOL_DESCRIPTION,
   DIGEST_TOOL_NAME,
+  jsonModeSystemPrompt,
   parseDigest,
 } from "./prompt.js";
 import type { Digest, LLMClient, LLMSettings } from "./types.js";
@@ -284,7 +285,4 @@ function describeError(err: unknown): string {
 // Groq's json_object mode requires an explicit JSON instruction in the messages
 // and does not enforce a schema. We append the schema + a JSON-only directive to
 // the shared system prompt so the model has both the shape and the word "JSON".
-function groqSystemPrompt(): string {
-  const schema = JSON.stringify(DIGEST_JSON_SCHEMA);
-  return `${DIGEST_SYSTEM_PROMPT}\n\nReturn ONLY a single JSON object (no prose, no code fences) that conforms to this JSON schema:\n${schema}`;
-}
+const groqSystemPrompt = jsonModeSystemPrompt;

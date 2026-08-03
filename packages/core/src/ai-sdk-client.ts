@@ -8,6 +8,7 @@ import { DigestError } from "./errors.js";
 import {
   buildUserMessage,
   DIGEST_SYSTEM_PROMPT,
+  jsonModeSystemPrompt,
   parseDigest,
 } from "./prompt.js";
 import type { Digest, LLMClient, LLMSettings } from "./types.js";
@@ -35,11 +36,17 @@ export class AISDKClient implements LLMClient {
     meta: { url: string; title?: string },
   ): Promise<Digest> {
     const user = buildUserMessage(markdown, meta);
+    // WHY: most Groq models reject response_format json_schema, so ask for
+    // json_object mode and carry the schema in the prompt instead.
+    const jsonMode = this.settings.provider === "groq";
     try {
       const { output } = await generateText({
         model: this.model,
-        system: DIGEST_SYSTEM_PROMPT,
+        system: jsonMode ? jsonModeSystemPrompt() : DIGEST_SYSTEM_PROMPT,
         prompt: user,
+        ...(jsonMode
+          ? { providerOptions: { groq: { structuredOutputs: false } } }
+          : {}),
         output: Output.object({
           schema: digestSchema,
           name: "digest",

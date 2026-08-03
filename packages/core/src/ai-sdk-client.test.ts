@@ -284,6 +284,21 @@ describe("AISDKClient — Groq", () => {
     expect(captured[0]!.headers["cf-aig-authorization"]).toBe("Bearer gw-token");
   });
 
+  it("uses json_object mode with the schema in the prompt, never json_schema", async () => {
+    const { fetchImpl, captured } = makeFetch(() => openaiChatOk(validDigest));
+    const client = new AISDKClient(groqSettings, fetchImpl);
+    await client.digest("hello world", { url: "https://example.com" });
+
+    const body = captured[0]!.body as Record<string, unknown>;
+    const responseFormat = body.response_format as
+      | { type?: string }
+      | undefined;
+    expect(responseFormat?.type).not.toBe("json_schema");
+    const messages = body.messages as Array<{ role: string; content: string }>;
+    expect(messages[0]!.content).toContain("JSON");
+    expect(messages[0]!.content).toContain("takeaway");
+  });
+
   it("throws DigestError on malformed digest (bad tags)", async () => {
     const bad = { ...validDigest, tags: ["only-one"] };
     const { fetchImpl } = makeFetch(() => openaiChatOk(bad));
