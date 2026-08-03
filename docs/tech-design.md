@@ -17,7 +17,7 @@ Secondary goal: this is a deliberate playground for building a small **AI system
 **Goals**
 
 - Paste a URL → automatic content extraction → LLM digest (summary + takeaway + tags + question) → stored and browsable.
-- BYOK: I configure the provider (OpenAI/Anthropic) and my own API key in-app; calls routed through a gateway I control.
+- BYOK: I configure the provider (OpenAI/Anthropic/Groq) and my own API key in-app; calls routed through a gateway I control.
 - Cross-platform: web first, then desktop and mobile from the same codebase.
 - Runs on Cloudflare (Workers + D1 + AI Gateway).
 - Extensible toward agents: a digest agent and a chat agent.
@@ -124,9 +124,9 @@ Indexes: **unique on `canonical_url`** (dedupe — resubmitting a URL returns th
 
 | column                                            | notes                                                                                                         |
 | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| `provider`                                        | `openai` \| `anthropic`                                                                                       |
+| `provider`                                        | `openai` \| `anthropic` \| `groq`                                                                             |
 | `model`                                           | e.g. `gpt-4.1` / `claude-sonnet-4-6`                                                                          |
-| `api_key`                                         | BYOK; never returned unmasked; `PUT` is full-replace only ([ADR-0007](./adr/0007-single-user-local-first.md)) |
+| `api_key`                                         | BYOK; never returned unmasked; `PUT` full-replace except keep-key-when-routing-unchanged ([ADR-0007](./adr/0007-single-user-local-first.md)) |
 | `cf_account_id`, `cf_gateway_id`, `cf_aig_token?` | AI Gateway routing                                                                                            |
 | `created_at` / `updated_at`                       | epoch ms                                                                                                      |
 
@@ -145,7 +145,7 @@ All routes require `Authorization: Bearer <APP_TOKEN>` except `GET /api/health` 
 | POST   | `/api/entries/:id/reingest` | retry a `failed`/stale entry (re-extracts, re-digests, re-embeds)                                   |
 | GET    | `/api/search?q=`            | keyword search over `entries_fts` (M1; hybrid semantic search arrives with M3 tools)                |
 | GET    | `/api/settings`             | current config (key masked to last 4)                                                               |
-| PUT    | `/api/settings`             | update BYOK config — **full replace only**                                                          |
+| PUT    | `/api/settings`             | update BYOK config — full replace; `apiKey` omittable only if provider/account/gateway unchanged     |
 | POST   | `/api/settings/test`        | `LLMClient.ping()` — validate key/gateway                                                           |
 | GET    | `/api/health`               | liveness (no auth)                                                                                  |
 
@@ -262,7 +262,7 @@ Resolved in v2: ~~Pi namespace~~ (Pi dropped — [ADR-0002 v2](./adr/0002-ai-sta
 
 Still open:
 
-- Default provider/model for first run (decide at P5 integration; cosmetic).
+- ~~Default provider/model for first run~~ — resolved at P5: first provider is **OpenAI** via CF AI Gateway; model is entered at runtime in Settings (no hardcoded default).
 - AI SDK v7: evaluate after M1 ships (migration budget ~1 day; stay pinned to v6 until then).
 - M2 source strategy: which free sources + whether a search API (e.g. Brave free tier) is needed — decide at M2 kickoff.
 - M1.5: adopt AI Gateway gateway-stored provider keys (removes `api_key` from D1) — verify feature maturity then.

@@ -36,8 +36,10 @@ export interface CreateEntryResponse {
   status: EntryStatus;
 }
 
+export type LLMProvider = "openai" | "anthropic" | "groq";
+
 export interface SettingsDTO {
-  provider: "openai" | "anthropic";
+  provider: LLMProvider;
   model: string;
   apiKeyMasked: string;
   cfAccountId: string;
@@ -46,9 +48,11 @@ export interface SettingsDTO {
 }
 
 export interface SettingsInput {
-  provider: "openai" | "anthropic";
+  provider: LLMProvider;
   model: string;
-  apiKey: string;
+  // Omit to keep the stored key — allowed only when provider/cfAccountId/cfGatewayId
+  // are unchanged. Omit cfAigToken to keep the stored token; send "" to clear it.
+  apiKey?: string;
   cfAccountId: string;
   cfGatewayId: string;
   cfAigToken?: string;

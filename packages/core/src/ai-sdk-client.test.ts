@@ -72,6 +72,14 @@ const anthropicSettings: LLMSettings = {
   cfGatewayId: "gw",
 };
 
+const groqSettings: LLMSettings = {
+  provider: "groq",
+  model: "llama-3.3-70b-versatile",
+  apiKey: "gsk-test",
+  cfAccountId: "acct",
+  cfGatewayId: "gw",
+};
+
 const validDigest = {
   title: "Rust ownership rules",
   summary: "A short summary of ownership in Rust.",
@@ -237,5 +245,68 @@ describe("AISDKClient — Anthropic", () => {
     const client = new AISDKClient(anthropicSettings, fetchImpl);
     const result = await client.ping();
     expect(result.ok).toBe(false);
+  });
+});
+
+describe("AISDKClient — Groq", () => {
+  it("sends chat.completions request through the gateway", async () => {
+    const { fetchImpl, captured } = makeFetch(() => openaiChatOk(validDigest));
+    const client = new AISDKClient(groqSettings, fetchImpl);
+    const digest = await client.digest("hello world", {
+      url: "https://example.com",
+      title: "Ex",
+    });
+    expect(digest).toEqual(validDigest);
+    expect(captured).toHaveLength(1);
+    const req = captured[0]!;
+    // The groq provider default appends `/chat/completions` to the baseURL.
+    // We pass `…/groq` (no `/openai/v1`), so the final URL must be
+    // `…/groq/chat/completions`.
+    expect(req.url).toBe(
+      "https://gateway.ai.cloudflare.com/v1/acct/gw/groq/chat/completions",
+    );
+    expect(req.headers["authorization"]).toBe("Bearer gsk-test");
+    expect(req.headers["cf-aig-authorization"]).toBeUndefined();
+
+    const body = req.body as Record<string, unknown>;
+    expect(body.model).toBe("llama-3.3-70b-versatile");
+    const messages = body.messages as Array<{ role: string; content: unknown }>;
+    expect(messages[0]!.role).toBe("system");
+  });
+
+  it("sends cf-aig-authorization when token is set", async () => {
+    const { fetchImpl, captured } = makeFetch(() => openaiChatOk(validDigest));
+    const client = new AISDKClient(
+      { ...groqSettings, cfAigToken: "gw-token" },
+      fetchImpl,
+    );
+    await client.digest("hi", { url: "https://example.com" });
+    expect(captured[0]!.headers["cf-aig-authorization"]).toBe("Bearer gw-token");
+  });
+
+  it("throws DigestError on malformed digest (bad tags)", async () => {
+    const bad = { ...validDigest, tags: ["only-one"] };
+    const { fetchImpl } = makeFetch(() => openaiChatOk(bad));
+    const client = new AISDKClient(groqSettings, fetchImpl);
+    await expect(
+      client.digest("x", { url: "https://example.com" }),
+    ).rejects.toThrow(DigestError);
+  });
+
+  it("ping returns ok:false on 401 without throwing", async () => {
+    const { fetchImpl } = makeFetch(
+      () =>
+        new Response(
+          JSON.stringify({ error: { message: "Unauthorized" } }),
+          {
+            status: 401,
+            headers: { "content-type": "application/json" },
+          },
+        ),
+    );
+    const client = new AISDKClient(groqSettings, fetchImpl);
+    const result = await client.ping();
+    expect(result.ok).toBe(false);
+    expect(typeof result.detail).toBe("string");
   });
 });

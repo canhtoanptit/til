@@ -4,8 +4,44 @@ import { settings as settingsTable } from "@til/db";
 import { eq } from "drizzle-orm";
 import type { AppContextEnv } from "../deps.js";
 import { HttpError } from "../http-error.js";
-import { settingsSchema } from "../schemas.js";
+import { settingsSchema, type SettingsBody } from "../schemas.js";
 import { toLLMSettings, toSettingsDTO } from "../settings.js";
+
+interface StoredRouting {
+  provider: string;
+  apiKey: string;
+  cfAccountId: string;
+  cfGatewayId: string;
+}
+
+// WHY (ADR-0007 v2): the key is never readable through the API, so it may be kept
+// across a save only while the provider/gateway it is sent to stays identical —
+// otherwise a caller holding the app token could repoint routing and exfiltrate it.
+function resolveApiKey(
+  body: SettingsBody,
+  stored: StoredRouting | undefined,
+): string {
+  if (body.apiKey !== undefined) return body.apiKey;
+  if (!stored) {
+    throw new HttpError(
+      422,
+      "validation_error",
+      "apiKey is required — no settings are saved yet, so the provider API key must be supplied.",
+    );
+  }
+  const routingUnchanged =
+    stored.provider === body.provider &&
+    stored.cfAccountId === body.cfAccountId &&
+    stored.cfGatewayId === body.cfGatewayId;
+  if (!routingUnchanged) {
+    throw new HttpError(
+      422,
+      "validation_error",
+      "apiKey is required — provider, cfAccountId or cfGatewayId changed, so the key must be re-entered because gateway routing changed.",
+    );
+  }
+  return stored.apiKey;
+}
 
 export function createSettingsRouter() {
   const router = new Hono<AppContextEnv>();
@@ -27,7 +63,7 @@ export function createSettingsRouter() {
         throw new HttpError(
           422,
           "validation_error",
-          "Invalid settings body — provider, model, apiKey, cfAccountId, cfGatewayId are required.",
+          "Invalid settings body — provider, model, cfAccountId, cfGatewayId are required; apiKey, when present, must be non-empty.",
         );
       }
     }),
@@ -37,32 +73,49 @@ export function createSettingsRouter() {
       const now = deps.now();
 
       const existing = await deps.db
-        .select({ id: settingsTable.id })
+        .select({
+          id: settingsTable.id,
+          provider: settingsTable.provider,
+          apiKey: settingsTable.apiKey,
+          cfAccountId: settingsTable.cfAccountId,
+          cfGatewayId: settingsTable.cfGatewayId,
+          cfAigToken: settingsTable.cfAigToken,
+        })
         .from(settingsTable)
         .limit(1);
 
-      if (existing[0]) {
+      const stored = existing[0];
+      const apiKey = resolveApiKey(body, stored);
+      // WHY: absent → keep the stored token; explicit "" → clear it.
+      const cfAigToken =
+        body.cfAigToken === undefined
+          ? (stored?.cfAigToken ?? null)
+          : body.cfAigToken === ""
+            ? null
+            : body.cfAigToken;
+
+      if (stored) {
         await deps.db
           .update(settingsTable)
           .set({
             provider: body.provider,
             model: body.model,
-            apiKey: body.apiKey,
+            apiKey,
             cfAccountId: body.cfAccountId,
             cfGatewayId: body.cfGatewayId,
-            cfAigToken: body.cfAigToken ?? null,
+            cfAigToken,
             updatedAt: now,
           })
-          .where(eq(settingsTable.id, existing[0].id));
+          .where(eq(settingsTable.id, stored.id));
       } else {
         await deps.db.insert(settingsTable).values({
           id: 1,
           provider: body.provider,
           model: body.model,
-          apiKey: body.apiKey,
+          apiKey,
           cfAccountId: body.cfAccountId,
           cfGatewayId: body.cfGatewayId,
-          cfAigToken: body.cfAigToken ?? null,
+          cfAigToken,
           createdAt: now,
           updatedAt: now,
         });

@@ -1,4 +1,5 @@
 import { createAnthropic } from "@ai-sdk/anthropic";
+import { createGroq } from "@ai-sdk/groq";
 import { createOpenAI } from "@ai-sdk/openai";
 import type { LanguageModel } from "ai";
 import { generateText, Output } from "ai";
@@ -81,6 +82,15 @@ function createModel(
       fetch: fetchImpl,
     });
     return provider.chat(settings.model);
+  }
+  if (settings.provider === "groq") {
+    const provider = createGroq({
+      apiKey: settings.apiKey,
+      baseURL: base,
+      headers: aigHeaders(settings),
+      fetch: fetchImpl,
+    });
+    return provider(settings.model);
   }
   const provider = createAnthropic({
     apiKey: settings.apiKey,

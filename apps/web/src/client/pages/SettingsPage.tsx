@@ -1,16 +1,29 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState, type FormEvent } from "react";
-import { api, type SettingsInput } from "../api";
+import { api, type LLMProvider, type SettingsInput } from "../api";
 import { ErrorBanner, friendlyMessage } from "../components/ErrorBanner";
 import { Spinner } from "../components/Spinner";
 
 interface FormState {
-  provider: "openai" | "anthropic";
+  provider: LLMProvider;
   model: string;
   apiKey: string;
   cfAccountId: string;
   cfGatewayId: string;
   cfAigToken: string;
+}
+
+// Mirrors the server guard: the stored key may only be kept while these match.
+interface SavedRouting {
+  provider: LLMProvider;
+  cfAccountId: string;
+  cfGatewayId: string;
+}
+
+function providerPlaceholder(p: LLMProvider): string {
+  if (p === "openai") return "gpt-5-mini";
+  if (p === "anthropic") return "claude-4-7-sonnet";
+  return "llama-3.3-70b-versatile";
 }
 
 const EMPTY_FORM: FormState = {
@@ -32,6 +45,8 @@ export function SettingsPage() {
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [maskedKey, setMaskedKey] = useState<string>("");
   const [hasAigToken, setHasAigToken] = useState(false);
+  const [savedRouting, setSavedRouting] = useState<SavedRouting | null>(null);
+  const [clearAigToken, setClearAigToken] = useState(false);
 
   useEffect(() => {
     const s = settingsQuery.data;
@@ -46,6 +61,12 @@ export function SettingsPage() {
     });
     setMaskedKey(s.apiKeyMasked);
     setHasAigToken(s.hasAigToken);
+    setSavedRouting({
+      provider: s.provider,
+      cfAccountId: s.cfAccountId,
+      cfGatewayId: s.cfGatewayId,
+    });
+    setClearAigToken(false);
   }, [settingsQuery.data]);
 
   const saveMutation = useMutation({
@@ -55,6 +76,12 @@ export function SettingsPage() {
       setForm((f) => ({ ...f, apiKey: "", cfAigToken: "" }));
       setMaskedKey(data.apiKeyMasked);
       setHasAigToken(data.hasAigToken);
+      setSavedRouting({
+        provider: data.provider,
+        cfAccountId: data.cfAccountId,
+        cfGatewayId: data.cfGatewayId,
+      });
+      setClearAigToken(false);
       void qc.invalidateQueries({ queryKey: ["settings"] });
     },
   });
@@ -63,20 +90,33 @@ export function SettingsPage() {
     mutationFn: () => api.testSettings(),
   });
 
+  const routingChanged =
+    savedRouting !== null &&
+    (savedRouting.provider !== form.provider ||
+      savedRouting.cfAccountId !== form.cfAccountId.trim() ||
+      savedRouting.cfGatewayId !== form.cfGatewayId.trim());
+  const apiKeyRequired = savedRouting === null || routingChanged;
+
   function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    if (!form.model.trim() || !form.apiKey.trim() || !form.cfAccountId.trim() || !form.cfGatewayId.trim()) {
+    if (!form.model.trim() || !form.cfAccountId.trim() || !form.cfGatewayId.trim()) {
+      return;
+    }
+    const apiKey = form.apiKey.trim();
+    if (apiKeyRequired && !apiKey) {
       return;
     }
     const input: SettingsInput = {
       provider: form.provider,
       model: form.model.trim(),
-      apiKey: form.apiKey,
       cfAccountId: form.cfAccountId.trim(),
       cfGatewayId: form.cfGatewayId.trim(),
     };
+    if (apiKey) input.apiKey = apiKey;
     const t = form.cfAigToken.trim();
-    if (t) input.cfAigToken = t;
+    // "" is the explicit clear signal; omit the field entirely to keep the stored token.
+    if (clearAigToken) input.cfAigToken = "";
+    else if (t) input.cfAigToken = t;
     saveMutation.mutate(input);
   }
 
@@ -92,15 +132,15 @@ export function SettingsPage() {
     );
   }
 
-  const hasSaved = settingsQuery.data !== null;
+  const hasSaved = savedRouting !== null;
 
   return (
     <div className="space-y-6">
       <header>
         <h1 className="text-xl font-semibold">Settings</h1>
         <p className="mt-1 text-sm text-slate-600">
-          BYOK — your provider API key is stored on the server. Saving requires
-          re-entering the full key.
+          BYOK — your provider API key is stored on the server and is never sent
+          back to the browser. Leave the key blank to keep the saved one.
         </p>
       </header>
 
@@ -115,13 +155,14 @@ export function SettingsPage() {
             onChange={(e) =>
               setForm((f) => ({
                 ...f,
-                provider: e.target.value as "openai" | "anthropic",
+                provider: e.target.value as LLMProvider,
               }))
             }
             className="mt-1 w-full rounded border border-slate-300 bg-white px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
           >
-            <option value="openai">openai</option>
-            <option value="anthropic">anthropic</option>
+            <option value="openai">OpenAI</option>
+            <option value="anthropic">Anthropic</option>
+            <option value="groq">Groq</option>
           </select>
         </div>
 
@@ -135,19 +176,19 @@ export function SettingsPage() {
             required
             value={form.model}
             onChange={(e) => setForm((f) => ({ ...f, model: e.target.value }))}
-            placeholder={form.provider === "openai" ? "gpt-5-mini" : "claude-4-7-sonnet"}
+            placeholder={providerPlaceholder(form.provider)}
             className="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
           />
         </div>
 
         <div>
           <label htmlFor="apiKey" className="block text-sm font-medium text-slate-700">
-            API key
+            API key{hasSaved && !apiKeyRequired ? " (optional)" : ""}
           </label>
           <input
             id="apiKey"
             type="password"
-            required
+            required={apiKeyRequired}
             autoComplete="off"
             value={form.apiKey}
             onChange={(e) => setForm((f) => ({ ...f, apiKey: e.target.value }))}
@@ -156,7 +197,14 @@ export function SettingsPage() {
           />
           {hasSaved && (
             <p className="mt-1 text-xs text-slate-500">
-              A key is saved. Enter the full key to overwrite (partial updates aren't allowed).
+              Leave blank to keep the saved key. Required if you change provider,
+              account ID, or gateway ID.
+            </p>
+          )}
+          {routingChanged && (
+            <p className="mt-1 text-xs text-amber-700">
+              Provider, account ID, or gateway ID changed — re-enter the full API
+              key to save.
             </p>
           )}
         </div>
@@ -201,21 +249,35 @@ export function SettingsPage() {
             htmlFor="cfAigToken"
             className="block text-sm font-medium text-slate-700"
           >
-            AI gateway token (optional)
+            AI Gateway token (<code>cf-aig-authorization</code>)
           </label>
           <input
             id="cfAigToken"
             type="password"
             autoComplete="off"
+            disabled={clearAigToken}
             value={form.cfAigToken}
             onChange={(e) => setForm((f) => ({ ...f, cfAigToken: e.target.value }))}
-            placeholder={hasAigToken ? "•••• saved" : ""}
-            className="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
+            placeholder={hasAigToken ? "•••• saved" : "gateway token"}
+            className="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none disabled:bg-slate-100 disabled:text-slate-400"
           />
+          <p className="mt-1 text-xs text-slate-500">
+            Required if your gateway has Authenticated Gateway enabled. Leave blank
+            to keep the saved token.
+          </p>
           {hasAigToken && (
-            <p className="mt-1 text-xs text-slate-500">
-              A gateway token is saved. Leave blank to keep it; enter a value to overwrite.
-            </p>
+            <label className="mt-2 flex items-center gap-2 text-xs text-slate-600">
+              <input
+                type="checkbox"
+                checked={clearAigToken}
+                onChange={(e) => {
+                  setClearAigToken(e.target.checked);
+                  if (e.target.checked) setForm((f) => ({ ...f, cfAigToken: "" }));
+                }}
+                className="rounded border-slate-300"
+              />
+              Clear saved token (save to remove it)
+            </label>
           )}
         </div>
 

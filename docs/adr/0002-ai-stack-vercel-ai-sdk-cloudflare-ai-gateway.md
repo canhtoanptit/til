@@ -30,7 +30,7 @@ Use the **Vercel AI SDK** (`ai` v6, exact-pinned) as the model-access and orches
 
 | Capability          | Choice                                                                                                                                    |
 | ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| Model access (BYOK) | AI SDK provider packages (`@ai-sdk/openai`, `@ai-sdk/anthropic`), instantiated per request from `settings`, `baseURL` → CF AI Gateway     |
+| Model access (BYOK) | AI SDK provider packages (`@ai-sdk/openai`, `@ai-sdk/anthropic`, `@ai-sdk/groq` — Groq added post-P5 as the free-tier option), instantiated per request from `settings`, `baseURL` → CF AI Gateway |
 | Structured digest   | AI SDK structured output (v6 Output API; `generateObject` is deprecated)                                                                  |
 | Embeddings          | **Not** via the BYOK provider (Anthropic has no embeddings API) — Workers AI, see [ADR-0009](./0009-retrieval-insight-layer.md)           |
 | Retrieval & insight | Vectorize + D1 FTS5 + SQL tools, see [ADR-0009](./0009-retrieval-insight-layer.md)                                                        |

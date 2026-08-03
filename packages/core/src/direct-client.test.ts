@@ -60,6 +60,14 @@ const anthropicSettings: LLMSettings = {
   cfGatewayId: "gw",
 };
 
+const groqSettings: LLMSettings = {
+  provider: "groq",
+  model: "llama-3.3-70b-versatile",
+  apiKey: "gsk-test",
+  cfAccountId: "acct",
+  cfGatewayId: "gw",
+};
+
 const validDigest = {
   title: "Rust ownership rules",
   summary: "A short summary of ownership in Rust.",
@@ -261,6 +269,108 @@ describe("DirectLLMClient — Anthropic", () => {
       () => new Response("Unauthorized", { status: 401 }),
     );
     const client = new DirectLLMClient(anthropicSettings, fetchImpl);
+    const result = await client.ping();
+    expect(result.ok).toBe(false);
+    expect(result.detail).toContain("401");
+  });
+});
+
+describe("DirectLLMClient — Groq", () => {
+  it("sends the correct URL, headers, and body shape", async () => {
+    const { fetchImpl, captured } = makeFetch(() => openaiOk(validDigest));
+    const client = new DirectLLMClient(groqSettings, fetchImpl);
+    const digest = await client.digest("hello", {
+      url: "https://example.com",
+      title: "Ex",
+    });
+    expect(digest).toEqual(validDigest);
+    expect(captured).toHaveLength(1);
+    const req = captured[0]!;
+    expect(req.url).toBe(
+      "https://gateway.ai.cloudflare.com/v1/acct/gw/groq/chat/completions",
+    );
+    expect(req.headers["authorization"]).toBe("Bearer gsk-test");
+    expect(req.headers["content-type"]).toBe("application/json");
+    expect(req.headers["cf-aig-authorization"]).toBeUndefined();
+
+    const body = req.body as Record<string, unknown>;
+    expect(body.model).toBe("llama-3.3-70b-versatile");
+    const messages = body.messages as Array<{ role: string; content: string }>;
+    expect(messages[0]!.role).toBe("system");
+    // Groq json_object mode requires an explicit JSON instruction in messages;
+    // verify the system prompt embeds JSON directive + a schema-shaped field.
+    expect(messages[0]!.content).toContain("JSON");
+    expect(messages[0]!.content).toContain("takeaway");
+    expect(messages[1]!.role).toBe("user");
+    expect(messages[1]!.content).toContain("URL: https://example.com");
+    expect(messages[1]!.content).toContain("<article>");
+    const rf = body.response_format as Record<string, unknown>;
+    expect(rf.type).toBe("json_object");
+  });
+
+  it("sends cf-aig-authorization when cfAigToken is set", async () => {
+    const { fetchImpl, captured } = makeFetch(() => openaiOk(validDigest));
+    const client = new DirectLLMClient(
+      { ...groqSettings, cfAigToken: "gw-token" },
+      fetchImpl,
+    );
+    await client.digest("hello", { url: "https://example.com" });
+    expect(captured[0]!.headers["cf-aig-authorization"]).toBe("Bearer gw-token");
+  });
+
+  it("throws DigestError on malformed response (missing choices)", async () => {
+    const { fetchImpl } = makeFetch(() => jsonResponse({}));
+    const client = new DirectLLMClient(groqSettings, fetchImpl);
+    await expect(
+      client.digest("x", { url: "https://example.com" }),
+    ).rejects.toThrow(DigestError);
+  });
+
+  it("throws DigestError when content is not valid JSON", async () => {
+    const { fetchImpl } = makeFetch(() =>
+      jsonResponse({ choices: [{ message: { content: "not json" } }] }),
+    );
+    const client = new DirectLLMClient(groqSettings, fetchImpl);
+    await expect(
+      client.digest("x", { url: "https://example.com" }),
+    ).rejects.toThrow(DigestError);
+  });
+
+  it("throws DigestError when required fields are missing", async () => {
+    const bad = { ...validDigest, summary: undefined };
+    const { fetchImpl } = makeFetch(() => openaiOk(bad));
+    const client = new DirectLLMClient(groqSettings, fetchImpl);
+    await expect(
+      client.digest("x", { url: "https://example.com" }),
+    ).rejects.toThrow(DigestError);
+  });
+
+  it("throws DigestError on HTTP error", async () => {
+    const { fetchImpl } = makeFetch(
+      () => new Response("bad request", { status: 400 }),
+    );
+    const client = new DirectLLMClient(groqSettings, fetchImpl);
+    await expect(
+      client.digest("x", { url: "https://example.com" }),
+    ).rejects.toThrow(DigestError);
+  });
+
+  it("ping returns ok:true on 200", async () => {
+    const { fetchImpl, captured } = makeFetch(() => jsonResponse({}));
+    const client = new DirectLLMClient(groqSettings, fetchImpl);
+    const result = await client.ping();
+    expect(result.ok).toBe(true);
+    expect(captured[0]!.url).toBe(
+      "https://gateway.ai.cloudflare.com/v1/acct/gw/groq/chat/completions",
+    );
+    expect(captured[0]!.headers["authorization"]).toBe("Bearer gsk-test");
+  });
+
+  it("ping returns ok:false on 401 without throwing", async () => {
+    const { fetchImpl } = makeFetch(
+      () => new Response("Unauthorized", { status: 401 }),
+    );
+    const client = new DirectLLMClient(groqSettings, fetchImpl);
     const result = await client.ping();
     expect(result.ok).toBe(false);
     expect(result.detail).toContain("401");

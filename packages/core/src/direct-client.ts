@@ -29,6 +29,9 @@ export class DirectLLMClient implements LLMClient {
     if (this.settings.provider === "openai") {
       return this.digestOpenAI(user);
     }
+    if (this.settings.provider === "groq") {
+      return this.digestGroq(user);
+    }
     return this.digestAnthropic(user);
   }
 
@@ -48,10 +51,10 @@ export class DirectLLMClient implements LLMClient {
 
   private async pingRequest(): Promise<Response> {
     const base = gatewayBaseURL(this.settings);
-    if (this.settings.provider === "openai") {
+    if (this.settings.provider === "openai" || this.settings.provider === "groq") {
       return this.fetchImpl(`${base}/chat/completions`, {
         method: "POST",
-        headers: this.openAIHeaders(),
+        headers: this.bearerHeaders(),
         body: JSON.stringify({
           model: this.settings.model,
           max_tokens: 1,
@@ -74,7 +77,7 @@ export class DirectLLMClient implements LLMClient {
     const base = gatewayBaseURL(this.settings);
     const response = await this.fetchImpl(`${base}/chat/completions`, {
       method: "POST",
-      headers: this.openAIHeaders(),
+      headers: this.bearerHeaders(),
       body: JSON.stringify({
         model: this.settings.model,
         messages: [
@@ -109,6 +112,43 @@ export class DirectLLMClient implements LLMClient {
     } catch {
       throw new DigestError(
         "OpenAI response content was not valid JSON.",
+      );
+    }
+    return parseDigest(parsed);
+  }
+
+  private async digestGroq(user: string): Promise<Digest> {
+    const base = gatewayBaseURL(this.settings);
+    const response = await this.fetchImpl(`${base}/chat/completions`, {
+      method: "POST",
+      headers: this.bearerHeaders(),
+      body: JSON.stringify({
+        model: this.settings.model,
+        messages: [
+          { role: "system", content: groqSystemPrompt() },
+          { role: "user", content: user },
+        ],
+        response_format: { type: "json_object" },
+      }),
+    });
+
+    if (!response.ok) {
+      const detail = await safeReadText(response);
+      throw new DigestError(
+        `Groq request failed with HTTP ${response.status}${
+          detail ? `: ${detail}` : ""
+        }`,
+      );
+    }
+
+    const body = (await safeReadJson(response)) as unknown;
+    const content = extractOpenAIContent(body);
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(content);
+    } catch {
+      throw new DigestError(
+        "Groq response content was not valid JSON.",
       );
     }
     return parseDigest(parsed);
@@ -149,7 +189,7 @@ export class DirectLLMClient implements LLMClient {
     return parseDigest(input);
   }
 
-  private openAIHeaders(): Record<string, string> {
+  private bearerHeaders(): Record<string, string> {
     const headers: Record<string, string> = {
       "content-type": "application/json",
       authorization: `Bearer ${this.settings.apiKey}`,
@@ -239,4 +279,12 @@ async function safeReadJson(response: Response): Promise<unknown> {
 function describeError(err: unknown): string {
   if (err instanceof Error) return err.message;
   return String(err);
+}
+
+// Groq's json_object mode requires an explicit JSON instruction in the messages
+// and does not enforce a schema. We append the schema + a JSON-only directive to
+// the shared system prompt so the model has both the shape and the word "JSON".
+function groqSystemPrompt(): string {
+  const schema = JSON.stringify(DIGEST_JSON_SCHEMA);
+  return `${DIGEST_SYSTEM_PROMPT}\n\nReturn ONLY a single JSON object (no prose, no code fences) that conforms to this JSON schema:\n${schema}`;
 }

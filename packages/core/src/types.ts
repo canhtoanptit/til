@@ -7,7 +7,7 @@ export interface Digest {
 }
 
 export interface LLMSettings {
-  provider: "openai" | "anthropic";
+  provider: "openai" | "anthropic" | "groq";
   model: string;
   apiKey: string;
   cfAccountId: string;
