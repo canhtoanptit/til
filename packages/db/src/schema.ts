@@ -1,4 +1,12 @@
-import { sqliteTable, text, integer, uniqueIndex, index } from "drizzle-orm/sqlite-core";
+import { desc } from "drizzle-orm";
+import {
+  sqliteTable,
+  text,
+  integer,
+  real,
+  uniqueIndex,
+  index,
+} from "drizzle-orm/sqlite-core";
 
 export const entries = sqliteTable(
   "entries",
@@ -37,7 +45,47 @@ export const settings = sqliteTable("settings", {
   updatedAt: integer("updated_at").notNull(),
 });
 
+export const digests = sqliteTable(
+  "digests",
+  {
+    id: text("id").primaryKey(),
+    runAt: integer("run_at").notNull(),
+    windowDays: integer("window_days").notNull(),
+    status: text("status").notNull().default("pending"),
+    title: text("title"),
+    intro: text("intro"),
+    error: text("error"),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (t) => [index("digests_run_at_idx").on(desc(t.runAt))],
+);
+
+export const digestItems = sqliteTable(
+  "digest_items",
+  {
+    id: text("id").primaryKey(),
+    digestId: text("digest_id")
+      .notNull()
+      .references(() => digests.id, { onDelete: "cascade" }),
+    rank: integer("rank").notNull(),
+    title: text("title").notNull(),
+    url: text("url").notNull(),
+    sourceName: text("source_name").notNull(),
+    sourceDomain: text("source_domain").notNull(),
+    score: real("score").notNull(),
+    why: text("why"),
+    evidence: text("evidence").notNull().default("[]"),
+    createdAt: integer("created_at").notNull(),
+  },
+  (t) => [index("digest_items_digest_id_rank_idx").on(t.digestId, t.rank)],
+);
+
 export type Entry = typeof entries.$inferSelect;
 export type NewEntry = typeof entries.$inferInsert;
 export type Settings = typeof settings.$inferSelect;
 export type NewSettings = typeof settings.$inferInsert;
+export type DigestRun = typeof digests.$inferSelect;
+export type NewDigestRun = typeof digests.$inferInsert;
+export type DigestItem = typeof digestItems.$inferSelect;
+export type NewDigestItem = typeof digestItems.$inferInsert;

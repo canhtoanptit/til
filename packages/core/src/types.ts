@@ -29,3 +29,35 @@ export interface Extractor {
     url: string,
   ): Promise<{ markdown: string; title?: string }>;
 }
+
+export interface Candidate {
+  url: string;
+  title: string;
+  sourceName: string;
+  publishedAt: number;
+  popularity?: number;
+  snippet?: string;
+}
+
+export interface FetchCandidatesOptions {
+  windowDays: number;
+  limit: number;
+  fetchImpl?: typeof fetch;
+}
+
+export interface SourceAdapter {
+  readonly name: string;
+  fetchCandidates(opts: FetchCandidatesOptions): Promise<Candidate[]>;
+}
+
+export interface EvidenceCluster {
+  canonicalUrl: string;
+  title: string;
+  candidates: Candidate[];
+  sources: string[];
+  publishedAt: number;
+}
+
+export interface ScoredCluster extends EvidenceCluster {
+  score: number;
+}

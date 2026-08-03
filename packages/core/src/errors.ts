@@ -18,3 +18,13 @@ export class DigestError extends Error {
     this.name = "DigestError";
   }
 }
+
+export class SourceError extends Error {
+  readonly source: string;
+
+  constructor(source: string, message: string) {
+    super(message);
+    this.name = "SourceError";
+    this.source = source;
+  }
+}
