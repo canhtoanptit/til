@@ -345,19 +345,71 @@ P0 scaffold ──► P1 db ────┐
 
 ## 5. M2–M4 outline briefs (finalize after M1 retro)
 
-**M2 — digest pipeline (3 briefs).** Contracts to freeze first: `digests` table + DTO; Workflow step interfaces; source-adapter interface (`fetchCandidates(query, window): Candidate[]`).
+### M2 — digest pipeline (kickoff decisions made 2026-08-03: keyless sources; Cloudflare Workflows)
 
-- _P7 sources:_ HN/Reddit/web adapters behind the adapter interface (respect robots/ToS; free tiers only; decide search API at kickoff — TDR §16).
-- _P8 workflow:_ Cloudflare Workflow `digest-run` (plan → fetch per source → rank into evidence clusters → synthesize via `LLMClient` → store) + cron trigger + `GET/POST /api/digests*` routes. Durable steps, per-step retries.
-- _P9 UI:_ digest feed + detail views.
+**Source availability check (2026-08-03, binding):** Reddit **deprecated unauthenticated `.json` in May 2026** (403) and OAuth is closed to personal scripts — Reddit is OUT, and its RSS may close next. Verified-live keyless sources: **HN via Algolia** (`https://hn.algolia.com/api/v1/search_by_date`, no key, 10k req/hr/IP, supports `numericFilters=points>N`), **Lobsters** (`/hottest.json`, `/newest.json`), **arXiv** (Atom API), **RSS/Atom** (user-supplied feeds). Workflows confirmed to have full local support (`wrangler workflows … --local`, free plan OK).
 
-**M3 — chat agent (3 briefs).** Contracts to freeze first: tool schemas (`search_entries(query, topK, filters?)` hybrid Vectorize+FTS+RRF; `get_entry(id)`; `stats(kind, window)` SQL aggregations — all **read-only**); chat message DTO; DO binding name `CHAT`.
+#### C8 — `digests` schema (`packages/db`)
 
-- _P10 retrieval lib:_ hybrid search + RRF merge + stats queries in `packages/core` (pure functions over injected deps) + tests.
-- _P11 chat DO:_ Agents SDK `AIChatAgent`; hand-rolled bounded tool loop over AI SDK `streamText` (reference reading: `pi-agent-core` source; ADR-0005); tools from P10; session persistence; WebSocket/SSE endpoint.
-- _P12 chat UI:_ AI Elements or assistant-ui; token-authed connection; tool-call rendering.
+```ts
+digests: { id text pk, runAt integer, windowDays integer, status text('pending'|'ready'|'failed'),
+           title text, intro text, error text, createdAt integer, updatedAt integer }
+digestItems: { id text pk, digestId text → digests.id (cascade), rank integer, title text,
+               url text, sourceName text, sourceDomain text, score real, why text,
+               evidence text /* JSON: [{url,sourceName,title}] */, createdAt integer }
+// indexes: digests(runAt desc); digestItems(digestId, rank)
+```
 
-**M4 — distribution.** _P13:_ PWA manifest + service worker + installability audit. _P14:_ Tauri 2 wrap — configurable `VITE_API_BASE`, CORS middleware for the Tauri origin (ADR-0001), platform builds. Store distribution only if wanted.
+#### C9 — source adapter interface (`packages/core`)
+
+```ts
+export interface Candidate {
+  url: string; title: string; sourceName: string;   // 'hn' | 'lobsters' | 'arxiv' | 'rss:<host>'
+  publishedAt: number;                              // epoch ms
+  popularity?: number;                              // upvotes/points when the source exposes it
+  snippet?: string;
+}
+export interface SourceAdapter {
+  readonly name: string;
+  fetchCandidates(opts: { windowDays: number; limit: number; fetchImpl?: typeof fetch }): Promise<Candidate[]>;
+}
+// Pure ranking helpers (no I/O): clusterCandidates(cands) → EvidenceCluster[] (dedupe by canonical URL +
+// title similarity; merge cross-source hits), scoreClusters(clusters, opts) → ranked, recency+popularity+
+// cross-source-corroboration weighted. Adapters MUST be individually failure-isolated by the caller.
+```
+
+#### C10 — Workflow + API
+
+```
+Workflow binding DIGEST (class DigestWorkflow, wrangler workflows entry), cron: 0 8 * * 1 (weekly Mon 08:00 UTC)
+steps: plan(windowDays) → fetchSource(name) ×N (parallel, per-step retry, failures isolated)
+      → cluster+score (pure) → synthesize(topK via LLMClient) → persist(digests + digestItems)
+GET  /api/digests            ?limit=20 → { items: DigestSummaryDTO[] }
+GET  /api/digests/:id        → DigestDetailDTO (digest + ordered items)
+POST /api/digests/run        → 202 { id } (manual trigger; same Workflow)
+DELETE /api/digests/:id      → 204
+DigestSummaryDTO = { id, runAt, windowDays, status, title, intro, itemCount, error }
+DigestDetailDTO  = DigestSummaryDTO & { items: { rank, title, url, sourceName, sourceDomain, score, why, evidence }[] }
+```
+Auth + error envelope identical to C5. Synthesis prompt reuses the untrusted-content rule from C4 (candidate titles/snippets are untrusted data).
+
+**Briefs:** _P7 sources_ (`packages/core`: 4 adapters + clustering/scoring + tests, no CF deps) ∥ _P8 digests schema_ (`packages/db`: C8 migration + types). Then _P9 workflow+API_ (`apps/web`: Workflow class, cron, routes per C10) ∥ _P10 digest UI_ (`apps/web/src/client`: list + detail, manual run button, against C10).
+
+### M3 — chat agent
+
+Contracts to freeze at kickoff: tool schemas (`search_entries(query, topK, filters?)` hybrid vector+FTS+RRF; `get_entry(id)`; `stats(kind, window)` SQL aggregations — all **read-only**); chat message DTO; DO binding `CHAT`; **plus the local-stack seams** (`Embedder`: Ollama bge-m3 or remote Workers AI; `VectorStore`: `D1VectorStore` brute-force cosine locally vs `VectorizeStore` in prod — see the local-dev discussion, decided at M3 kickoff).
+
+- _P11 retrieval lib:_ hybrid search + RRF merge + stats queries in `packages/core` (pure functions over injected deps) + tests.
+- _P12 chat DO:_ Agents SDK `AIChatAgent`; hand-rolled bounded tool loop over AI SDK `streamText` (reference reading: `pi-agent-core` source; ADR-0005); tools from P11; session persistence; WebSocket/SSE endpoint.
+- _P13 chat UI:_ AI Elements or assistant-ui; token-authed connection; tool-call rendering.
+
+### M4 — distribution
+
+_P14:_ PWA manifest + service worker + installability audit. _P15:_ Tauri 2 wrap — configurable `VITE_API_BASE`, CORS middleware for the Tauri origin (ADR-0001), platform builds. Store distribution only if wanted.
+
+### P6 — deploy (moved to LAST, 2026-08-03)
+
+Per owner's decision to finish the full flow locally first, the deploy phase runs after M3 instead of after M1: create D1/Vectorize/`APP_TOKEN`, uncomment the AI + Vectorize bindings, swap local adapters for the CF impls, smoke-test, `wrangler deploy` (human-executed). Everything before it stays runnable offline.
 
 ---
 
