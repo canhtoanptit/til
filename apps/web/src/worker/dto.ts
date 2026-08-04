@@ -56,7 +56,9 @@ export interface DigestDetailDTO extends DigestSummaryDTO {
   items: DigestItemDTO[];
 }
 
-function parseTags(raw: string | null | undefined): string[] {
+/** Single definition of how the JSON `tags` column is read — retrieval and the
+ * stats aggregates share it so a count can never drift from a response. */
+export function parseTags(raw: string | null | undefined): string[] {
   if (!raw) return [];
   try {
     const parsed = JSON.parse(raw);

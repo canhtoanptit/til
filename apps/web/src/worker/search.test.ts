@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { buildTestApp, insertEntry } from "./test-harness.js";
+import {
+  buildTestApp,
+  insertEntry,
+  makeStubEmbedder,
+} from "./test-harness.js";
+import { indexEntry } from "./indexing.js";
 import { sanitizeFtsQuery } from "./search.js";
 
 describe("sanitizeFtsQuery", () => {
@@ -70,5 +75,83 @@ describe("GET /api/search", () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as { items: Array<{ id: string }> };
     expect(body.items.map((x) => x.id)).toContain("sql-1");
+  });
+
+  it("keeps the EntryDTO response shape after the hybrid upgrade", async () => {
+    const t = buildTestApp({ embedder: makeStubEmbedder([["rust"]], { dimensions: 4 }) });
+    await insertEntry(t.deps.db, {
+      id: "shape-1",
+      canonicalUrl: "https://example.com/shape",
+      url: "https://example.com/shape",
+      title: "Rust notes",
+      summary: "Rust ownership",
+      takeaway: "Ownership matters",
+      tags: ["rust"],
+    });
+    const res = await t.request("/api/search?q=rust");
+    const body = (await res.json()) as { items: Record<string, unknown>[] };
+    expect(Object.keys(body.items[0] ?? {}).sort()).toEqual([
+      "canonicalUrl",
+      "createdAt",
+      "error",
+      "id",
+      "question",
+      "sourceDomain",
+      "status",
+      "summary",
+      "tags",
+      "takeaway",
+      "title",
+      "updatedAt",
+      "url",
+    ]);
+  });
+
+  it("surfaces a semantic-only hit that FTS alone would miss", async () => {
+    const t = buildTestApp({
+      embedder: makeStubEmbedder([["kubernetes", "pods", "cluster"]], {
+        dimensions: 4,
+      }),
+    });
+    await insertEntry(t.deps.db, {
+      id: "k8s-1",
+      canonicalUrl: "https://example.com/k8s",
+      url: "https://example.com/k8s",
+      title: "Pods and nodes",
+      summary: "How the cluster places pods",
+      takeaway: "Scoring plugins pick the node",
+      tags: ["kubernetes"],
+    });
+    await indexEntry(t.deps, {
+      id: "k8s-1",
+      title: "Pods and nodes",
+      summary: "How the cluster places pods",
+      takeaway: "Scoring plugins pick the node",
+      tags: ["kubernetes"],
+      sourceDomain: "example.com",
+      createdAt: 1_700_000_000_000,
+    });
+
+    const res = await t.request("/api/search?q=kubernetes");
+    const body = (await res.json()) as { items: Array<{ id: string }> };
+    expect(body.items.map((x) => x.id)).toEqual(["k8s-1"]);
+  });
+
+  it("caps limit at the chat tool ceiling", async () => {
+    const t = buildTestApp();
+    for (let i = 0; i < 25; i += 1) {
+      await insertEntry(t.deps.db, {
+        id: `many-${i}`,
+        canonicalUrl: `https://example.com/many-${i}`,
+        url: `https://example.com/many-${i}`,
+        title: "Widget notes",
+        summary: "widget widget",
+        takeaway: "widgets",
+        tags: ["widget"],
+      });
+    }
+    const res = await t.request("/api/search?q=widget&limit=100");
+    const body = (await res.json()) as { items: unknown[] };
+    expect(body.items).toHaveLength(20);
   });
 });

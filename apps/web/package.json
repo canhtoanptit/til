@@ -13,14 +13,17 @@
   },
   "dependencies": {
     "@hono/zod-validator": "0.7.5",
+    "@mozilla/readability": "^0.6.0",
     "@tanstack/react-query": "5.101.4",
     "@til/core": "workspace:*",
     "@til/db": "workspace:*",
     "drizzle-orm": "^0.45.2",
     "hono": "4.12.33",
+    "linkedom": "^0.18.13",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "react-router": "8.3.0",
+    "turndown": "^7.2.4",
     "zod": "4.4.3"
   },
   "devDependencies": {
@@ -31,6 +34,7 @@
     "@types/node": "^26.1.2",
     "@types/react": "19.2.18",
     "@types/react-dom": "19.2.4",
+    "@types/turndown": "^5.0.6",
     "@vitejs/plugin-react": "6.0.5",
     "better-sqlite3": "^13.0.2",
     "tailwindcss": "4.3.3",

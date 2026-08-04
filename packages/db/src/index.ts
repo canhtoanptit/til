@@ -2,7 +2,13 @@ import type { D1Database } from "@cloudflare/workers-types";
 import { drizzle } from "drizzle-orm/d1";
 import * as schema from "./schema.js";
 
-export { entries, settings, digests, digestItems } from "./schema.js";
+export {
+  entries,
+  settings,
+  digests,
+  digestItems,
+  entryVectors,
+} from "./schema.js";
 export type {
   Entry,
   NewEntry,
@@ -12,6 +18,8 @@ export type {
   NewDigestRun,
   DigestItem,
   NewDigestItem,
+  EntryVector,
+  NewEntryVector,
 } from "./schema.js";
 
 export function createDb(d1: D1Database) {

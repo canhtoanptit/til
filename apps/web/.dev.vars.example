@@ -1,1 +1,13 @@
 APP_TOKEN=dev-token
+
+# ADR-0010: which adapter set to run. `local` = Readability extraction +
+# Ollama bge-m3 + D1VectorStore (works fully offline). `cloud` = env.AI
+# toMarkdown + Workers AI bge-m3 + Vectorize, which needs those bindings
+# uncommented in wrangler.jsonc plus CLOUDFLARE_API_TOKEN. Unset means `local`.
+TIL_STACK=local
+
+# Where the local embedder lives; defaults to http://localhost:11434.
+# Requires `ollama pull bge-m3`. If Ollama is not running, ingest still
+# succeeds but entries stay unindexed and GET /api/health reports
+# `embedder: "unavailable"` — POST /api/entries/reembed backfills them later.
+OLLAMA_BASE_URL=http://localhost:11434

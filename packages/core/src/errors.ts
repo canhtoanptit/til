@@ -19,6 +19,13 @@ export class DigestError extends Error {
   }
 }
 
+export class EmbeddingError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "EmbeddingError";
+  }
+}
+
 export class SourceError extends Error {
   readonly source: string;
 

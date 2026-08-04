@@ -81,6 +81,17 @@ export const digestItems = sqliteTable(
   (t) => [index("digest_items_digest_id_rank_idx").on(t.digestId, t.rank)],
 );
 
+export const entryVectors = sqliteTable("entry_vectors", {
+  entryId: text("entry_id")
+    .primaryKey()
+    .references(() => entries.id, { onDelete: "cascade" }),
+  embedModel: text("embed_model").notNull(),
+  dims: integer("dims").notNull(),
+  // JSON-encoded number[]; D1 has no array/vector type and cannot load sqlite-vec.
+  values: text("values").notNull(),
+  createdAt: integer("created_at").notNull(),
+});
+
 export type Entry = typeof entries.$inferSelect;
 export type NewEntry = typeof entries.$inferInsert;
 export type Settings = typeof settings.$inferSelect;
@@ -89,3 +100,5 @@ export type DigestRun = typeof digests.$inferSelect;
 export type NewDigestRun = typeof digests.$inferInsert;
 export type DigestItem = typeof digestItems.$inferSelect;
 export type NewDigestItem = typeof digestItems.$inferInsert;
+export type EntryVector = typeof entryVectors.$inferSelect;
+export type NewEntryVector = typeof entryVectors.$inferInsert;

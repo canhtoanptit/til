@@ -6,7 +6,7 @@ describe("auth middleware", () => {
     const t = buildTestApp();
     const res = await t.request("/api/health", { auth: false });
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ ok: true });
+    expect(await res.json()).toMatchObject({ ok: true });
   });
 
   it("rejects protected route without token", async () => {

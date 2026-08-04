@@ -1,9 +1,8 @@
 import { entries, settings as settingsTable } from "@til/db";
 import { eq } from "drizzle-orm";
 import type { Deps } from "./deps.js";
+import { indexEntry } from "./indexing.js";
 import { toLLMSettings } from "./settings.js";
-
-const EMBED_MODEL = "bge-m3";
 
 export async function ingestEntry(deps: Deps, entryId: string): Promise<void> {
   const beforeRows = await deps.db
@@ -42,34 +41,17 @@ export async function ingestEntry(deps: Deps, entryId: string): Promise<void> {
       })
       .where(eq(entries.id, entryId));
 
-    if (deps.vectorize) {
-      try {
-        const vec = await deps.embed({
-          title: digest.title,
-          summary: digest.summary,
-          takeaway: digest.takeaway,
-          tags: digest.tags,
-        });
-        if (vec) {
-          await deps.vectorize.upsert([
-            {
-              id: entryId,
-              values: vec,
-              metadata: {
-                domain: entry.sourceDomain ?? "",
-                createdAt: entry.createdAt,
-                embedModel: EMBED_MODEL,
-              },
-            },
-          ]);
-        }
-      } catch (err) {
-        console.warn(
-          `[ingest ${entryId}] vectorize upsert failed (non-fatal):`,
-          err instanceof Error ? err.message : String(err),
-        );
-      }
-    }
+    // WHY: indexing is deliberately after the `ready` write and never throws —
+    // an unindexed entry is a search gap, not a failed capture (ADR-0010).
+    await indexEntry(deps, {
+      id: entryId,
+      title: digest.title,
+      summary: digest.summary,
+      takeaway: digest.takeaway,
+      tags: digest.tags,
+      sourceDomain: entry.sourceDomain ?? null,
+      createdAt: entry.createdAt,
+    });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error(`[ingest ${entryId}] failed:`, message);

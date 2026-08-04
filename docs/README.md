@@ -25,6 +25,7 @@ Start with the **[Technical Design (TDR)](./tech-design.md)** for the full pictu
 | [adr/0007](./adr/0007-single-user-local-first.md)                      | Single-tenant self-hosted; auth before deploy; BYOK key at rest                                           |
 | [adr/0008](./adr/0008-monorepo-pnpm-turborepo.md)                      | Repository: pnpm workspaces + Turborepo                                                                   |
 | [adr/0009](./adr/0009-retrieval-insight-layer.md)                      | Retrieval & insight: Workers AI embeddings + Vectorize + D1 FTS5                                          |
+| [adr/0010](./adr/0010-dual-mode-local-cloud-stack.md)                  | Dual-mode stack: `TIL_STACK=local` (Readability + Ollama + D1 cosine) vs `cloud`                          |
 
 ## Decision summary
 

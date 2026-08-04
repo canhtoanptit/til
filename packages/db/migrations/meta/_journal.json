@@ -15,6 +15,13 @@
       "when": 1785755168949,
       "tag": "0002_digests",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1785828999528,
+      "tag": "0003_vectors",
+      "breakpoints": true
     }
   ]
 }

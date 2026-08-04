@@ -240,11 +240,12 @@ describe("GET /api/entries/:id", () => {
 });
 
 describe("DELETE /api/entries/:id", () => {
-  it("deletes and calls vectorize.deleteByIds", async () => {
+  it("deletes and calls vectorStore.deleteByIds", async () => {
     const calls: string[][] = [];
     const t = buildTestApp({
-      vectorize: {
+      vectorStore: {
         upsert: async () => {},
+        query: async () => [],
         deleteByIds: async (ids) => {
           calls.push(ids);
         },

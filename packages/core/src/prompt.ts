@@ -6,7 +6,11 @@ import type {
   SynthesisInput,
 } from "./types.js";
 
-export const MAX_MARKDOWN_CHARS = 48_000;
+// WHY: ~24k chars is roughly 6k tokens, which fits inside free-tier per-minute
+// token limits (Groq's is 12k TPM) with room for the response. 48k chars made
+// long articles fail outright with a rate-limit error, and a digest of the first
+// 4,000 words beats no digest at all.
+export const MAX_MARKDOWN_CHARS = 24_000;
 
 export const DIGEST_TOOL_NAME = "record_digest";
 export const DIGEST_TOOL_DESCRIPTION =

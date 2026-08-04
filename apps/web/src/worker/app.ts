@@ -24,7 +24,18 @@ export function createApp(depsFor: (c: { env: unknown; executionCtx: unknown }) 
 
   app.use("*", createBearerAuth<AppContextEnv>());
 
-  app.get("/api/health", (c) => c.json({ ok: true }));
+  app.get("/api/health", async (c) => {
+    const deps = c.get("deps");
+    // WHY: unauthenticated, and the only place the silent "entries are saved but
+    // unindexed" failure of ADR-0010 becomes visible — so it must never throw.
+    let embedder: "ok" | "unavailable" = "unavailable";
+    try {
+      embedder = await deps.probeEmbedder();
+    } catch {
+      embedder = "unavailable";
+    }
+    return c.json({ ok: true, stack: deps.stack, embedder });
+  });
 
   app.route("/api/entries", createEntriesRouter());
   app.route("/api/search", createSearchRouter());

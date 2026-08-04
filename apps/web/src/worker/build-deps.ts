@@ -3,43 +3,39 @@ import { createLLMClient } from "@til/core";
 import type { Deps } from "./deps.js";
 import { createDefaultAdapters, type DigestWorkflowBinding } from "./digest.js";
 import type { Env } from "./env.js";
-import { selectExtractor } from "./extractors.js";
 import { fetchPage } from "./fetch-page.js";
-import { embeddingTextFor, WorkersAIEmbedder } from "./vectorize.js";
+import { resolveStack } from "./stack.js";
 
 export interface ExecCtx {
   waitUntil: (p: Promise<unknown>) => void;
 }
 
 export function buildDeps(env: Env, ctx: ExecCtx): Deps {
-  // WHY: `env.AI` and `env.VECTORIZE` bindings are commented out in wrangler.jsonc
-  // for local dev; the typed shape claims they exist. Guard at runtime.
-  const ai = (env as unknown as { AI?: unknown }).AI ?? null;
-  const vectorize =
-    (env as unknown as { VECTORIZE?: unknown }).VECTORIZE ?? null;
   // WHY: typed as always present, but absent at runtime whenever the workflows
   // binding is not configured (e.g. a stripped-down local dev config).
   const digestWorkflow: DigestWorkflowBinding | null = env.DIGEST ?? null;
   const db = createDb(env.DB);
-  const extractor = selectExtractor(ai);
-  const embedder = ai ? new WorkersAIEmbedder(ai as never) : null;
+  const now = () => Date.now();
+  const fetchImpl = (typeof fetch === "function"
+    ? fetch.bind(globalThis)
+    : globalThis.fetch) as typeof fetch;
+  // WHY: `env.AI`/`env.VECTORIZE` are typed as always present, but their
+  // bindings stay commented out in wrangler.jsonc — resolveStack guards at
+  // runtime and leaves the corresponding adapter null.
+  const stack = resolveStack(env, { db, fetchImpl, now });
 
   return {
     db,
-    now: () => Date.now(),
+    now,
+    stack: stack.mode,
     llmFactory: (settings) => createLLMClient(settings),
-    extractor,
-    vectorize: (vectorize as Deps["vectorize"]) ?? null,
-    embed: async (input) => {
-      if (!embedder) return null;
-      const text = embeddingTextFor(input);
-      return embedder.embed(text);
-    },
+    extractor: stack.extractor,
+    embedder: stack.embedder,
+    vectorStore: stack.vectorStore,
+    probeEmbedder: stack.probeEmbedder,
     fetchPage,
     waitUntil: (p) => ctx.waitUntil(p),
-    fetchImpl: (typeof fetch === "function"
-      ? fetch.bind(globalThis)
-      : globalThis.fetch) as typeof fetch,
+    fetchImpl,
     adapters: createDefaultAdapters,
     digestWorkflow,
   };

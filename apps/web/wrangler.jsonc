@@ -27,11 +27,17 @@
     // M2: weekly "interesting things" digest, Monday 08:00 UTC.
     "crons": ["0 8 * * 1"],
   },
-  // P3: enable — the AI binding has no local emulation and requires
+  "vars": {
+    // ADR-0010: the deployed default. There is no Ollama at the edge, so a
+    // deploy must run the Workers AI + Vectorize adapters. Local dev overrides
+    // this to "local" via .dev.vars; unset resolves to "local".
+    "TIL_STACK": "cloud",
+  },
+  // P6 (deploy): enable — the AI binding has no local emulation and requires
   // CLOUDFLARE_API_TOKEN + a remote proxy session, which blocks unauthenticated
-  // local `vite dev`. Turn this on when wiring the summarize/RAG path.
+  // local `vite dev`. Until then TIL_STACK=cloud degrades to a null embedder.
   // "ai": { "binding": "AI" }
-  // P3: enable — Vectorize has no local emulation in miniflare/wrangler dev.
-  // Leaving this out until P3 wires the RAG path against a real remote index.
+  // P6 (deploy): enable — Vectorize has no local emulation in miniflare/wrangler
+  // dev, so `local` mode uses the D1VectorStore instead.
   // "vectorize": [{ "binding": "VECTORIZE", "index_name": "til-entries" }]
 }

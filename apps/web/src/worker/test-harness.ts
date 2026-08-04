@@ -9,17 +9,21 @@ import { createApp } from "./app.js";
 import type { Deps, FetchPageFn } from "./deps.js";
 import type {
   Candidate,
+  Embedder,
   Extractor,
   LLMClient,
   SourceAdapter,
+  StackMode,
+  VectorStore,
 } from "@til/core";
+import { EMBEDDING_DIMENSIONS, normalizeVector } from "@til/core";
 import type {
   DigestRunParams,
   DigestStep,
   DigestStepConfig,
   DigestWorkflowBinding,
 } from "./digest.js";
-import type { VectorizeLike } from "./vectorize.js";
+import { D1VectorStore } from "./vector-store.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const migrationsDir = resolve(__dirname, "../../../../packages/db/migrations");
@@ -49,10 +53,12 @@ export function createTestDb(): TestDbBundle {
 
 export interface TestOverrides {
   now?: () => number;
+  stack?: StackMode;
   extractor?: Extractor;
   llmFactory?: Deps["llmFactory"];
-  vectorize?: VectorizeLike | null;
-  embed?: Deps["embed"];
+  embedder?: Embedder | null;
+  vectorStore?: VectorStore | null;
+  probeEmbedder?: Deps["probeEmbedder"];
   fetchPage?: FetchPageFn;
   fetchImpl?: typeof fetch;
   waitUntil?: (p: Promise<unknown>) => void;
@@ -60,6 +66,54 @@ export interface TestOverrides {
   adapters?: Deps["adapters"];
   digestWorkflow?: DigestWorkflowBinding | null;
 }
+
+/**
+ * Deterministic stand-in for bge-m3: every text is projected onto a fixed set of
+ * "topic" axes by keyword, so semantically related texts land close together
+ * without a model. Unit-length, like every real Embedder.
+ */
+export function makeStubEmbedder(
+  topics: string[][],
+  opts: { dimensions?: number; onEmbed?: (texts: string[]) => void } = {},
+): Embedder {
+  const dimensions = opts.dimensions ?? EMBEDDING_DIMENSIONS;
+  return {
+    model: "stub-embed",
+    dimensions,
+    embed: async (texts) => {
+      opts.onEmbed?.(texts);
+      return texts.map((text) => {
+        const lower = text.toLowerCase();
+        const raw: number[] = new Array<number>(dimensions).fill(0);
+        topics.forEach((words, axis) => {
+          if (axis >= dimensions) return;
+          let hits = 0;
+          for (const word of words) {
+            if (lower.includes(word)) hits += 1;
+          }
+          raw[axis] = hits;
+        });
+        // WHY: an all-zero vector scores 0 against everything, which would make
+        // "no keyword matched" indistinguishable from "vector store empty".
+        let total = 0;
+        for (const value of raw) total += value;
+        if (total === 0) raw[dimensions - 1] = 1;
+        return normalizeVector(raw);
+      });
+    },
+  };
+}
+
+export function makeThrowingEmbedder(message = "ollama unreachable"): Embedder {
+  return {
+    model: "stub-embed",
+    dimensions: EMBEDDING_DIMENSIONS,
+    embed: async () => {
+      throw new Error(message);
+    },
+  };
+}
+
 
 export function makeStubLLM(overrides?: Partial<LLMClient>): LLMClient {
   return {
@@ -167,13 +221,27 @@ export function makeStubExtractor(): Extractor {
 export function buildTestApp(overrides: TestOverrides = {}) {
   const { db } = createTestDb();
   const waitPromises: Promise<unknown>[] = [];
+  const now = overrides.now ?? (() => 1_700_000_000_000);
+  const embedder = overrides.embedder ?? null;
+  // WHY: a vector store without an embedder is dead weight, so default the store
+  // on only when a test supplies an embedder — mirrors how resolveStack pairs them.
+  const vectorStore =
+    overrides.vectorStore === undefined
+      ? embedder === null
+        ? null
+        : new D1VectorStore(db, embedder.dimensions, now)
+      : overrides.vectorStore;
   const deps: Deps = {
     db,
-    now: overrides.now ?? (() => 1_700_000_000_000),
+    now,
+    stack: overrides.stack ?? "local",
     llmFactory: overrides.llmFactory ?? (() => makeStubLLM()),
     extractor: overrides.extractor ?? makeStubExtractor(),
-    vectorize: overrides.vectorize ?? null,
-    embed: overrides.embed ?? (async () => null),
+    embedder,
+    vectorStore,
+    probeEmbedder:
+      overrides.probeEmbedder ??
+      (async () => (embedder === null ? "unavailable" : "ok")),
     fetchPage:
       overrides.fetchPage ??
       (async () => ({

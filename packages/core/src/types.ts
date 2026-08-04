@@ -75,6 +75,37 @@ export interface SourceAdapter {
   fetchCandidates(opts: FetchCandidatesOptions): Promise<Candidate[]>;
 }
 
+export type StackMode = "local" | "cloud";
+
+// Implementations MUST return L2-normalized (unit-length) vectors (ADR-0010) so
+// that cosine similarity reduces to a dot product and both stacks rank alike.
+export interface Embedder {
+  readonly model: string;
+  readonly dimensions: number;
+  embed(texts: string[]): Promise<number[][]>;
+}
+
+export interface VectorMatch {
+  id: string;
+  score: number;
+}
+
+export interface VectorRecord {
+  id: string;
+  values: number[];
+  metadata: {
+    domain: string;
+    createdAt: number;
+    embedModel: string;
+  };
+}
+
+export interface VectorStore {
+  upsert(vectors: VectorRecord[]): Promise<void>;
+  query(values: number[], opts: { topK: number }): Promise<VectorMatch[]>;
+  deleteByIds(ids: string[]): Promise<void>;
+}
+
 export interface EvidenceCluster {
   canonicalUrl: string;
   title: string;

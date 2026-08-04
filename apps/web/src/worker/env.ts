@@ -7,4 +7,6 @@ export interface Env {
   ASSETS: Fetcher;
   APP_TOKEN: string;
   DIGEST: Workflow<DigestRunParams>;
+  TIL_STACK?: string;
+  OLLAMA_BASE_URL?: string;
 }

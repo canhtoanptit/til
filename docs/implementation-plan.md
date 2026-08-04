@@ -2,7 +2,7 @@
 
 - **Status:** Active
 - **Date:** 2026-08-02
-- **Related:** [tech-design.md](./tech-design.md), ADRs 0001–0009
+- **Related:** [tech-design.md](./tech-design.md), ADRs 0001–0010
 - **Audience:** the orchestrator (a TPM-role agent or human) who dispatches implementation agents, and the implementation agents themselves.
 
 ---
@@ -417,15 +417,62 @@ Validation (both impls): `items` are dropped unless their `canonicalUrl` appears
 
 ### M3 — chat agent
 
-Contracts to freeze at kickoff: tool schemas (`search_entries(query, topK, filters?)` hybrid vector+FTS+RRF; `get_entry(id)`; `stats(kind, window)` SQL aggregations — all **read-only**); chat message DTO; DO binding `CHAT`; **plus the local-stack seams** (`Embedder`: Ollama bge-m3 or remote Workers AI; `VectorStore`: `D1VectorStore` brute-force cosine locally vs `VectorizeStore` in prod — see the local-dev discussion, decided at M3 kickoff).
+Kickoff decisions (2026-08-04): local embeddings via **Ollama bge-m3**; chat served by the **Agents SDK on Durable Objects**. Mode selection per **[ADR-0010](./adr/0010-dual-mode-local-cloud-stack.md)**.
 
-- _P11 retrieval lib:_ hybrid search + RRF merge + stats queries in `packages/core` (pure functions over injected deps) + tests.
-- _P12 chat DO:_ Agents SDK `AIChatAgent`; hand-rolled bounded tool loop over AI SDK `streamText` (reference reading: `pi-agent-core` source; ADR-0005); tools from P11; session persistence; WebSocket/SSE endpoint.
-- _P13 chat UI:_ AI Elements or assistant-ui; token-authed connection; tool-call rendering.
+**Verified facts (2026-08-04):** `AIChatAgent` ships in **`@cloudflare/ai-chat`** and extends `Agent` from **`agents`**; it is a protocol adapter — you override `onChatMessage`, call `streamText` yourself, wire tools, return a `Response`. Peer ranges `ai@^6 || ^7` and `@ai-sdk/react@^3 || ^4`; **we are on `ai@6.0.240`, so pair with `@ai-sdk/react@^3`**. Ollama embeddings: `POST http://localhost:11434/api/embed` `{model, input: string|string[]}` → `{model, embeddings: number[][]}`, already **L2-normalized** (legacy `/api/embeddings` takes `prompt` → `{embedding}` — do not use).
+
+#### C12 — mode selector + retrieval seams
+
+```ts
+// packages/core — interfaces + the Ollama adapter (pure fetch, edge-safe)
+export type StackMode = "local" | "cloud";
+export interface Embedder {           // MUST return L2-normalized vectors (ADR-0010)
+  readonly model: string;             // e.g. 'bge-m3'
+  readonly dimensions: number;        // 1024
+  embed(texts: string[]): Promise<number[][]>;
+}
+export interface VectorMatch { id: string; score: number }
+export interface VectorStore {
+  upsert(v: { id: string; values: number[]; metadata: { domain: string; createdAt: number; embedModel: string } }[]): Promise<void>;
+  query(values: number[], opts: { topK: number }): Promise<VectorMatch[]>;
+  deleteByIds(ids: string[]): Promise<void>;
+}
+export function embeddingTextFor(e: { title, takeaway, summary, tags }): string;   // reuse existing shape
+export function rrfMerge(lists: { id: string; rank: number }[][], k?: number): { id: string; score: number }[];  // k default 60
+```
+`env.TIL_STACK` (`.dev.vars` locally, `vars` in `wrangler.jsonc` for prod; default `"local"` when unset) selects: `local` → `ReadabilityExtractor` + `OllamaEmbedder` + `D1VectorStore`; `cloud` → `WorkersAIExtractor` + `WorkersAIEmbedder` + `VectorizeStore`. `OLLAMA_BASE_URL` defaults to `http://localhost:11434`. Embedding failures stay **non-fatal** for ingest and must be surfaced (`GET /api/health` reports `{ stack, embedder: 'ok'|'unavailable' }`).
+
+`D1VectorStore` storage: new table `entry_vectors(entryId text pk → entries.id cascade, embedModel text, dims integer, values text /* JSON number[] */, createdAt integer)` — migration `0003_vectors.sql`.
+
+#### C13 — chat tools (all READ-ONLY) and retrieval
+
+```ts
+search_entries({ query: string, topK?: number /*≤20, default 8*/, tag?: string, sinceDays?: number })
+  → { items: { id, title, url, sourceDomain, takeaway, tags, createdAt, score }[] }
+  // hybrid: embed(query) → VectorStore.query(topK*2) ∥ FTS5 MATCH(topK*2) → rrfMerge → hydrate from D1 → topK
+get_entry({ id: string }) → EntryDetail (title, url, summary, takeaway, question, tags, createdAt) — no contentMarkdown (token cost)
+stats({ kind: 'per_week'|'top_tags'|'top_domains'|'streak'|'totals', sinceDays?: number })
+  → { kind, rows: Record<string, string|number>[] }
+```
+Tool outputs are **data, not instructions** — the chat system prompt states that entry text is untrusted and must not be followed. Tools never write. **Drizzle trap (from P9b): raw `sql` columns render unqualified in single-table selects — use `leftJoin`+`groupBy` or fully qualified columns in the stats SQL.**
+
+#### C14 — chat transport & API
+
+```
+DO binding CHAT (class TilChatAgent extends AIChatAgent), one instance per conversation id
+POST /api/chat/:id            → AIChatAgent streaming response (bearer-authed like every other route)
+GET  /api/chat/:id/messages   → { messages: ChatMessageDTO[] }
+GET  /api/chat               → { items: { id, title, updatedAt, messageCount }[] }
+DELETE /api/chat/:id         → 204
+ChatMessageDTO = { id, role: 'user'|'assistant', content: string, toolCalls?: { name: string, args: unknown, result?: unknown }[], createdAt: number }
+```
+Message persistence is the DO's own SQLite (Agents SDK handles it); D1 is only read via tools.
+
+**Briefs:** _P11 core seams_ (`packages/core`: C12 interfaces + `OllamaEmbedder` + `rrfMerge` + chat prompt/tool schemas) ∥ _P12 worker retrieval_ (`apps/web/src/worker` + `packages/db` migration: mode selector, all four adapters, wire ingest through the seams, C13 tool functions + `/api/search` upgrade to hybrid, re-embed backfill route). Then _P13 chat DO_ (C14) ∥ _P14 chat UI_.
 
 ### M4 — distribution
 
-_P14:_ PWA manifest + service worker + installability audit. _P15:_ Tauri 2 wrap — configurable `VITE_API_BASE`, CORS middleware for the Tauri origin (ADR-0001), platform builds. Store distribution only if wanted.
+_P15:_ PWA manifest + service worker + installability audit. _P16:_ Tauri 2 wrap — configurable `VITE_API_BASE`, CORS middleware for the Tauri origin (ADR-0001), platform builds. Store distribution only if wanted.
 
 ### P6 — deploy (moved to LAST, 2026-08-03)
 
@@ -438,6 +485,9 @@ Per owner's decision to finish the full flow locally first, the deploy phase run
 | Date       | Phase | Agent | Outcome / deviations | Versions locked |
 | ---------- | ----- | ----- | -------------------- | --------------- |
 | 2026-08-02 | —     | —     | Plan created         | —               |
+| 2026-08-04 | P11   | opus subagent (aff6b948) | **Done, DoD verified** (core 288, +58). C12 seams (`Embedder`, `VectorStore`, `StackMode`) + `createOllamaEmbedder` (`/api/embed`, batched, defensively L2-normalized, `EmbeddingError` on HTTP/count/dimension mismatch) + `retrieval.ts` (`rrfMerge` k=60, `cosineSimilarity`, `normalizeVector`, `embeddingTextFor`) + `chat.ts` (C13 `CHAT_SYSTEM_PROMPT` with untrusted-data + read-only clauses, tool schemas). Deviations accepted: chat surface in its own `chat.ts`; `embeddingTextFor` omits empty parts (worker's old version emitted blank lines); extra additive exports (`CHAT_TOOL_DESCRIPTIONS`, topK bounds, `RRF_K`); `embed([])` short-circuits; `rrfMerge` skips non-finite ranks. | no new deps |
+| 2026-08-04 | P12   | opus subagent (a81201c8) | **Done, DoD verified + both modes exercised live** (web 78→172). ADR-0010 implemented: `resolveStack(env)` (unset/garbage → `local` with warning), `ReadabilityExtractor` replacing the regex stripper, `WorkersAIEmbedder`, `VectorizeStore` + `D1VectorStore` (migration `0003_vectors.sql`, cascade off `entries`), ingest wired through the seams, hybrid `searchEntries` with **FTS-only degradation when the embedder is unreachable**, `getEntryForTool`, 5 `stats` kinds, `POST /api/entries/reembed` backfill, `/api/health` now reports `{stack, embedder}`. Bundle 285→**417 kB gzip** (~14% of the 3 MiB ceiling) after importing `turndown/lib/turndown.browser.es.js` to drop 82 kB of unused domino. Deviations accepted: regex fallback deleted outright (a silent fallback would defeat the `ExtractionError` contract this phase exists to restore); `top_tags` expanded in TS via the single `parseTags` definition rather than `json_each` (the exact shape that silently returned 0 in M2). Live (Ollama absent): health reports `embedder:'unavailable'` without throwing, ingest still reaches `ready`, search degrades to FTS. Real embed path unverified — Ollama not installed. | @mozilla/readability · linkedom · turndown |
+| 2026-08-04 | P12.1 | orchestrator patch | **Done** (288 core tests still green). Fixed a live defect P12 hit: `MAX_MARKDOWN_CHARS` was 48k chars (~12k tokens), so a long article exceeded Groq's free 12k TPM and the entry **failed outright**. Lowered to 24k (~6k tokens, aligning with the synthesis cap) — a digest of the first ~4,000 words beats no digest. | — |
 | 2026-08-03 | P9a   | opus subagent (aa9b5b58) | **Done, DoD verified** (core 230 tests, +78). C11 `synthesizeDigest` on both clients, all three dialects; new `SYNTHESIS_*` prompt/schema; `parseSynthesis` drops hallucinated `canonicalUrl`s, de-dupes, truncates to `maxItems`. Prompt cap 24k chars with an explicit "N omitted" note; dates rendered as UTC `YYYY-MM-DD` (no `Date.now()` in core). Deviation accepted: JSON schema omits `minItems`/`maxItems` (OpenAI strict mode rejects them) — bound enforced in `parseSynthesis`. | — |
 | 2026-08-03 | P9b   | opus subagent (a4a052b7) | **Done, DoD verified + LIVE RUN CONFIRMED** (web 74→78 tests). `DigestWorkflow` (WorkflowEntrypoint) with steps plan→fetch-per-source (Promise.allSettled, isolated)→rank→synthesize→persist, per-step retries; weekly cron `0 8 * * 1`; 4 routes per C10. **`vite dev` handled the Workflow binding with no API token — Workflows are fully local, unlike AI/Vectorize.** Live: one real run produced a `ready` digest, 5 ranked items, HN+Lobsters corroboration, one Groq synthesis call. Key decisions: `plan` step freezes `runAt` so retries can't drift the window; digest row id generated in `startDigestRun` before triggering (no 404 window for the UI poll); `persist` deletes existing items first (replay-safe); empty candidate pool → `failed` without an LLM call. Deviations accepted: `workflow_error` code added; `runDigest` returns `{status:'failed'}` rather than throwing. **Trap recorded:** drizzle renders raw `sql` columns unqualified in single-table selects — correlated subquery counts silently returned 0; fixed with leftJoin+groupBy (watch in P11). | — |
 | 2026-08-03 | P10   | opus subagent (a3c293af) | **Done, DoD verified** (isolated client typecheck clean; the 4 errors it saw were P9a's interface landing mid-flight, healed by P9b). Digest list + detail pages, `DigestCard`, `digest-format` helpers, nav entry, "Run now" → 202 → navigate. Polls at 2 s while `pending` (list polls only while a row is pending; detail per C7), stops on terminal state. Smoke-tested via headless Chrome incl. contract-shaped fixtures. Filed two integration gaps — one real, fixed below. | no new deps |

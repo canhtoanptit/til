@@ -8,6 +8,7 @@ import { HttpError } from "../http-error.js";
 import { createEntrySchema } from "../schemas.js";
 import { toEntryDTO, toEntryDetailDTO } from "../dto.js";
 import { ingestEntry } from "../ingest.js";
+import { reembedEntries } from "../indexing.js";
 
 const STALE_PENDING_MS = 10 * 60 * 1000;
 const DEFAULT_LIMIT = 20;
@@ -180,17 +181,27 @@ export function createEntriesRouter() {
       throw new HttpError(404, "not_found", "Entry not found.");
     }
     await deps.db.delete(entries).where(eq(entries.id, id));
-    if (deps.vectorize) {
+    // WHY: `entry_vectors` rows also cascade off entries.id, but Vectorize has no
+    // foreign keys — the explicit delete is what keeps `cloud` mode consistent.
+    if (deps.vectorStore) {
       try {
-        await deps.vectorize.deleteByIds([id]);
+        await deps.vectorStore.deleteByIds([id]);
       } catch (err) {
         console.warn(
-          `[delete ${id}] vectorize deleteByIds failed (non-fatal):`,
+          `[delete ${id}] vector delete failed (non-fatal):`,
           err instanceof Error ? err.message : String(err),
         );
       }
     }
     return c.body(null, 204);
+  });
+
+  // Backfill for entries captured while no embedder was reachable. Declared
+  // before "/:id/reingest" only for readability; the paths cannot collide.
+  router.post("/reembed", async (c) => {
+    const deps = c.get("deps");
+    const result = await reembedEntries(deps, {});
+    return c.json(result);
   });
 
   router.post("/:id/reingest", async (c) => {

@@ -3,6 +3,7 @@ export type {
   Digest,
   DigestItemDraft,
   DigestSynthesis,
+  Embedder,
   EvidenceCluster,
   Extractor,
   FetchCandidatesOptions,
@@ -10,7 +11,11 @@ export type {
   LLMSettings,
   ScoredCluster,
   SourceAdapter,
+  StackMode,
   SynthesisInput,
+  VectorMatch,
+  VectorRecord,
+  VectorStore,
 } from "./types.js";
 export {
   MAX_SYNTHESIS_PROMPT_CHARS,
@@ -18,6 +23,7 @@ export {
 } from "./prompt.js";
 export {
   DigestError,
+  EmbeddingError,
   ExtractionError,
   SourceError,
   UnsafeUrlError,
@@ -32,6 +38,32 @@ export {
   titleSimilarity,
   titleTokens,
 } from "./ranking.js";
+export {
+  cosineSimilarity,
+  embeddingTextFor,
+  normalizeVector,
+  RRF_K,
+  rrfMerge,
+} from "./retrieval.js";
+export type { FusedId, RankedId } from "./retrieval.js";
+export {
+  createOllamaEmbedder,
+  EMBEDDING_DIMENSIONS,
+  EMBEDDING_TIMEOUT_MS,
+  OLLAMA_DEFAULT_BASE_URL,
+  OLLAMA_DEFAULT_MODEL,
+  OllamaEmbedder,
+} from "./ollama-embedder.js";
+export type { OllamaEmbedderOptions } from "./ollama-embedder.js";
+export {
+  CHAT_SEARCH_DEFAULT_TOP_K,
+  CHAT_SEARCH_MAX_TOP_K,
+  CHAT_STATS_KINDS,
+  CHAT_SYSTEM_PROMPT,
+  CHAT_TOOL_DESCRIPTIONS,
+  CHAT_TOOL_SCHEMAS,
+} from "./chat.js";
+export type { ChatToolName, StatsKind } from "./chat.js";
 export {
   SOURCE_TIMEOUT_MS,
   SOURCE_USER_AGENT,
