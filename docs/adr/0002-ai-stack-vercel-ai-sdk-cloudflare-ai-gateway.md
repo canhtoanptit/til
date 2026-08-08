@@ -28,15 +28,15 @@ Review (2026-08-02, verified against `earendil-works/pi`):
 
 Use the **Vercel AI SDK** (`ai` v6, exact-pinned) as the model-access and orchestration layer, with all LLM calls routed through **Cloudflare AI Gateway** using the user's BYOK key. Split the six capabilities across purpose-fit tools:
 
-| Capability          | Choice                                                                                                                                    |
-| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| Capability          | Choice                                                                                                                                                                                             |
+| ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Model access (BYOK) | AI SDK provider packages (`@ai-sdk/openai`, `@ai-sdk/anthropic`, `@ai-sdk/groq` — Groq added post-P5 as the free-tier option), instantiated per request from `settings`, `baseURL` → CF AI Gateway |
-| Structured digest   | AI SDK structured output (v6 Output API; `generateObject` is deprecated)                                                                  |
-| Embeddings          | **Not** via the BYOK provider (Anthropic has no embeddings API) — Workers AI, see [ADR-0009](./0009-retrieval-insight-layer.md)           |
-| Retrieval & insight | Vectorize + D1 FTS5 + SQL tools, see [ADR-0009](./0009-retrieval-insight-layer.md)                                                        |
-| M2 digest pipeline  | Cloudflare **Workflows** (durable steps) + AI SDK calls — it is a pipeline, not an autonomous agent                                       |
-| M3 chat serving     | Cloudflare **Agents SDK** (`AIChatAgent` on Durable Objects: WebSocket streaming, message persistence, resumable streams) + AI SDK inside |
-| Chat UI             | AI Elements or assistant-ui (React) — replaces the defunct `pi-web-ui` plan                                                               |
+| Structured digest   | AI SDK structured output (v6 Output API; `generateObject` is deprecated)                                                                                                                           |
+| Embeddings          | **Not** via the BYOK provider (Anthropic has no embeddings API) — Workers AI, see [ADR-0009](./0009-retrieval-insight-layer.md)                                                                    |
+| Retrieval & insight | Vectorize + D1 FTS5 + SQL tools, see [ADR-0009](./0009-retrieval-insight-layer.md)                                                                                                                 |
+| M2 digest pipeline  | Cloudflare **Workflows** (durable steps) + AI SDK calls — it is a pipeline, not an autonomous agent                                                                                                |
+| M3 chat serving     | Cloudflare **Agents SDK** (`AIChatAgent` on Durable Objects: WebSocket streaming, message persistence, resumable streams) + AI SDK inside                                                          |
+| Chat UI             | AI Elements or assistant-ui (React) — replaces the defunct `pi-web-ui` plan                                                                                                                        |
 
 ### Guardrails (binding)
 

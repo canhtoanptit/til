@@ -3,7 +3,7 @@
 - **Status:** Accepted (v2, 2026-08-02)
 - **Date:** 2026-08-02
 - **Related:** [ADR-0002](./0002-ai-stack-vercel-ai-sdk-cloudflare-ai-gateway.md), [ADR-0003](./0003-runtime-cloudflare-workers-vite-plugin.md)
-- **History:** v1 introduced this seam to contain Pi's Workers risk (`node:fs` → `nodejs_compat`, namespace churn). Pi was replaced by the Vercel AI SDK ([ADR-0002 v2](./0002-ai-stack-vercel-ai-sdk-cloudflare-ai-gateway.md)); the seam **survives** with new implementations and new purposes. `nodejs_compat` is not required *by the LLM layer* — note it was re-enabled at M3 for the Agents SDK ([ADR-0003](./0003-runtime-cloudflare-workers-vite-plugin.md)).
+- **History:** v1 introduced this seam to contain Pi's Workers risk (`node:fs` → `nodejs_compat`, namespace churn). Pi was replaced by the Vercel AI SDK ([ADR-0002 v2](./0002-ai-stack-vercel-ai-sdk-cloudflare-ai-gateway.md)); the seam **survives** with new implementations and new purposes. `nodejs_compat` is not required _by the LLM layer_ — note it was re-enabled at M3 for the Agents SDK ([ADR-0003](./0003-runtime-cloudflare-workers-vite-plugin.md)).
 
 ## Context
 
@@ -34,7 +34,7 @@ export interface LLMClient {
 - Nothing outside `packages/core` imports `ai` or provider packages directly.
 - Treat article content as **untrusted data** in prompts: the digest prompt instructs the model to never follow instructions found inside the content, and the digest path exposes **no tools**.
 
-The M3 chat loop is hand-rolled over AI SDK primitives (a bounded loop over `streamText` + tool results), using `pi-agent-core`'s source as reference reading — not as a dependency.
+The M3 chat path follows the same rule: `streamChat` in `packages/core` owns the `streamText` call, tool wiring and step bound (`stopWhen: stepCountIs(6)`), while the Durable Object supplies only tool _implementations_ and messages. The loop itself came from `@cloudflare/ai-chat`'s `AIChatAgent` rather than being hand-rolled — the protocol adapter turned out to be the boring, working option, so `pi-agent-core` stayed reference reading only.
 
 ## Alternatives considered
 

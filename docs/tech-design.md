@@ -80,19 +80,20 @@ Rationale for the monorepo split: [ADR-0008](./adr/0008-monorepo-pnpm-turborepo.
 
 ## 6. Technology choices
 
-| Layer                    | Choice                                                                            | ADR                                                                                                                  |
-| ------------------------ | --------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| Frontend                 | React + Vite (web-first), Tailwind, React Router, TanStack Query                  | [0001](./adr/0001-cross-platform-web-first-tauri2.md)                                                                |
-| Desktop/mobile (later)   | Tauri 2 wrapping the same build                                                   | [0001](./adr/0001-cross-platform-web-first-tauri2.md)                                                                |
-| API                      | Hono on Cloudflare Workers                                                        | [0003](./adr/0003-runtime-cloudflare-workers-vite-plugin.md)                                                         |
-| Build/deploy             | `@cloudflare/vite-plugin` (single Worker)                                         | [0003](./adr/0003-runtime-cloudflare-workers-vite-plugin.md)                                                         |
-| Database                 | Cloudflare D1 + Drizzle                                                           | [0004](./adr/0004-database-d1-drizzle.md)                                                                            |
-| LLM                      | Vercel AI SDK v6 via Cloudflare AI Gateway, BYOK (explicit providers only)        | [0002](./adr/0002-ai-stack-vercel-ai-sdk-cloudflare-ai-gateway.md), [0005](./adr/0005-byok-llmclient-abstraction.md) |
-| Retrieval & insight      | Workers AI `bge-m3` + Vectorize + D1 FTS5, embed at ingest                        | [0009](./adr/0009-retrieval-insight-layer.md)                                                                        |
-| M2 digest pipeline       | Cloudflare Workflows + Cron Triggers + AI SDK                                     | [0002](./adr/0002-ai-stack-vercel-ai-sdk-cloudflare-ai-gateway.md)                                                   |
-| M3 chat                  | Cloudflare Agents SDK (`AIChatAgent` DO) + AI SDK; UI: AI Elements / assistant-ui | [0002](./adr/0002-ai-stack-vercel-ai-sdk-cloudflare-ai-gateway.md), [0009](./adr/0009-retrieval-insight-layer.md)    |
-| Extraction               | `env.AI.toMarkdown()` behind `Extractor` seam + Browser Rendering fallback        | [0006](./adr/0006-content-extraction-to-markdown.md)                                                                 |
-| Auth (from first deploy) | Bearer `APP_TOKEN` Worker secret + optional CF Access                             | [0007](./adr/0007-single-user-local-first.md)                                                                        |
+| Layer                    | Choice                                                                                              | ADR                                                                                                                  |
+| ------------------------ | --------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| Frontend                 | React + Vite (web-first), Tailwind, React Router, TanStack Query                                    | [0001](./adr/0001-cross-platform-web-first-tauri2.md)                                                                |
+| Desktop/mobile (later)   | Tauri 2 wrapping the same build                                                                     | [0001](./adr/0001-cross-platform-web-first-tauri2.md)                                                                |
+| API                      | Hono on Cloudflare Workers                                                                          | [0003](./adr/0003-runtime-cloudflare-workers-vite-plugin.md)                                                         |
+| Build/deploy             | `@cloudflare/vite-plugin` (single Worker)                                                           | [0003](./adr/0003-runtime-cloudflare-workers-vite-plugin.md)                                                         |
+| Database                 | Cloudflare D1 + Drizzle                                                                             | [0004](./adr/0004-database-d1-drizzle.md)                                                                            |
+| LLM                      | Vercel AI SDK v6 via Cloudflare AI Gateway, BYOK (explicit providers only)                          | [0002](./adr/0002-ai-stack-vercel-ai-sdk-cloudflare-ai-gateway.md), [0005](./adr/0005-byok-llmclient-abstraction.md) |
+| Retrieval & insight      | Workers AI `bge-m3` + Vectorize + D1 FTS5, embed at ingest                                          | [0009](./adr/0009-retrieval-insight-layer.md)                                                                        |
+| M2 digest pipeline       | Cloudflare Workflows + Cron Triggers + AI SDK                                                       | [0002](./adr/0002-ai-stack-vercel-ai-sdk-cloudflare-ai-gateway.md)                                                   |
+| M3 chat                  | Cloudflare Agents SDK (`AIChatAgent` DO, WebSocket-only) + `streamChat` in core; UI: `useAgentChat` | [0002](./adr/0002-ai-stack-vercel-ai-sdk-cloudflare-ai-gateway.md), [0009](./adr/0009-retrieval-insight-layer.md)    |
+| Local vs cloud adapters  | `TIL_STACK=local` (Readability + Ollama bge-m3 + D1 cosine) vs `cloud` (Workers AI + Vectorize)     | [0010](./adr/0010-dual-mode-local-cloud-stack.md)                                                                    |
+| Extraction               | `env.AI.toMarkdown()` behind `Extractor` seam + Browser Rendering fallback                          | [0006](./adr/0006-content-extraction-to-markdown.md)                                                                 |
+| Auth (from first deploy) | Bearer `APP_TOKEN` Worker secret + optional CF Access                                               | [0007](./adr/0007-single-user-local-first.md)                                                                        |
 
 ## 7. Data model (D1)
 
@@ -122,13 +123,13 @@ Indexes: **unique on `canonical_url`** (dedupe — resubmitting a URL returns th
 
 **`settings`** (singleton row, `id = 1`)
 
-| column                                            | notes                                                                                                         |
-| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| `provider`                                        | `openai` \| `anthropic` \| `groq`                                                                             |
-| `model`                                           | e.g. `gpt-4.1` / `claude-sonnet-4-6`                                                                          |
+| column                                            | notes                                                                                                                                        |
+| ------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `provider`                                        | `openai` \| `anthropic` \| `groq`                                                                                                            |
+| `model`                                           | e.g. `gpt-4.1` / `claude-sonnet-4-6`                                                                                                         |
 | `api_key`                                         | BYOK; never returned unmasked; `PUT` full-replace except keep-key-when-routing-unchanged ([ADR-0007](./adr/0007-single-user-local-first.md)) |
-| `cf_account_id`, `cf_gateway_id`, `cf_aig_token?` | AI Gateway routing                                                                                            |
-| `created_at` / `updated_at`                       | epoch ms                                                                                                      |
+| `cf_account_id`, `cf_gateway_id`, `cf_aig_token?` | AI Gateway routing                                                                                                                           |
+| `created_at` / `updated_at`                       | epoch ms                                                                                                                                     |
 
 Migrations: `drizzle-kit generate` → `wrangler d1 migrations apply til`.
 
@@ -136,18 +137,23 @@ Migrations: `drizzle-kit generate` → `wrangler d1 migrations apply til`.
 
 All routes require `Authorization: Bearer <APP_TOKEN>` except `GET /api/health` ([ADR-0007](./adr/0007-single-user-local-first.md)). Exact request/response shapes: [implementation plan, Contract C5](./implementation-plan.md#c5--api-contract).
 
-| Method | Path                        | Purpose                                                                                             |
-| ------ | --------------------------- | --------------------------------------------------------------------------------------------------- |
-| POST   | `/api/entries`              | `{url}` → create `pending` entry, kick off ingest; `409` + existing id on duplicate `canonical_url` |
-| GET    | `/api/entries`              | list (keyset-paginated); lazily fails entries `pending` > 10 min                                    |
-| GET    | `/api/entries/:id`          | detail (client polls until `ready`)                                                                 |
-| DELETE | `/api/entries/:id`          | remove (also deletes the Vectorize vector)                                                          |
-| POST   | `/api/entries/:id/reingest` | retry a `failed`/stale entry (re-extracts, re-digests, re-embeds)                                   |
-| GET    | `/api/search?q=`            | keyword search over `entries_fts` (M1; hybrid semantic search arrives with M3 tools)                |
-| GET    | `/api/settings`             | current config (key masked to last 4)                                                               |
-| PUT    | `/api/settings`             | update BYOK config — full replace; `apiKey` omittable only if provider/account/gateway unchanged     |
-| POST   | `/api/settings/test`        | `LLMClient.ping()` — validate key/gateway                                                           |
-| GET    | `/api/health`               | liveness (no auth)                                                                                  |
+| Method | Path                        | Purpose                                                                                                                   |
+| ------ | --------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| POST   | `/api/entries`              | `{url}` → create `pending` entry, kick off ingest; `409` + existing id on duplicate `canonical_url`                       |
+| GET    | `/api/entries`              | list (keyset-paginated); lazily fails entries `pending` > 10 min                                                          |
+| GET    | `/api/entries/:id`          | detail (client polls until `ready`)                                                                                       |
+| DELETE | `/api/entries/:id`          | remove (also deletes the Vectorize vector)                                                                                |
+| POST   | `/api/entries/:id/reingest` | retry a `failed`/stale entry (re-extracts, re-digests, re-embeds)                                                         |
+| POST   | `/api/entries/reembed`      | backfill vectors for `ready` entries missing them (after enabling an embedder)                                            |
+| GET    | `/api/search?q=`            | hybrid search — vector + `entries_fts` fused by RRF, degrading to FTS-only with no embedder                               |
+| GET    | `/api/digests`              | list digest runs; `GET /:id` detail, `POST /run` manual trigger (202), `DELETE /:id`                                      |
+| WS     | `/api/chat/:id`             | **WebSocket only** — chat turns as Agents SDK frames; there is no HTTP chat endpoint                                      |
+| POST   | `/api/chat/ticket`          | mint a 60 s HMAC ticket authorising the WS upgrade (bearer-authed; see [ADR-0007](./adr/0007-single-user-local-first.md)) |
+| GET    | `/api/chat`                 | conversation list; `GET /:id/messages` transcript; `DELETE /:id` clears it                                                |
+| GET    | `/api/settings`             | current config (key masked to last 4)                                                                                     |
+| PUT    | `/api/settings`             | update BYOK config — full replace; `apiKey` omittable only if provider/account/gateway unchanged                          |
+| POST   | `/api/settings/test`        | `LLMClient.ping()` — validate key/gateway                                                                                 |
+| GET    | `/api/health`               | liveness (no auth)                                                                                                        |
 
 ## 9. Ingest pipeline
 
@@ -221,7 +227,7 @@ M2's digest pipeline runs as a **Cloudflare Workflow** (durable steps + cron). M
 - **M1 — Web thin slice (this design). ✅ Complete, verified 2026-08-03** (Groq via authenticated CF AI Gateway; real `ready` digest + live FTS hit). Everything in §7–§11, including the ingest-time index (vectors + FTS). Single-tenant, single user. _Definition of done in §13; phase-by-phase plan with agent briefs in the [implementation plan](./implementation-plan.md)._
 - **Deploy hardening (was M1.5 — deferred to after M3 on 2026-08-03).** Everything through M3 is built and verified locally first; Workers AI and Vectorize have no local emulator, so local runs use substitute adapters (Readability extraction, Ollama/remote `bge-m3`, D1 brute-force cosine) behind the existing seams. `APP_TOKEN` + optional CF Access, create real D1/Vectorize/AI Gateway, `wrangler deploy`, scheduled D1 export → R2, optionally move the BYOK key to gateway-stored keys ([ADR-0007](./adr/0007-single-user-local-first.md)).
 - **M2 — Interesting-things digest.** A **Cloudflare Workflow** (durable steps: query-plan → multi-source fetch across keyless sources (HN/Lobsters/arXiv/RSS — **Reddit dropped: unauthenticated JSON returned 403 from May 2026 and OAuth is closed to personal scripts**) → rank into scored "evidence clusters" → synthesize) + AI SDK calls, scheduled via Cron Triggers — the `mvanhorn/last30days-skill` _pattern_, Worker-native. A pipeline, not an autonomous agent.
-- **M3 — Chat agent.** Agents SDK (`AIChatAgent` DO: WebSocket streaming, persisted sessions) + hand-rolled tool loop over AI SDK; tools per [ADR-0009](./adr/0009-retrieval-insight-layer.md): hybrid `search_entries` (Vectorize + FTS5 + RRF), SQL insight tools ("most interesting this month", habit stats). UI: AI Elements / assistant-ui. "Ask about your learning." Tool outputs are data, not instructions — chat tools are read-only.
+- **M3 — Chat agent. Backend complete 2026-08-08** (UI in progress). Agents SDK `AIChatAgent` on a Durable Object with SQLite-persisted sessions; the AI-SDK tool loop lives in `packages/core` as `streamChat`, so the DO never imports `ai`. Tools per [ADR-0009](./adr/0009-retrieval-insight-layer.md): hybrid `search_entries` (vector + FTS5 fused by RRF), `get_entry`, `stats`. All read-only; tool output is framed as untrusted data. Three implementation realities worth carrying forward: chat is **WebSocket-only** (`@cloudflare/ai-chat` exposes no HTTP chat path), the WS handshake is authorised by a **60 s HMAC ticket** because browsers cannot set handshake headers ([ADR-0007](./adr/0007-single-user-local-first.md)), and the Agents SDK **re-requires `nodejs_compat`** ([ADR-0003](./adr/0003-runtime-cloudflare-workers-vite-plugin.md)).
 - **M4 — Desktop + mobile.** PWA pass first (installability, zero store friction), then wrap the same client build with Tauri 2. Client API base URL becomes configurable; API adds CORS for the Tauri origin. Store-distribution caveats noted in [ADR-0001](./adr/0001-cross-platform-web-first-tauri2.md).
 - **M5 — (optional).** Multi-user (auth + per-user keys + multi-tenant D1), Browser-Rendering extraction, spaced-repetition review.
 
@@ -243,7 +249,10 @@ M2's digest pipeline runs as a **Cloudflare Workflow** (durable steps + cron). M
 | SSRF / open proxy via ingest URL                                         | Scheme allowlist, private-host blocks, size/time caps, final-URL revalidation ([ADR-0007](./adr/0007-single-user-local-first.md))                                                                                                      |
 | AI SDK major-version churn (v4→v5→v6→v7)                                 | Exact-pin `ai@6.x`; all imports contained in `packages/core` behind `LLMClient`; `DirectLLMClient` fallback ([ADR-0002](./adr/0002-ai-stack-vercel-ai-sdk-cloudflare-ai-gateway.md), [0005](./adr/0005-byok-llmclient-abstraction.md)) |
 | Accidental routing through Vercel's paid gateway                         | Guardrail: explicit provider instances only, plain model strings banned ([ADR-0002](./adr/0002-ai-stack-vercel-ai-sdk-cloudflare-ai-gateway.md))                                                                                       |
-| Prompt injection via ingested content                                    | Digest path has no tools; content framed as untrusted data; M3 chat tools are read-only ([ADR-0005](./adr/0005-byok-llmclient-abstraction.md))                                                                                         |
+| Prompt injection via ingested content                                    | Digest path has no tools; content framed as untrusted data; M3 chat tools are read-only, args zod-clamped and results size-capped ([ADR-0005](./adr/0005-byok-llmclient-abstraction.md))                                               |
+| Long articles exceeding provider per-minute token limits                 | Digest prompt capped at 24k chars (~6k tokens) — 48k previously failed outright on Groq's free tier                                                                                                                                    |
+| Chat WS credential visible in access logs                                | 60 s HMAC ticket, accepted only on a WS upgrade under `/api/chat/`; `APP_TOKEN` never appears in a URL ([ADR-0007](./adr/0007-single-user-local-first.md))                                                                             |
+| `nodejs_compat` re-enabled for the Agents SDK                            | Bundle 417 → 811 kB gzip, well under limits; flag is scoped to the Worker and revisitable if chat is dropped ([ADR-0003](./adr/0003-runtime-cloudflare-workers-vite-plugin.md))                                                        |
 | `waitUntil` is best-effort → stuck `pending` entries                     | Lazy stale sweep (>10 min → `failed`) + manual reingest; Cloudflare Workflows is the durable upgrade path (M2)                                                                                                                         |
 | Extraction fails (paywall/JS/bot)                                        | Fail entry gracefully + retry; Browser Rendering fallback in M-later ([ADR-0006](./adr/0006-content-extraction-to-markdown.md))                                                                                                        |
 | AI Gateway needs CF account/gateway                                      | Dev can bypass to provider-direct via `DirectLLMClient`                                                                                                                                                                                |

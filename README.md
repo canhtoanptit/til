@@ -10,7 +10,7 @@ TIL is a single-user, self-hosted reading companion. Save a URL and it extracts 
 
 It's built to be run by one person, in their own Cloudflare account, with their own LLM API key. No accounts, no third party holding your data or your key.
 
-> **Status:** working software, active development. Milestones M1 (capture + digest feed) and M2 (weekly digest) are complete and verified; the chat agent (M3) is next. Nothing is deployed yet — it runs locally today.
+> **Status:** working software, active development. Capture + digest feed (M1), the weekly digest (M2) and the chat agent's backend (M3) are complete and verified against real data; the chat UI is landing now. Nothing is deployed yet — it runs locally today.
 
 ---
 
@@ -19,14 +19,16 @@ It's built to be run by one person, in their own Cloudflare account, with their 
 - **Capture** — paste a URL, get a structured digest: title, ~150-word summary, the key takeaway, 3–6 tags, and a follow-up question.
 - **Search** — full-text search across everything you've saved (SQLite FTS5).
 - **Weekly digest** — a scheduled job gathers candidates from Hacker News, Lobsters, arXiv and your own RSS feeds, ranks them by recency, popularity and cross-source corroboration, then has an LLM write up the most interesting ones.
+- **Chat with your reading** — ask *"what have I saved about CSS?"* or *"what did I read most this month?"*. A Durable-Object agent answers using three **read-only** tools: hybrid semantic + keyword search, single-entry lookup, and reading statistics. Answers cite the entries they came from.
+- **Runs offline** — one env var switches between local open-source adapters (Readability extraction, Ollama embeddings, cosine search in SQLite) and the Cloudflare services (Workers AI, Vectorize). Same embedding model either way, so local search behaves like production.
 - **Bring your own key** — OpenAI, Anthropic or Groq, routed through *your* Cloudflare AI Gateway for caching, rate limiting and cost visibility. The key never reaches the browser.
 - **Graceful failure** — paywalls, bot protection and JS-heavy pages are surfaced as failed cards with a retry, never as hangs.
 - **Prompt-injection aware** — article and candidate text is always framed as untrusted data; the extraction path has no tools.
 
 ### Coming next
 
-- **Chat agent (M3)** — ask questions about your own reading history, backed by hybrid semantic + keyword retrieval and SQL-based habit stats.
-- **Desktop & mobile (M4)** — PWA first, then a Tauri 2 shell around the same build.
+- **Deploy** — first `wrangler deploy` once the full flow is done locally.
+- **Desktop & mobile** — PWA first, then a Tauri 2 shell around the same build.
 
 ---
 
@@ -92,6 +94,18 @@ Then in the browser:
 
 > If your AI Gateway has **Authenticated Gateway** enabled, also fill in the gateway token field — otherwise requests are rejected with a 401 that never appears in your gateway logs.
 
+### Optional: semantic search offline
+
+Everything above works without this — search just stays keyword-only, and `GET /api/health` reports `embedder: "unavailable"`. To enable semantic search locally:
+
+```bash
+ollama pull bge-m3                                    # ~1.2 GB, the same model production uses
+# restart dev, then backfill vectors for what you already saved:
+curl -X POST -H "Authorization: Bearer dev-token" http://localhost:5173/api/entries/reembed
+```
+
+The alternative is `TIL_STACK=cloud`, which uses Workers AI and Vectorize instead — no local model, but it needs a `CLOUDFLARE_API_TOKEN` and those bindings uncommented in `wrangler.jsonc`. See [ADR-0010](./docs/adr/0010-dual-mode-local-cloud-stack.md).
+
 ### Scripts
 
 | Command | What it does |
@@ -122,7 +136,8 @@ docs/                # technical design, ADRs, implementation plan
 |---|---|---|
 | `apps/web/.dev.vars` locally, Worker secret in production | `APP_TOKEN` | Bearer token guarding every `/api/*` route except `/api/health`. **Required before deploying** — the API holds your provider key. |
 | Settings page (stored in D1) | provider, model, API key, CF account ID, CF gateway ID, optional gateway token | The key is masked in every response and never sent to the browser. It can be omitted on save to keep the stored one, unless you change provider or gateway routing. |
-| `wrangler.jsonc` | bindings, weekly cron | The Workers AI and Vectorize bindings are commented out by default: neither has a local emulator, and enabling them makes local dev require a Cloudflare API token. |
+| `apps/web/.dev.vars` / `wrangler.jsonc` `vars` | `TIL_STACK` | `local` (default) or `cloud` — selects the adapter set per [ADR-0010](./docs/adr/0010-dual-mode-local-cloud-stack.md). `OLLAMA_BASE_URL` overrides the local embedder endpoint. |
+| `wrangler.jsonc` | bindings, weekly cron, chat Durable Object | The Workers AI and Vectorize bindings are commented out by default: neither has a local emulator, and enabling them makes local dev require a Cloudflare API token. `nodejs_compat` is on for the Agents SDK. |
 
 ---
 
@@ -138,6 +153,8 @@ docs/                # technical design, ADRs, implementation plan
 
 - The provider API key lives only in your own D1 database and is never returned unmasked. Storage is plaintext in the current milestone — envelope encryption and Cloudflare AI Gateway stored keys are the planned upgrades.
 - The API requires a bearer token; deploying without one exposes an endpoint that can spend your LLM credits.
+- Chat runs over a WebSocket, and browsers cannot set headers on a WS handshake. Rather than putting the app token in a URL, `POST /api/chat/ticket` mints a 60-second HMAC ticket that is accepted **only** on a chat WS upgrade. The ticket is briefly visible in access logs; the app token never is.
+- Chat tools are strictly read-only and cannot modify or delete anything. Tool arguments are validated and clamped, and results are size-capped before reaching the model.
 - URL ingestion blocks non-HTTP(S) schemes and loopback, private, link-local and metadata addresses, with size, timeout and redirect limits.
 
 Found a security issue? Please open an issue describing the impact — don't include working exploit details for anything affecting others.

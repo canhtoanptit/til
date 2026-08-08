@@ -16,10 +16,10 @@ An earlier framing treated this as three independent choices (extractor, embedde
 
 One environment variable selects a **coherent set of adapters**:
 
-| | `TIL_STACK=local` | `TIL_STACK=cloud` |
-|---|---|---|
-| Extractor | Readability + Turndown (in-isolate) | `env.AI.toMarkdown()` |
-| Embedder | Ollama `bge-m3` via `/api/embed` | Workers AI `@cf/baai/bge-m3` |
+|              | `TIL_STACK=local`                    | `TIL_STACK=cloud`             |
+| ------------ | ------------------------------------ | ----------------------------- |
+| Extractor    | Readability + Turndown (in-isolate)  | `env.AI.toMarkdown()`         |
+| Embedder     | Ollama `bge-m3` via `/api/embed`     | Workers AI `@cf/baai/bge-m3`  |
 | Vector store | `D1VectorStore` (brute-force cosine) | Vectorize index `til-entries` |
 
 - **The mode selects adapters, not where the Worker runs.** These are independent, giving three supported configurations: local dev + `local` (offline daily driver), local dev + `cloud` (pre-deploy parity check; needs `CLOUDFLARE_API_TOKEN` and the bindings uncommented), deployed + `cloud` (production). Deployed + `local` is unsupported — there is no Ollama at the edge.
@@ -31,7 +31,7 @@ One environment variable selects a **coherent set of adapters**:
 ## Alternatives considered
 
 - **Per-capability toggles** (`TIL_EXTRACTOR`, `TIL_EMBEDDER`, `TIL_VECTORS`). Maximum flexibility, 8 combinations, most never exercised. Rejected: the flexibility is theoretical and the test matrix is not.
-- **Cloud-only, with remote bindings in dev.** Perfect parity and zero local resources, but every dev session needs a Cloudflare API token and burns free-tier neurons, and the app stops working on a plane. Kept as the *parity-check* configuration rather than the default.
+- **Cloud-only, with remote bindings in dev.** Perfect parity and zero local resources, but every dev session needs a Cloudflare API token and burns free-tier neurons, and the app stops working on a plane. Kept as the _parity-check_ configuration rather than the default.
 - **Stub embedder locally** (hash-based vectors). Free and instant, but rankings are meaningless, so hybrid search cannot be evaluated until after deploy — which defeats building M3 locally at all.
 - **Qdrant in Docker for local vectors.** Closest API parity with Vectorize, but adds a daemon plus Docker Desktop overhead to search ~10³ vectors that a `for` loop handles in milliseconds. Rejected as disproportionate.
 - **sqlite-vec in D1.** The natural fit on paper; D1/workerd cannot load SQLite extensions. Usable only in `better-sqlite3` unit tests.
@@ -39,11 +39,13 @@ One environment variable selects a **coherent set of adapters**:
 ## Consequences
 
 **Positive**
+
 - The entire product — including M3 retrieval — is buildable and testable offline, with real semantic quality, no cloud resources and no API token.
 - Two coherent configurations to test instead of eight; the mode boundary matches the deploy boundary.
 - Local extraction improves from regex-stripping to genuine reader-view, and Readability doubles as a production fallback for pages `toMarkdown` mishandles ([ADR-0006](./0006-content-extraction-to-markdown.md)).
 
 **Negative / caveats**
+
 - **Extraction is not identical across modes** — Readability and `toMarkdown` produce different markdown, so digest text (and therefore digest quality) differs. "Works locally" does not prove production quality; the parity configuration exists for that.
 - Local mode requires Ollama running (~1.2 GB model, ~2 GB RAM). Embedding failure stays non-fatal — entries still reach `ready`, just unindexed — so the failure mode is a silent search gap; it must be surfaced in the UI.
 - Two vector-store implementations to keep behaviourally equivalent; `D1VectorStore` is O(n) per query and is explicitly a dev/small-corpus tool, not a scaling path.
