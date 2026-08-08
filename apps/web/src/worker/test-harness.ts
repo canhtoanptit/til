@@ -6,7 +6,13 @@ import { drizzle } from "drizzle-orm/better-sqlite3";
 import * as schema from "@til/db";
 import { digestItems, digests, entries } from "@til/db";
 import { createApp } from "./app.js";
-import type { Deps, FetchPageFn } from "./deps.js";
+import type { ChatMessageDTO } from "./chat-dto.js";
+import type {
+  ChatAgentBinding,
+  ChatConversationStub,
+  Deps,
+  FetchPageFn,
+} from "./deps.js";
 import type {
   Candidate,
   Embedder,
@@ -65,6 +71,46 @@ export interface TestOverrides {
   appToken?: string;
   adapters?: Deps["adapters"];
   digestWorkflow?: DigestWorkflowBinding | null;
+  chatAgents?: ChatAgentBinding | null;
+}
+
+export interface RecordingChatAgents {
+  binding: ChatAgentBinding;
+  opened: string[];
+  cleared: string[];
+  routed: Request[];
+  messages: Map<string, ChatMessageDTO[]>;
+}
+
+/**
+ * Stand-in for the chat Durable Object. A real DO needs workerd, which the plain
+ * vitest runner does not provide, so route tests exercise the binding seam and
+ * the live agent lifecycle is verified against `wrangler dev` instead.
+ */
+export function createRecordingChatAgents(
+  opts: { route?: () => Response | null } = {},
+): RecordingChatAgents {
+  const opened: string[] = [];
+  const cleared: string[] = [];
+  const routed: Request[] = [];
+  const messages = new Map<string, ChatMessageDTO[]>();
+  const binding: ChatAgentBinding = {
+    get: async (id): Promise<ChatConversationStub> => {
+      opened.push(id);
+      return {
+        chatMessages: async () => messages.get(id) ?? [],
+        clearChat: async () => {
+          cleared.push(id);
+          messages.delete(id);
+        },
+      };
+    },
+    route: async (request) => {
+      routed.push(request);
+      return opts.route?.() ?? null;
+    },
+  };
+  return { binding, opened, cleared, routed, messages };
 }
 
 /**
@@ -258,6 +304,10 @@ export function buildTestApp(overrides: TestOverrides = {}) {
       overrides.digestWorkflow === undefined
         ? createRecordingWorkflow().binding
         : overrides.digestWorkflow,
+    chatAgents:
+      overrides.chatAgents === undefined
+        ? createRecordingChatAgents().binding
+        : overrides.chatAgents,
   };
 
   const env = { APP_TOKEN: overrides.appToken ?? "dev-token" };

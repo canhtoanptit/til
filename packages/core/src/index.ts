@@ -65,6 +65,12 @@ export {
 } from "./chat.js";
 export type { ChatToolName, StatsKind } from "./chat.js";
 export {
+  CHAT_DEFAULT_MAX_STEPS,
+  chatNoticeResponse,
+  streamChat,
+} from "./chat-stream.js";
+export type { ChatTool, StreamChatOptions } from "./chat-stream.js";
+export {
   SOURCE_TIMEOUT_MS,
   SOURCE_USER_AGENT,
 } from "./sources/http.js";

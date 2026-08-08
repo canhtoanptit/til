@@ -3,6 +3,7 @@ import { drizzle } from "drizzle-orm/d1";
 import * as schema from "./schema.js";
 
 export {
+  chats,
   entries,
   settings,
   digests,
@@ -10,6 +11,8 @@ export {
   entryVectors,
 } from "./schema.js";
 export type {
+  Chat,
+  NewChat,
   Entry,
   NewEntry,
   Settings,

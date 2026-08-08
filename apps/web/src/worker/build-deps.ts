@@ -1,6 +1,8 @@
+import { getAgentByName, routeAgentRequest } from "agents";
 import { createDb } from "@til/db";
 import { createLLMClient } from "@til/core";
-import type { Deps } from "./deps.js";
+import type { TilChatAgent } from "./chat-agent.js";
+import { CHAT_AGENT_PREFIX, type ChatAgentBinding, type Deps } from "./deps.js";
 import { createDefaultAdapters, type DigestWorkflowBinding } from "./digest.js";
 import type { Env } from "./env.js";
 import { fetchPage } from "./fetch-page.js";
@@ -14,6 +16,7 @@ export function buildDeps(env: Env, ctx: ExecCtx): Deps {
   // WHY: typed as always present, but absent at runtime whenever the workflows
   // binding is not configured (e.g. a stripped-down local dev config).
   const digestWorkflow: DigestWorkflowBinding | null = env.DIGEST ?? null;
+  const chatAgents = resolveChatAgents(env);
   const db = createDb(env.DB);
   const now = () => Date.now();
   const fetchImpl = (typeof fetch === "function"
@@ -38,5 +41,24 @@ export function buildDeps(env: Env, ctx: ExecCtx): Deps {
     fetchImpl,
     adapters: createDefaultAdapters,
     digestWorkflow,
+    chatAgents,
+  };
+}
+
+// Same runtime guard as DIGEST: typed as always present, absent whenever the
+// durable_objects binding is not configured.
+function resolveChatAgents(env: Env): ChatAgentBinding | null {
+  const namespace = env.CHAT;
+  if (!namespace) return null;
+  return {
+    get: async (id) => {
+      const stub = await getAgentByName<Env, TilChatAgent>(namespace, id);
+      return {
+        chatMessages: () => stub.chatMessages(),
+        clearChat: () => stub.clearChat(),
+      };
+    },
+    route: (request) =>
+      routeAgentRequest(request, env, { prefix: CHAT_AGENT_PREFIX }),
   };
 }

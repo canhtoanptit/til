@@ -12,11 +12,14 @@
     "cf-typegen": "wrangler types --env-interface CloudflareBindings ./src/worker/worker-configuration.d.ts"
   },
   "dependencies": {
+    "@ai-sdk/react": "3.0.248",
+    "@cloudflare/ai-chat": "0.10.1",
     "@hono/zod-validator": "0.7.5",
     "@mozilla/readability": "^0.6.0",
     "@tanstack/react-query": "5.101.4",
     "@til/core": "workspace:*",
     "@til/db": "workspace:*",
+    "agents": "0.20.1",
     "drizzle-orm": "^0.45.2",
     "hono": "4.12.33",
     "linkedom": "^0.18.13",

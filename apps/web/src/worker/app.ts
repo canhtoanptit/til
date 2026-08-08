@@ -3,6 +3,7 @@ import { ZodError } from "zod";
 import { createBearerAuth } from "./auth.js";
 import { HttpError } from "./http-error.js";
 import type { AppContextEnv, Deps } from "./deps.js";
+import { createChatRouter } from "./routes/chat.js";
 import { createDigestsRouter } from "./routes/digests.js";
 import { createEntriesRouter } from "./routes/entries.js";
 import { createSearchRouter } from "./routes/search.js";
@@ -41,6 +42,7 @@ export function createApp(depsFor: (c: { env: unknown; executionCtx: unknown }) 
   app.route("/api/search", createSearchRouter());
   app.route("/api/settings", createSettingsRouter());
   app.route("/api/digests", createDigestsRouter());
+  app.route("/api/chat", createChatRouter());
 
   app.onError((err, c) => {
     if (err instanceof HttpError) {

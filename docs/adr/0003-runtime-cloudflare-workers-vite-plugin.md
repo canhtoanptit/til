@@ -1,6 +1,6 @@
 # ADR-0003: Runtime & deploy — Cloudflare Workers + `@cloudflare/vite-plugin` (single full-stack Worker)
 
-- **Status:** Accepted (amended 2026-08-02: `nodejs_compat` dropped with Pi; Vectorize binding added)
+- **Status:** Accepted (amended 2026-08-02: Vectorize binding added; amended 2026-08-08: `nodejs_compat` **re-enabled** for the Agents SDK)
 - **Date:** 2026-08-02
 - **Related:** [ADR-0001](./0001-cross-platform-web-first-tauri2.md), [ADR-0004](./0004-database-d1-drizzle.md), [ADR-0009](./0009-retrieval-insight-layer.md)
 
@@ -33,4 +33,4 @@ Ship a **single full-stack Cloudflare Worker** built with **`@cloudflare/vite-pl
 
 - Worker limits apply: CPU time, request duration, and bundle size (~1 MB) — informs using `waitUntil` for ingest and keeping extraction lean ([ADR-0006](./0006-content-extraction-to-markdown.md)).
 - No SSR (SPA/static only) — acceptable for this app and required for the Tauri wrap ([ADR-0001](./0001-cross-platform-web-first-tauri2.md)).
-- ~~`nodejs_compat` for Pi~~ — no longer needed: the AI SDK is fetch-native ([ADR-0005 v2](./0005-byok-llmclient-abstraction.md)). Keep the Worker bundle lean regardless.
+- **`nodejs_compat` is enabled — but not for the reason ADR-0005 v1 assumed.** The AI SDK is fetch-native and needs nothing; the **Agents SDK** (`agents`, M3 chat) statically imports `node:async_hooks` and `node:diagnostics_channel`, and `vite dev` fails to start without the flag (`nodejs_als` alone is insufficient — verified 2026-08-08). Cost: Worker bundle 417 → 811 kB gzip, still well under the limit. Revisit if the chat agent is ever removed.

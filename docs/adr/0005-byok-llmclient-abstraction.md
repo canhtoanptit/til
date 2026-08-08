@@ -3,7 +3,7 @@
 - **Status:** Accepted (v2, 2026-08-02)
 - **Date:** 2026-08-02
 - **Related:** [ADR-0002](./0002-ai-stack-vercel-ai-sdk-cloudflare-ai-gateway.md), [ADR-0003](./0003-runtime-cloudflare-workers-vite-plugin.md)
-- **History:** v1 introduced this seam to contain Pi's Workers risk (`node:fs` → `nodejs_compat`, namespace churn). Pi was replaced by the Vercel AI SDK ([ADR-0002 v2](./0002-ai-stack-vercel-ai-sdk-cloudflare-ai-gateway.md)); the seam **survives** with new implementations and new purposes. `nodejs_compat` is **no longer required**.
+- **History:** v1 introduced this seam to contain Pi's Workers risk (`node:fs` → `nodejs_compat`, namespace churn). Pi was replaced by the Vercel AI SDK ([ADR-0002 v2](./0002-ai-stack-vercel-ai-sdk-cloudflare-ai-gateway.md)); the seam **survives** with new implementations and new purposes. `nodejs_compat` is not required *by the LLM layer* — note it was re-enabled at M3 for the Agents SDK ([ADR-0003](./0003-runtime-cloudflare-workers-vite-plugin.md)).
 
 ## Context
 
@@ -46,7 +46,8 @@ The M3 chat loop is hand-rolled over AI SDK primitives (a bounded loop over `str
 **Positive**
 
 - Risk contained: implementations swap without rearchitecture; clean seam for testing (mock `LLMClient`).
-- `nodejs_compat` dropped → smaller bundle, no compat surprises (supersedes the v1 caveat and the related note in [ADR-0003](./0003-runtime-cloudflare-workers-vite-plugin.md)).
+- The LLM layer needs no Node compat, so provider churn can't reintroduce a compat problem here (the flag now on the Worker is the Agents SDK's, [ADR-0003](./0003-runtime-cloudflare-workers-vite-plugin.md)).
+- The seam paid off a third time at M3: `streamChat` (chat streaming + tool loop) lives in `packages/core` too, so the Durable Object never imports `ai` — verified structurally, since `import from "ai"` does not resolve inside `apps/web`.
 - The two-implementation diff is a deliberate learning artifact.
 
 **Negative / caveats**

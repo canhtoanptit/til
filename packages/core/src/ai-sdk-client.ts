@@ -1,10 +1,8 @@
-import { createAnthropic } from "@ai-sdk/anthropic";
-import { createGroq } from "@ai-sdk/groq";
-import { createOpenAI } from "@ai-sdk/openai";
 import type { LanguageModel } from "ai";
 import { generateText, Output } from "ai";
 import { z } from "zod";
 import { DigestError } from "./errors.js";
+import { createModel, describeError } from "./provider.js";
 import {
   buildSynthesisUserMessage,
   buildUserMessage,
@@ -22,7 +20,6 @@ import type {
   LLMSettings,
   SynthesisInput,
 } from "./types.js";
-import { gatewayBaseURL } from "./url.js";
 
 const digestSchema = z.object({
   title: z.string(),
@@ -129,44 +126,3 @@ export class AISDKClient implements LLMClient {
   }
 }
 
-function createModel(
-  settings: LLMSettings,
-  fetchImpl?: typeof fetch,
-): LanguageModel {
-  const base = gatewayBaseURL(settings);
-  if (settings.provider === "openai") {
-    const provider = createOpenAI({
-      apiKey: settings.apiKey,
-      baseURL: base,
-      headers: aigHeaders(settings),
-      fetch: fetchImpl,
-    });
-    return provider.chat(settings.model);
-  }
-  if (settings.provider === "groq") {
-    const provider = createGroq({
-      apiKey: settings.apiKey,
-      baseURL: base,
-      headers: aigHeaders(settings),
-      fetch: fetchImpl,
-    });
-    return provider(settings.model);
-  }
-  const provider = createAnthropic({
-    apiKey: settings.apiKey,
-    baseURL: `${base}/v1`,
-    headers: aigHeaders(settings),
-    fetch: fetchImpl,
-  });
-  return provider(settings.model);
-}
-
-function aigHeaders(settings: LLMSettings): Record<string, string> | undefined {
-  if (!settings.cfAigToken) return undefined;
-  return { "cf-aig-authorization": `Bearer ${settings.cfAigToken}` };
-}
-
-function describeError(err: unknown): string {
-  if (err instanceof Error) return err.message;
-  return String(err);
-}

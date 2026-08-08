@@ -3,6 +3,11 @@
   "name": "til",
   "main": "src/worker/index.ts",
   "compatibility_date": "2026-07-01",
+  // M3: the Agents SDK statically imports node:async_hooks (AsyncLocalStorage
+  // for agent context) and node:diagnostics_channel, so the worker no longer
+  // loads without it. `nodejs_als` alone is not enough — it covers only
+  // async_hooks. This supersedes ADR-0002's "nodejs_compat is no longer needed".
+  "compatibility_flags": ["nodejs_compat"],
   "assets": {
     "binding": "ASSETS",
     "not_found_handling": "single-page-application",
@@ -21,6 +26,24 @@
       "name": "til-digest",
       "binding": "DIGEST",
       "class_name": "DigestWorkflow",
+    },
+  ],
+  // M3: the chat agent. The Agents SDK routes /{prefix}/{kebab binding}/{id},
+  // so binding CHAT + prefix "api" resolves the contract path /api/chat/:id.
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "CHAT",
+        "class_name": "TilChatAgent",
+      },
+    ],
+  },
+  "migrations": [
+    {
+      // new_sqlite_classes, not new_classes: Agents SDK agents keep their state
+      // in SQLite-backed DO storage (this.sql / ctx.storage.sql).
+      "tag": "v1",
+      "new_sqlite_classes": ["TilChatAgent"],
     },
   ],
   "triggers": {

@@ -38,4 +38,4 @@ packages/db         # Drizzle schema + migrations
 **Negative / caveats**
 
 - Monorepo tooling overhead (workspace config, Turbo pipeline).
-- Care needed so Worker-bound packages stay Workers-compatible (no stray Node-only deps — `nodejs_compat` is not enabled, [ADR-0005 v2](./0005-byok-llmclient-abstraction.md)).
+- Care needed so Worker-bound packages stay Workers-compatible. A useful side effect of the workspace split: `ai` is a dependency of `packages/core` only, so `import from "ai"` genuinely fails to resolve inside `apps/web` — [ADR-0002](./0002-ai-stack-vercel-ai-sdk-cloudflare-ai-gateway.md)'s containment guardrail is enforced by the package boundary, not just by review.

@@ -6,7 +6,8 @@ export type ApiErrorCode =
   | "not_found"
   | "validation_error"
   | "llm_error"
-  | "workflow_error";
+  | "workflow_error"
+  | "chat_unavailable";
 
 export interface ApiErrorBody {
   error: { code: ApiErrorCode; message: string };

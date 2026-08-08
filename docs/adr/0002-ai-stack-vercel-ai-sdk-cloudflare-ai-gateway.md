@@ -56,7 +56,7 @@ Use the **Vercel AI SDK** (`ai` v6, exact-pinned) as the model-access and orches
 
 **Positive**
 
-- Edge-native (fetch-based): **`nodejs_compat` is no longer needed** — deletes ADR-0005 v1's compat/bundle problem class.
+- Edge-native (fetch-based): the AI SDK itself needs no `nodejs_compat`, deleting ADR-0005 v1's compat/bundle problem class. (The flag was later re-enabled at M3 for the **Agents SDK**, not for the AI SDK — see [ADR-0003](./0003-runtime-cloudflare-workers-vite-plugin.md).)
 - Schema-validated structured output; `embed`/`embedMany`; tool loop; `useChat`; largest TS AI ecosystem; provider boundary is a published spec with independent co-maintainers (Cloudflare, OpenRouter ship their own providers).
 - Apache-2.0 library, no service dependency on Vercel when guardrail 1 is followed; worst case is pin-and-fork.
 

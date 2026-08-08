@@ -81,6 +81,23 @@ export const digestItems = sqliteTable(
   (t) => [index("digest_items_digest_id_rank_idx").on(t.digestId, t.rank)],
 );
 
+/**
+ * A cross-Durable-Object index of chat conversations. The transcript itself
+ * lives in each chat DO's own SQLite; a DO cannot enumerate its siblings, so the
+ * conversation list is maintained here by the DO as turns complete.
+ */
+export const chats = sqliteTable(
+  "chats",
+  {
+    id: text("id").primaryKey(),
+    title: text("title"),
+    messageCount: integer("message_count").notNull().default(0),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (t) => [index("chats_updated_at_idx").on(desc(t.updatedAt))],
+);
+
 export const entryVectors = sqliteTable("entry_vectors", {
   entryId: text("entry_id")
     .primaryKey()
@@ -102,3 +119,5 @@ export type DigestItem = typeof digestItems.$inferSelect;
 export type NewDigestItem = typeof digestItems.$inferInsert;
 export type EntryVector = typeof entryVectors.$inferSelect;
 export type NewEntryVector = typeof entryVectors.$inferInsert;
+export type Chat = typeof chats.$inferSelect;
+export type NewChat = typeof chats.$inferInsert;

@@ -3,6 +3,7 @@ import { buildDeps, type ExecCtx } from "./build-deps.js";
 import { describeError, startDigestRun } from "./digest-run.js";
 import type { Env } from "./env.js";
 
+export { TilChatAgent } from "./chat-agent.js";
 export { DigestWorkflow } from "./digest-workflow.js";
 
 const app = createApp((c) => buildDeps(c.env as Env, c.executionCtx as ExecCtx));
