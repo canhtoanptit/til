@@ -17,10 +17,7 @@ export type {
   VectorRecord,
   VectorStore,
 } from "./types.js";
-export {
-  MAX_SYNTHESIS_PROMPT_CHARS,
-  parseSynthesis,
-} from "./prompt.js";
+export { MAX_SYNTHESIS_PROMPT_CHARS, parseSynthesis } from "./prompt.js";
 export {
   DigestError,
   EmbeddingError,
@@ -67,13 +64,11 @@ export type { ChatToolName, StatsKind } from "./chat.js";
 export {
   CHAT_DEFAULT_MAX_STEPS,
   chatNoticeResponse,
+  describeChatStreamError,
   streamChat,
 } from "./chat-stream.js";
 export type { ChatTool, StreamChatOptions } from "./chat-stream.js";
-export {
-  SOURCE_TIMEOUT_MS,
-  SOURCE_USER_AGENT,
-} from "./sources/http.js";
+export { SOURCE_TIMEOUT_MS, SOURCE_USER_AGENT } from "./sources/http.js";
 export { ArxivAdapter, createArxivAdapter } from "./sources/arxiv.js";
 export type { ArxivAdapterOptions } from "./sources/arxiv.js";
 export { createHNAdapter, HNAdapter } from "./sources/hn.js";

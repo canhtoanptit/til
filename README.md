@@ -89,6 +89,7 @@ Then in the browser:
 
 1. Enter the token from `.dev.vars` (`dev-token` by default) at the gate.
 2. Go to **Settings** → pick your provider, model and API key, add your Cloudflare account ID and gateway ID → **Save** → **Test connection**.
+   - **Model choice matters.** The chat agent needs reliable tool calling and the digest needs strict JSON. On Groq, `openai/gpt-oss-20b` handles both; `llama-3.3-70b-versatile` streams prose fine but emits tool calls Groq's own validator rejects, so chat questions that need a search will fail.
 3. Go to **Feed** → paste an article URL and watch it become a digest.
 4. Optionally visit **Digests → Run now** to generate a digest of interesting things from the web.
 

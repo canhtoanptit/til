@@ -83,6 +83,40 @@ export interface RunDigestResponse {
   id: string;
 }
 
+export interface ChatToolCallDTO {
+  name: string;
+  args: unknown;
+  result?: unknown;
+}
+
+export interface ChatMessageDTO {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  toolCalls?: ChatToolCallDTO[];
+  createdAt: number;
+}
+
+export interface ChatConversationDTO {
+  id: string;
+  title: string | null;
+  updatedAt: number;
+  messageCount: number;
+}
+
+export interface ChatListResponse {
+  items: ChatConversationDTO[];
+}
+
+export interface ChatMessagesResponse {
+  messages: ChatMessageDTO[];
+}
+
+export interface ChatTicketDTO {
+  ticket: string;
+  expiresAt: number;
+}
+
 export type LLMProvider = "openai" | "anthropic" | "groq";
 
 export interface SettingsDTO {
@@ -313,6 +347,26 @@ export const api = {
   },
   deleteDigest(id: string): Promise<void> {
     return request(`/api/digests/${encodeURIComponent(id)}`, { method: "DELETE" });
+  },
+  listChats(
+    params: { limit?: number; signal?: AbortSignal } = {},
+  ): Promise<ChatListResponse> {
+    return request("/api/chat", {
+      query: { limit: params.limit ?? 50 },
+      signal: params.signal,
+    });
+  },
+  getChatMessages(id: string, signal?: AbortSignal): Promise<ChatMessagesResponse> {
+    return request(`/api/chat/${encodeURIComponent(id)}/messages`, { signal });
+  },
+  deleteChat(id: string): Promise<void> {
+    return request(`/api/chat/${encodeURIComponent(id)}`, { method: "DELETE" });
+  },
+  // The chat WebSocket handshake cannot carry an Authorization header, so it
+  // carries a short-lived ticket minted here instead — routed through `request`
+  // so a stale token still clears the session exactly once, in one place.
+  mintChatTicket(): Promise<ChatTicketDTO> {
+    return request("/api/chat/ticket", { method: "POST" });
   },
   getSettings(signal?: AbortSignal): Promise<SettingsDTO | null> {
     return request<SettingsDTO>("/api/settings", { signal }).catch((e: unknown) => {

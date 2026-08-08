@@ -6,6 +6,8 @@ import { Shell } from "./components/Shell";
 import { TokenGate } from "./components/TokenGate";
 import { FeedPage } from "./pages/FeedPage";
 import { EntryDetailPage } from "./pages/EntryDetailPage";
+import { ChatListPage } from "./pages/ChatListPage";
+import { ChatPage } from "./pages/ChatPage";
 import { DigestListPage } from "./pages/DigestListPage";
 import { DigestDetailPage } from "./pages/DigestDetailPage";
 import { SettingsPage } from "./pages/SettingsPage";
@@ -33,6 +35,8 @@ export function App() {
       <Route element={<Shell />}>
         <Route path="/" element={<FeedPage />} />
         <Route path="/entries/:id" element={<EntryDetailPage />} />
+        <Route path="/chat" element={<ChatListPage />} />
+        <Route path="/chat/:id" element={<ChatPage />} />
         <Route path="/digests" element={<DigestListPage />} />
         <Route path="/digests/:id" element={<DigestDetailPage />} />
         <Route path="/settings" element={<SettingsPage />} />

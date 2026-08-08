@@ -20,6 +20,9 @@ export function Shell() {
             <NavLink to="/" end className={linkClass}>
               Feed
             </NavLink>
+            <NavLink to="/chat" className={linkClass}>
+              Chat
+            </NavLink>
             <NavLink to="/digests" className={linkClass}>
               Digests
             </NavLink>

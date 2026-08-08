@@ -23,7 +23,9 @@ interface SavedRouting {
 function providerPlaceholder(p: LLMProvider): string {
   if (p === "openai") return "gpt-5-mini";
   if (p === "anthropic") return "claude-4-7-sonnet";
-  return "llama-3.3-70b-versatile";
+  // WHY: llama-3.3-70b-versatile emits tool calls Groq's own validator rejects,
+  // which breaks chat; gpt-oss handles both tool calling and strict json_schema.
+  return "openai/gpt-oss-20b";
 }
 
 const EMPTY_FORM: FormState = {
@@ -99,7 +101,11 @@ export function SettingsPage() {
 
   function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    if (!form.model.trim() || !form.cfAccountId.trim() || !form.cfGatewayId.trim()) {
+    if (
+      !form.model.trim() ||
+      !form.cfAccountId.trim() ||
+      !form.cfGatewayId.trim()
+    ) {
       return;
     }
     const apiKey = form.apiKey.trim();
@@ -144,9 +150,15 @@ export function SettingsPage() {
         </p>
       </header>
 
-      <form onSubmit={onSubmit} className="space-y-4 rounded border border-slate-200 bg-white p-5 shadow-sm">
+      <form
+        onSubmit={onSubmit}
+        className="space-y-4 rounded border border-slate-200 bg-white p-5 shadow-sm"
+      >
         <div>
-          <label htmlFor="provider" className="block text-sm font-medium text-slate-700">
+          <label
+            htmlFor="provider"
+            className="block text-sm font-medium text-slate-700"
+          >
             Provider
           </label>
           <select
@@ -167,7 +179,10 @@ export function SettingsPage() {
         </div>
 
         <div>
-          <label htmlFor="model" className="block text-sm font-medium text-slate-700">
+          <label
+            htmlFor="model"
+            className="block text-sm font-medium text-slate-700"
+          >
             Model
           </label>
           <input
@@ -182,7 +197,10 @@ export function SettingsPage() {
         </div>
 
         <div>
-          <label htmlFor="apiKey" className="block text-sm font-medium text-slate-700">
+          <label
+            htmlFor="apiKey"
+            className="block text-sm font-medium text-slate-700"
+          >
             API key{hasSaved && !apiKeyRequired ? " (optional)" : ""}
           </label>
           <input
@@ -197,14 +215,14 @@ export function SettingsPage() {
           />
           {hasSaved && (
             <p className="mt-1 text-xs text-slate-500">
-              Leave blank to keep the saved key. Required if you change provider,
-              account ID, or gateway ID.
+              Leave blank to keep the saved key. Required if you change
+              provider, account ID, or gateway ID.
             </p>
           )}
           {routingChanged && (
             <p className="mt-1 text-xs text-amber-700">
-              Provider, account ID, or gateway ID changed — re-enter the full API
-              key to save.
+              Provider, account ID, or gateway ID changed — re-enter the full
+              API key to save.
             </p>
           )}
         </div>
@@ -222,7 +240,9 @@ export function SettingsPage() {
               type="text"
               required
               value={form.cfAccountId}
-              onChange={(e) => setForm((f) => ({ ...f, cfAccountId: e.target.value }))}
+              onChange={(e) =>
+                setForm((f) => ({ ...f, cfAccountId: e.target.value }))
+              }
               className="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
             />
           </div>
@@ -238,7 +258,9 @@ export function SettingsPage() {
               type="text"
               required
               value={form.cfGatewayId}
-              onChange={(e) => setForm((f) => ({ ...f, cfGatewayId: e.target.value }))}
+              onChange={(e) =>
+                setForm((f) => ({ ...f, cfGatewayId: e.target.value }))
+              }
               className="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
             />
           </div>
@@ -257,13 +279,15 @@ export function SettingsPage() {
             autoComplete="off"
             disabled={clearAigToken}
             value={form.cfAigToken}
-            onChange={(e) => setForm((f) => ({ ...f, cfAigToken: e.target.value }))}
+            onChange={(e) =>
+              setForm((f) => ({ ...f, cfAigToken: e.target.value }))
+            }
             placeholder={hasAigToken ? "•••• saved" : "gateway token"}
             className="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none disabled:bg-slate-100 disabled:text-slate-400"
           />
           <p className="mt-1 text-xs text-slate-500">
-            Required if your gateway has Authenticated Gateway enabled. Leave blank
-            to keep the saved token.
+            Required if your gateway has Authenticated Gateway enabled. Leave
+            blank to keep the saved token.
           </p>
           {hasAigToken && (
             <label className="mt-2 flex items-center gap-2 text-xs text-slate-600">
@@ -272,7 +296,8 @@ export function SettingsPage() {
                 checked={clearAigToken}
                 onChange={(e) => {
                   setClearAigToken(e.target.checked);
-                  if (e.target.checked) setForm((f) => ({ ...f, cfAigToken: "" }));
+                  if (e.target.checked)
+                    setForm((f) => ({ ...f, cfAigToken: "" }));
                 }}
                 className="rounded border-slate-300"
               />
@@ -301,7 +326,9 @@ export function SettingsPage() {
         </div>
 
         {saveMutation.isError && (
-          <p className="text-sm text-red-700">{friendlyMessage(saveMutation.error)}</p>
+          <p className="text-sm text-red-700">
+            {friendlyMessage(saveMutation.error)}
+          </p>
         )}
         {saveMutation.isSuccess && (
           <p className="text-sm text-emerald-700">Saved.</p>
@@ -323,7 +350,9 @@ export function SettingsPage() {
           </div>
         )}
         {testMutation.isError && (
-          <p className="text-sm text-red-700">{friendlyMessage(testMutation.error)}</p>
+          <p className="text-sm text-red-700">
+            {friendlyMessage(testMutation.error)}
+          </p>
         )}
       </form>
     </div>

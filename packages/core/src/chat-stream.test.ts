@@ -3,6 +3,7 @@ import { CHAT_SYSTEM_PROMPT, CHAT_TOOL_SCHEMAS } from "./chat.js";
 import {
   CHAT_DEFAULT_MAX_STEPS,
   chatNoticeResponse,
+  describeChatStreamError,
   streamChat,
   type ChatTool,
 } from "./chat-stream.js";
@@ -20,7 +21,10 @@ function makeFetch(responses: Response[]): {
 } {
   const captured: Captured[] = [];
   const queue = [...responses];
-  const fetchImpl = (async (input: Request | string | URL, init?: RequestInit) => {
+  const fetchImpl = (async (
+    input: Request | string | URL,
+    init?: RequestInit,
+  ) => {
     const headers: Record<string, string> = {};
     const raw = init?.headers;
     if (raw instanceof Headers) {
@@ -122,7 +126,11 @@ const settings: LLMSettings = {
 };
 
 const messages = [
-  { id: "m1", role: "user", parts: [{ type: "text", text: "what about css?" }] },
+  {
+    id: "m1",
+    role: "user",
+    parts: [{ type: "text", text: "what about css?" }],
+  },
 ];
 
 function searchTool(calls: Record<string, unknown>[]): ChatTool {
@@ -177,12 +185,16 @@ describe("streamChat", () => {
       fetchImpl,
     });
     await readBody(res);
-    expect(captured[0]!.headers["cf-aig-authorization"]).toBe("Bearer gw-token");
+    expect(captured[0]!.headers["cf-aig-authorization"]).toBe(
+      "Bearer gw-token",
+    );
   });
 
   it("includes the chat system prompt and the user turn", async () => {
     const { fetchImpl, captured } = makeFetch([sse(textChunks("ok"))]);
-    await readBody(await streamChat({ settings, messages, tools: [], fetchImpl }));
+    await readBody(
+      await streamChat({ settings, messages, tools: [], fetchImpl }),
+    );
 
     const wire = captured[0]!.body.messages as {
       role: string;
@@ -313,5 +325,32 @@ describe("chatNoticeResponse", () => {
     expect(body).toContain('"type":"text-delta"');
     expect(body).toContain("No model is configured yet.");
     expect(body).toContain('"type":"finish"');
+  });
+});
+
+describe("describeChatStreamError", () => {
+  it("explains the Groq tool-calling rejection and names a working model", () => {
+    const msg = describeChatStreamError(
+      new Error(
+        "Failed to call a function. Please adjust your prompt. See 'failed_generation' for more details.",
+      ),
+    );
+    expect(msg).toContain("tool");
+    expect(msg).toContain("gpt-oss-20b");
+  });
+
+  it("recognises rate limits and auth failures", () => {
+    expect(describeChatStreamError(new Error("429 tokens per minute"))).toMatch(
+      /rate-limited/i,
+    );
+    expect(describeChatStreamError(new Error("401 Unauthorized"))).toMatch(
+      /credentials/i,
+    );
+  });
+
+  it("falls back to a truncated message and never returns an empty string", () => {
+    const msg = describeChatStreamError(new Error("x".repeat(1000)));
+    expect(msg.length).toBeLessThan(400);
+    expect(describeChatStreamError(undefined).length).toBeGreaterThan(0);
   });
 });

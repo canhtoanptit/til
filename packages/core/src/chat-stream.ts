@@ -48,7 +48,27 @@ export async function streamChat(opts: StreamChatOptions): Promise<Response> {
     stopWhen: stepCountIs(maxSteps),
     ...(opts.abortSignal ? { abortSignal: opts.abortSignal } : {}),
   });
-  return result.toUIMessageStreamResponse();
+  return result.toUIMessageStreamResponse({ onError: describeChatStreamError });
+}
+
+/**
+ * Without this the SDK masks every failure as "An error occurred", which hides
+ * the one failure users actually hit: models whose tool-calling the provider
+ * rejects. Returns prose for the chat bubble — never raw provider payloads,
+ * which can echo back the prompt.
+ */
+export function describeChatStreamError(error: unknown): string {
+  const raw = error instanceof Error ? error.message : String(error);
+  if (/failed to call a function|failed_generation|tool.?call/i.test(raw)) {
+    return "The model failed to use the search tools. Some models advertise tool calling but emit a format the provider rejects — llama-3.3-70b-versatile on Groq is a known case. Pick a tool-capable model in Settings (on Groq, openai/gpt-oss-20b works) and try again.";
+  }
+  if (/rate.?limit|429|tokens per (minute|min)|tpm/i.test(raw)) {
+    return "The provider rate-limited this request. Wait a moment and try again.";
+  }
+  if (/unauthorized|401|invalid.?api.?key|forbidden|403/i.test(raw)) {
+    return "The provider rejected the credentials. Check the API key and gateway settings in Settings.";
+  }
+  return `The assistant could not finish that answer: ${raw.slice(0, 300)}`;
 }
 
 /**
