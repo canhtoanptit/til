@@ -1,0 +1,289 @@
+[
+  {
+    "id": "gr01",
+    "query": "is it possible for lookups to continue while an update is being persisted to the very store they read?",
+    "expected": ["e01"],
+    "kind": "semantic",
+    "note": "WAL concurrency described with none of the target's vocabulary: no wal, log, reader, writer, block or snapshot."
+  },
+  {
+    "id": "gr02",
+    "query": "why do repeated edits make a database consume more disk than the records it holds?",
+    "expected": ["e03"],
+    "kind": "semantic",
+    "note": "Bloat from dead tuples, asked without table, row, count, space, vacuum or size."
+  },
+  {
+    "id": "gr03",
+    "query": "two concurrent operations each based a decision on figures the other then modified, and both were accepted — how is that ruled out?",
+    "expected": ["e06"],
+    "kind": "semantic",
+    "note": "Write skew under snapshot isolation, with no isolation, serializable, snapshot, anomaly or transaction."
+  },
+  {
+    "id": "gr04",
+    "query": "how does a cluster agree on which machine is in charge after the previous boss goes quiet?",
+    "expected": ["e13"],
+    "kind": "semantic",
+    "note": "Leader election paraphrased away from raft, leader, election, term, vote and timeout."
+  },
+  {
+    "id": "gr05",
+    "query": "two phones altered the identical note while apart from the network, and both versions must survive with no winner picked",
+    "expected": ["e12"],
+    "kind": "semantic",
+    "note": "CRDT convergence with no crdt, merge, replica, conflict, offline or converge."
+  },
+  {
+    "id": "gr06",
+    "query": "somebody signed up a minute ago and we know nothing about their taste — what do we put in front of them?",
+    "expected": ["e20"],
+    "kind": "semantic",
+    "note": "Recommender cold start. Shares no word with the target, and deliberately no 'cold start' either, so it must not drag in the serverless entry."
+  },
+  {
+    "id": "gr07",
+    "query": "why does twice as much input text take about four times longer to chew through?",
+    "expected": ["e21"],
+    "kind": "semantic",
+    "note": "Quadratic self-attention without attention, query, key, value, sequence, quadratic or square."
+  },
+  {
+    "id": "gr08",
+    "query": "one visitor waits a whole second while everybody else waits ten milliseconds, and it happens after idle stretches",
+    "expected": ["e26"],
+    "kind": "semantic",
+    "note": "Serverless cold start with no cold, start, init, lambda, warm or concurrency — the mirror of gr06."
+  },
+  {
+    "id": "gr09",
+    "query": "adding a worker made a parallel loop slower although no lock is involved and the tallies are adjacent in the struct",
+    "expected": ["e27"],
+    "kind": "semantic",
+    "note": "False sharing without false, sharing, cache, line, core, counter, padding or invalidate."
+  },
+  {
+    "id": "gr10",
+    "query": "how can a server hand the operating layer thousands of pending reads in bulk rather than singly?",
+    "expected": ["e31"],
+    "kind": "semantic",
+    "note": "io_uring batching with no uring, ring, submission, completion, syscall or kernel."
+  },
+  {
+    "id": "gr11",
+    "query": "one job in my build goes red now and then and is fine on a rerun — where should I dig?",
+    "expected": ["e36"],
+    "kind": "semantic",
+    "note": "Flaky test race with no flaky, race, sleep, fixture, timing or readiness."
+  },
+  {
+    "id": "gr12",
+    "query": "the visitor navigated away but my handler is grinding through a slow query — how do I get the functions underneath to abandon it?",
+    "expected": ["e38"],
+    "kind": "semantic",
+    "note": "Go context cancellation without context, cancel, deadline, goroutine, channel or propagate."
+  },
+  {
+    "id": "gr13",
+    "query": "the amount I pay for a blob container is much larger than the sum of what shows when I enumerate it",
+    "expected": ["e41"],
+    "kind": "semantic",
+    "note": "Orphaned multipart uploads and old versions, with no lifecycle, expiry, bucket, upload, version or garbage."
+  },
+  {
+    "id": "gr14",
+    "query": "we are woken so frequently by issues that resolve themselves that nobody reacts urgently any more",
+    "expected": ["e44"],
+    "kind": "semantic",
+    "note": "Alert fatigue with no alert, page, on-call, noise, symptom or dashboard."
+  },
+  {
+    "id": "gr15",
+    "query": "something worked in March and is broken today with four hundred changes in between — how do I pin down the culprit?",
+    "expected": ["e49"],
+    "kind": "semantic",
+    "note": "git bisect without bisect, git, commit, binary, search or regression."
+  },
+  {
+    "id": "gr16",
+    "query": "a single lettering asset is a third of my initial payload — how do I send only the shapes this site draws?",
+    "expected": ["e50"],
+    "kind": "semantic",
+    "note": "Font subsetting with no font, glyph, subset, typeface, character or range."
+  },
+  {
+    "id": "gr17",
+    "query": "FTS5 bm25 ranking",
+    "expected": ["e05"],
+    "kind": "keyword",
+    "note": "Two identifiers an embedding model blurs together with every other search topic."
+  },
+  {
+    "id": "gr18",
+    "query": "io_uring submission and completion rings",
+    "expected": ["e31"],
+    "kind": "keyword",
+    "note": "The FTS5 tokenizer splits io_uring into io and uring, so this also checks the tokenizer assumption."
+  },
+  {
+    "id": "gr19",
+    "query": "HNSW efConstruction tuning",
+    "expected": ["e18"],
+    "kind": "keyword",
+    "note": "Exact parameter name; nothing else in the corpus mentions it."
+  },
+  {
+    "id": "gr20",
+    "query": "eBPF",
+    "expected": ["e43"],
+    "kind": "keyword",
+    "note": "Single rare acronym, one-word query."
+  },
+  {
+    "id": "gr21",
+    "query": "CRDT",
+    "expected": ["e12"],
+    "kind": "keyword",
+    "note": "Acronym in the title and tags; the semantic twin of gr05."
+  },
+  {
+    "id": "gr22",
+    "query": "Raft consensus",
+    "expected": ["e13"],
+    "kind": "keyword",
+    "note": "Protocol name; the semantic twin of gr04."
+  },
+  {
+    "id": "gr23",
+    "query": "SIMD auto-vectorisation",
+    "expected": ["e32"],
+    "kind": "keyword",
+    "note": "SIMD is the discriminating term; 'vector' alone would also hit the vector-search entries."
+  },
+  {
+    "id": "gr24",
+    "query": "Zig comptime",
+    "expected": ["e39"],
+    "kind": "keyword",
+    "note": "Language and keyword, both unique in the corpus."
+  },
+  {
+    "id": "gr25",
+    "query": "OTLP span context propagation",
+    "expected": ["e42"],
+    "kind": "keyword",
+    "note": "Protocol acronym plus tracing terms."
+  },
+  {
+    "id": "gr26",
+    "query": "surrogate keys purge",
+    "expected": ["e29"],
+    "kind": "keyword",
+    "note": "Domain term that is meaningless to paraphrase."
+  },
+  {
+    "id": "gr27",
+    "query": "stale-while-revalidate Cache-Control",
+    "expected": ["e28"],
+    "kind": "keyword",
+    "note": "Hyphenated directive names; the tokenizer splits them and the terms are still rare."
+  },
+  {
+    "id": "gr28",
+    "query": "autovacuum scale factor",
+    "expected": ["e03"],
+    "kind": "keyword",
+    "note": "Exact setting name; the semantic twin of gr02."
+  },
+  {
+    "id": "gr29",
+    "query": "bge-m3 1024 dimensions",
+    "expected": ["e24"],
+    "kind": "keyword",
+    "note": "Model name plus a number — embeddings are poor at digits, keyword search is not."
+  },
+  {
+    "id": "gr30",
+    "query": "borrow checker data race",
+    "expected": ["e35"],
+    "kind": "keyword",
+    "note": "'race' alone would also match the flaky-test entry; 'borrow checker' disambiguates."
+  },
+  {
+    "id": "gr31",
+    "query": "token bucket versus leaky bucket",
+    "expected": ["e30"],
+    "kind": "keyword",
+    "note": "'token' is a corpus-wide trap word (auth tokens, LLM tokens); 'bucket' carries the meaning."
+  },
+  {
+    "id": "gr32",
+    "query": "hybrid search that fuses a keyword ranker with dense vectors",
+    "expected": ["e16", "e17"],
+    "kind": "mixed",
+    "note": "Near-duplicate pair: both entries are correct, so a run that finds only one loses recall."
+  },
+  {
+    "id": "gr33",
+    "query": "my write-ahead log file keeps growing and will not shrink",
+    "expected": ["e02", "e01"],
+    "kind": "mixed",
+    "note": "Near-duplicate pair on SQLite WAL; the checkpoint entry is the better answer but both are relevant."
+  },
+  {
+    "id": "gr34",
+    "query": "how do I log somebody out everywhere the moment their credential leaks?",
+    "expected": ["e45", "e46"],
+    "kind": "mixed",
+    "note": "Near-duplicate pair: revocation is argued from both the session and the JWT side."
+  },
+  {
+    "id": "gr35",
+    "query": "what did I save about network partitions?",
+    "expected": ["e10", "e11"],
+    "kind": "mixed",
+    "note": "Keyword trap: 'partition' means a CAP network split and a Kafka topic shard, and both are legitimately about partitions."
+  },
+  {
+    "id": "gr36",
+    "query": "cold start",
+    "expected": ["e20", "e26"],
+    "kind": "mixed",
+    "note": "The deliberate ambiguity: the same phrase names the recommender problem and the serverless latency problem, so a good run returns both."
+  },
+  {
+    "id": "gr37",
+    "query": "how does a long chat transcript get billed by the token?",
+    "expected": ["e22"],
+    "kind": "mixed",
+    "note": "'token' also appears in the rate-limiting and JWT entries, so this measures disambiguation, not recall."
+  },
+  {
+    "id": "gr38",
+    "query": "collector pauses on a very large heap",
+    "expected": ["e40"],
+    "kind": "mixed",
+    "note": "'garbage collection' is shared with the object-storage entry; heap and pause pick the JVM one."
+  },
+  {
+    "id": "gr39",
+    "query": "How does bm25 stop frequent terms from dominating a match?",
+    "expected": ["e05"],
+    "kind": "mixed",
+    "note": "The entry's own stored question, used verbatim — the question field is never FTS-indexed, so the keyword leg only sees the terms it happens to share with the body."
+  },
+  {
+    "id": "gr40",
+    "query": "How do you prevent a conditional type from distributing across a union?",
+    "expected": ["e37"],
+    "kind": "mixed",
+    "note": "Second stored question used verbatim, on an entry with no near-duplicate."
+  },
+  {
+    "id": "gr41",
+    "query": "what have I got on how an index is actually laid out?",
+    "expected": ["e04", "e05"],
+    "kind": "mixed",
+    "note": "Keyword trap on 'index': a B-tree of sorted pages and an inverted posting list are both correct answers, and nothing else in the corpus is about index layout."
+  }
+]

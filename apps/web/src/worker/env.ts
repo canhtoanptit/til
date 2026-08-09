@@ -11,4 +11,7 @@ export interface Env {
   CHAT: DurableObjectNamespace<TilChatAgent>;
   TIL_STACK?: string;
   OLLAMA_BASE_URL?: string;
+  TIL_EMBEDDER?: string;
+  CF_ACCOUNT_ID?: string;
+  WORKERS_AI_API_TOKEN?: string;
 }

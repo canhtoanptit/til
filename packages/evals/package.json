@@ -1,0 +1,27 @@
+{
+  "name": "@til/evals",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc --noEmit",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src",
+    "test": "vitest run --passWithNoTests",
+    "eval:retrieval": "tsx src/run-retrieval.ts",
+    "eval:chat": "tsx src/run-chat.ts"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^9.6.0",
+    "@types/node": "^26.1.2",
+    "better-sqlite3": "^13.0.2",
+    "tsx": "4.23.4",
+    "typescript": "5.9.3",
+    "vitest": "4.1.10"
+  },
+  "dependencies": {
+    "@til/core": "workspace:*",
+    "@til/db": "workspace:*",
+    "drizzle-orm": "^0.45.2"
+  }
+}

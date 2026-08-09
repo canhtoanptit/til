@@ -1,5 +1,6 @@
 import {
   createOllamaEmbedder,
+  createWorkersAIRestEmbedder,
   EMBEDDING_DIMENSIONS,
   OLLAMA_DEFAULT_BASE_URL,
 } from "@til/core";
@@ -15,9 +16,17 @@ import {
 
 export const DEFAULT_STACK_MODE: StackMode = "local";
 
+/** Which embedder `local` mode uses; see ADR-0010 (amended for workers-ai). */
+export type LocalEmbedderKind = "ollama" | "workers-ai";
+
+export const DEFAULT_LOCAL_EMBEDDER: LocalEmbedderKind = "ollama";
+
 export interface StackEnv {
   TIL_STACK?: string | undefined;
   OLLAMA_BASE_URL?: string | undefined;
+  TIL_EMBEDDER?: string | undefined;
+  CF_ACCOUNT_ID?: string | undefined;
+  WORKERS_AI_API_TOKEN?: string | undefined;
   AI?: unknown;
   VECTORIZE?: unknown;
 }
@@ -51,6 +60,19 @@ export function resolveStackMode(raw: string | undefined | null): StackMode {
   return DEFAULT_STACK_MODE;
 }
 
+/** Unknown, empty and absent values all mean `ollama`. */
+export function resolveLocalEmbedderKind(
+  raw: string | undefined | null,
+): LocalEmbedderKind {
+  const value = typeof raw === "string" ? raw.trim().toLowerCase() : "";
+  if (value === "workers-ai") return "workers-ai";
+  if (value === "ollama" || value === "") return DEFAULT_LOCAL_EMBEDDER;
+  console.warn(
+    `[stack] unknown TIL_EMBEDDER=${JSON.stringify(raw)} — falling back to '${DEFAULT_LOCAL_EMBEDDER}'.`,
+  );
+  return DEFAULT_LOCAL_EMBEDDER;
+}
+
 export function resolveStack(env: StackEnv, ctx: StackContext): ResolvedStack {
   const mode = resolveStackMode(env.TIL_STACK);
   const resolved = mode === "cloud" ? cloudStack(env) : localStack(env, ctx);
@@ -78,6 +100,29 @@ function cloudStack(env: StackEnv): ResolvedStack {
 }
 
 function localStack(env: StackEnv, ctx: StackContext): ResolvedStack {
+  const leg =
+    resolveLocalEmbedderKind(env.TIL_EMBEDDER) === "workers-ai"
+      ? workersAiRestLeg(env, ctx)
+      : ollamaLeg(env, ctx);
+  return {
+    mode: "local",
+    extractor: new ReadabilityExtractor(),
+    embedder: leg.embedder,
+    vectorStore: new D1VectorStore(
+      ctx.db,
+      EMBEDDING_DIMENSIONS,
+      ctx.now ?? Date.now,
+    ),
+    probeEmbedder: leg.probeEmbedder,
+  };
+}
+
+interface EmbedderLeg {
+  embedder: Embedder | null;
+  probeEmbedder: () => Promise<EmbedderStatus>;
+}
+
+function ollamaLeg(env: StackEnv, ctx: StackContext): EmbedderLeg {
   const baseUrl = stripTrailingSlash(
     env.OLLAMA_BASE_URL ?? OLLAMA_DEFAULT_BASE_URL,
   );
@@ -85,16 +130,31 @@ function localStack(env: StackEnv, ctx: StackContext): ResolvedStack {
   if (ctx.fetchImpl !== undefined) options.fetchImpl = ctx.fetchImpl;
   const embedder = createOllamaEmbedder(options);
   return {
-    mode: "local",
-    extractor: new ReadabilityExtractor(),
     embedder,
-    vectorStore: new D1VectorStore(
-      ctx.db,
-      EMBEDDING_DIMENSIONS,
-      ctx.now ?? Date.now,
-    ),
     probeEmbedder: () =>
       probeOllama(baseUrl, embedder.model, ctx.fetchImpl, ctx.now ?? Date.now),
+  };
+}
+
+function workersAiRestLeg(env: StackEnv, ctx: StackContext): EmbedderLeg {
+  const accountId = (env.CF_ACCOUNT_ID ?? "").trim();
+  const apiToken = (env.WORKERS_AI_API_TOKEN ?? "").trim();
+  if (accountId.length === 0 || apiToken.length === 0) {
+    warnOnce(
+      "[stack] TIL_EMBEDDER=workers-ai needs both CF_ACCOUNT_ID and WORKERS_AI_API_TOKEN — running without an embedder, so search degrades to FTS-only.",
+    );
+    return { embedder: null, probeEmbedder: async () => "unavailable" };
+  }
+  const options: Parameters<typeof createWorkersAIRestEmbedder>[0] = {
+    accountId,
+    apiToken,
+  };
+  if (ctx.fetchImpl !== undefined) options.fetchImpl = ctx.fetchImpl;
+  return {
+    embedder: createWorkersAIRestEmbedder(options),
+    // WHY: same as `cloud` — every Workers AI call bills neurons, so having the
+    // credentials is the only free signal there is.
+    probeEmbedder: async () => "ok",
   };
 }
 
@@ -154,6 +214,16 @@ async function runOllamaProbe(
 
 function stripTrailingSlash(value: string): string {
   return value.replace(/\/+$/, "");
+}
+
+// `buildDeps` runs per request; a misconfiguration is a property of the isolate,
+// so say it once rather than on every hit.
+const warned = new Set<string>();
+
+function warnOnce(message: string): void {
+  if (warned.has(message)) return;
+  warned.add(message);
+  console.warn(message);
 }
 
 // `buildDeps` runs per request; the resolved stack is a property of the isolate,

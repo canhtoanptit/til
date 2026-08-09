@@ -1,0 +1,502 @@
+[
+  {
+    "id": "e01",
+    "url": "https://www.sqlite.org/wal.html",
+    "title": "SQLite WAL mode: readers stop blocking on the writer",
+    "summary": "In WAL mode SQLite appends changes to a write-ahead log instead of overwriting pages in place, so a single writer and many readers proceed at the same time. Each reader pins an end mark in the log and sees a stable snapshot taken when it started.",
+    "takeaway": "Turning on WAL removes the reader-versus-writer stall that rollback journals cause, at the cost of one extra file to manage.",
+    "question": "Why does a reader in WAL mode never see a half-written commit?",
+    "tags": ["sqlite", "wal", "concurrency"],
+    "contentMarkdown": "Rollback journal mode copies original pages aside and locks the whole file while a commit lands. WAL mode inverts that: new page images are appended to a log and readers keep using the main file plus the log prefix that existed when they began. The end mark each reader pins is what makes its snapshot stable."
+  },
+  {
+    "id": "e02",
+    "url": "https://fly.io/blog/sqlite-wal-checkpoint-stalls/",
+    "title": "When SQLite WAL checkpoints never finish",
+    "summary": "A checkpoint can only copy log frames back into the main file up to the oldest reader end mark, so one long-lived read transaction pins the log and it grows without bound. Passive checkpoints give up silently, which is why the log file looks stuck.",
+    "takeaway": "An unbounded WAL file is almost always a long-running reader, not a write volume problem.",
+    "question": "How do you find the reader that is pinning a WAL log?",
+    "tags": ["sqlite", "wal", "operations"],
+    "contentMarkdown": "Passive checkpointing is best effort: it copies what it can and returns success even when it copied nothing. Because frames past the oldest end mark must stay, a reporting query left open for hours pins the whole log. Truncate checkpoints and reader timeouts are the two levers that actually shrink the file."
+  },
+  {
+    "id": "e03",
+    "url": "https://www.crunchydata.com/blog/postgres-vacuum-and-bloat",
+    "title": "Postgres autovacuum, dead tuples and table bloat",
+    "summary": "Every update in Postgres leaves a dead tuple behind, and autovacuum is what reclaims that space for reuse. When the vacuum threshold is scaled off table size, large tables get visited too rarely and bloat outruns cleanup.",
+    "takeaway": "Lower the scale factor on your biggest tables or autovacuum will always arrive late.",
+    "question": "Which setting decides how much dead space accumulates before autovacuum runs?",
+    "tags": ["postgres", "vacuum", "operations"],
+    "contentMarkdown": "MVCC means an update writes a new tuple version and marks the old one dead. Autovacuum wakes up when dead tuples exceed a threshold plus a fraction of the row count, so a billion-row table waits far longer in absolute terms than a small one. Per-table storage parameters are the usual fix."
+  },
+  {
+    "id": "e04",
+    "url": "https://use-the-index-luke.com/sql/anatomy/the-tree",
+    "title": "B-tree index anatomy: page splits and fill factor",
+    "summary": "A B-tree index stores sorted keys in fixed-size pages linked into a tree, and inserting into a full page splits it in two. Random key order therefore leaves pages half empty, while append-only keys pack them tightly.",
+    "takeaway": "Random primary keys such as version-4 UUIDs trade write locality for index size and split churn.",
+    "question": "Why does inserting sorted keys produce a denser B-tree than inserting random ones?",
+    "tags": ["databases", "btree", "indexing"],
+    "contentMarkdown": "Leaf pages hold sorted key ranges and a doubly linked chain lets range scans walk sideways. A split allocates a fresh page, moves half the keys, and updates the parent, which can cascade upward. Fill factor reserves free space per page so later inserts land without splitting."
+  },
+  {
+    "id": "e05",
+    "url": "https://www.sqlite.org/fts5.html",
+    "title": "FTS5 inverted index and bm25 ranking",
+    "summary": "FTS5 builds an inverted index from tokenized text and can rank matches with bm25, which weighs rare terms far more than common ones. An external content table keeps the index in sync through triggers rather than duplicating the source rows.",
+    "takeaway": "bm25 makes a bag-of-terms query usable, because a stop word contributes almost nothing to the score.",
+    "question": "How does bm25 stop frequent terms from dominating a match?",
+    "tags": ["sqlite", "fts5", "search", "bm25"],
+    "contentMarkdown": "Tokenizing a column produces a posting list per term, and a query intersects or unions those lists. bm25 combines term frequency saturation with inverse document frequency, so a term appearing in every row barely moves the score. Contentless and external-content tables avoid storing the text twice."
+  },
+  {
+    "id": "e06",
+    "url": "https://www.postgresql.org/docs/current/transaction-iso.html",
+    "title": "Repeatable read versus serializable in Postgres",
+    "summary": "Repeatable read gives each transaction a snapshot and aborts writes that conflict, while serializable adds predicate tracking to catch anomalies that snapshots alone permit. Serializable snapshot isolation detects dangerous read-write cycles and rolls one transaction back.",
+    "takeaway": "Serializable is not slower because of locks; it is slower because you must be ready to retry aborted transactions.",
+    "question": "What anomaly does snapshot isolation allow that serializable rejects?",
+    "tags": ["postgres", "isolation", "transactions"],
+    "contentMarkdown": "Under snapshot isolation two transactions can each read what the other is about to change and both commit, leaving a state no serial order produces. Serializable snapshot isolation tracks read dependencies and aborts a transaction in the cycle. Application code must therefore treat serialization failures as normal and retry."
+  },
+  {
+    "id": "e07",
+    "url": "https://www.moderntreasury.com/journal/double-entry-ledgers",
+    "title": "Double-entry ledgers for money movement",
+    "summary": "A payments ledger records every movement as balanced debit and credit postings so that account balances are always derivable and never patched by hand. Idempotency keys on the write path stop a retried charge from posting twice.",
+    "takeaway": "Never store a mutable balance column; store immutable postings and sum them.",
+    "question": "How does a double-entry ledger make a mis-posted payment auditable?",
+    "tags": ["payments", "ledger", "accounting"],
+    "contentMarkdown": "Each money movement becomes two or more postings whose amounts sum to zero across accounts. Balances are then a projection over postings, which makes any discrepancy a bug in the projection rather than lost history. Reversals are new postings, never edits."
+  },
+  {
+    "id": "e08",
+    "url": "https://planetscale.com/blog/expand-contract-schema-migrations",
+    "title": "Expand and contract: schema changes without downtime",
+    "summary": "Deploying a schema change in one shot breaks whichever side of the release lands second, so the change is split into an additive expand phase, a backfill, and a later contract phase that drops the old shape. Both application versions must read and write correctly during the overlap.",
+    "takeaway": "Every destructive schema step belongs in a separate deploy from the code that stops using the old column.",
+    "question": "Why must a column rename become an add, a backfill, and a drop?",
+    "tags": ["databases", "schema-migration", "deployment"],
+    "contentMarkdown": "During a rolling deploy old and new application code run at once, so the schema has to satisfy both. Expand adds the new column and dual-writes, backfill copies historical rows, and contract removes the old column once no code references it. Each phase is independently revertible."
+  },
+  {
+    "id": "e09",
+    "url": "https://blog.cloudflare.com/aws-egregious-egress/",
+    "title": "Moving three terabytes between cloud providers",
+    "summary": "The engineering work in a provider-to-provider move is small next to the egress invoice, which is billed per gigabyte leaving the source network. Planning the cutover around a bulk transfer appliance or a peering arrangement changes the bill by an order of magnitude.",
+    "takeaway": "Estimate egress cost before the architecture; it decides whether a lift-and-shift is even affordable.",
+    "question": "What makes leaving a cloud provider more expensive than joining one?",
+    "tags": ["cloud", "cost", "networking"],
+    "contentMarkdown": "Inbound bytes are usually free while outbound bytes carry a per-gigabyte charge that does not fall much with volume. A three-terabyte corpus can therefore cost more to remove than a year of storing it. Physical transfer devices and negotiated peering both exist precisely because of that asymmetry."
+  },
+  {
+    "id": "e10",
+    "url": "https://codahale.com/you-cant-sacrifice-partition-tolerance/",
+    "title": "You cannot sacrifice partition tolerance",
+    "summary": "The P in CAP is not a design choice but a fact of networks: links drop and the system must still decide what to do. The real decision is what happens during a split, and consistency versus availability is only interesting while one lasts.",
+    "takeaway": "CAP is a statement about behaviour during a network split, not a menu of three options to pick two from.",
+    "question": "If a network split is unavoidable, what is actually being traded?",
+    "tags": ["distributed-systems", "cap", "networking"],
+    "contentMarkdown": "A split means two halves of a cluster cannot exchange messages while both stay alive. Refusing writes on the minority side buys consistency; accepting them everywhere buys availability and a merge problem later. Since no protocol prevents the split itself, tolerance is mandatory."
+  },
+  {
+    "id": "e11",
+    "url": "https://kafka.apache.org/documentation/#design_consumerrebalance",
+    "title": "Kafka partitions and consumer group rebalancing",
+    "summary": "A Kafka topic is split into partitions and each partition is assigned to exactly one consumer in a group, so parallelism is capped by partition count. Every membership change triggers a rebalance that briefly stops consumption for the whole group.",
+    "takeaway": "Adding consumers past the partition count buys nothing except more rebalances.",
+    "question": "Why does one slow consumer stall an entire Kafka consumer group?",
+    "tags": ["kafka", "streaming", "distributed-systems"],
+    "contentMarkdown": "Ordering is guaranteed inside a partition only, which is why keys decide placement. The group coordinator reassigns partitions whenever a member joins, leaves or misses a heartbeat, and cooperative rebalancing exists to shrink that pause. Long processing loops look like failures to the coordinator."
+  },
+  {
+    "id": "e12",
+    "url": "https://crdt.tech/implementations",
+    "title": "CRDTs for offline-first synchronisation",
+    "summary": "A conflict-free replicated data type merges concurrent edits by construction, so two devices that were offline converge without asking a server to arbitrate. The price is metadata that grows with edit history and needs periodic compaction.",
+    "takeaway": "CRDTs replace conflict resolution with a merge function you can prove commutative, associative and idempotent.",
+    "question": "What does a CRDT give up in exchange for automatic convergence?",
+    "tags": ["crdt", "sync", "offline-first"],
+    "contentMarkdown": "Merges must be order independent, repeatable and duplicate safe, which is what makes convergence provable. Text editing types keep tombstones for deleted characters so late-arriving edits still place correctly. Compaction and garbage of tombstones is the practical operational burden."
+  },
+  {
+    "id": "e13",
+    "url": "https://raft.github.io/",
+    "title": "Raft leader election and log replication",
+    "summary": "Raft elects one leader per term using randomised timeouts, and the leader alone appends entries and tells followers when an entry is committed. Safety comes from refusing to elect a candidate whose log is behind.",
+    "takeaway": "Randomised election timeouts are the whole trick that keeps split votes rare.",
+    "question": "How does Raft guarantee a new leader has every committed entry?",
+    "tags": ["raft", "consensus", "distributed-systems"],
+    "contentMarkdown": "Followers become candidates when they hear nothing for a randomised interval, which staggers elections and avoids repeated ties. A candidate needs votes from a majority, and voters reject candidates with a shorter or older log. The leader advances a commit index once a majority has appended an entry."
+  },
+  {
+    "id": "e14",
+    "url": "https://stripe.com/blog/idempotency",
+    "title": "Idempotency keys for safe retries",
+    "summary": "A client supplies a unique key with a mutating request and the server stores the first outcome against that key, so a retry after a timeout returns the original result instead of acting twice. Keys must be scoped and expired deliberately.",
+    "takeaway": "Retries are only safe when the server, not the client, remembers what already happened.",
+    "question": "What should a server return when the same idempotency key arrives with a different body?",
+    "tags": ["apis", "idempotency", "reliability"],
+    "contentMarkdown": "A timeout tells the caller nothing about whether the work ran, so blind retries duplicate effects. Recording the request fingerprint and response against the supplied key turns a repeat into a replay. Mismatched bodies under a reused key are a client bug and deserve a hard error."
+  },
+  {
+    "id": "e15",
+    "url": "https://www.confluent.io/blog/exactly-once-semantics-are-possible/",
+    "title": "Exactly once is a deduplication window",
+    "summary": "No messaging system delivers exactly once end to end; what exists is at-least-once delivery plus deduplication over a bounded window of sequence numbers. Once a duplicate arrives after that window expires it will be processed again.",
+    "takeaway": "Ask how wide the deduplication window is, because that number is the real guarantee.",
+    "question": "Where does an exactly-once pipeline still admit duplicates?",
+    "tags": ["messaging", "delivery-semantics", "distributed-systems"],
+    "contentMarkdown": "Producers attach sequence numbers and brokers reject repeats they still remember. Memory of past sequence numbers is finite, so a delayed duplicate outside the retained range slips through. Sinks therefore still need their own natural key or a conditional write."
+  },
+  {
+    "id": "e16",
+    "url": "https://plg.uwaterloo.ca/~gvcormac/cormacksigir09-rrf.pdf",
+    "title": "Reciprocal rank fusion beats score blending",
+    "summary": "Reciprocal rank fusion scores a document as the sum over lists of one divided by a constant plus its position, using only ordering and never raw scores. That makes it immune to the scale mismatch that wrecks weighted score combination.",
+    "takeaway": "Fuse positions, not scores, when the two rankers produce numbers on incomparable scales.",
+    "question": "Why does the fusion constant control how much a top position is worth?",
+    "tags": ["retrieval", "rrf", "ranking"],
+    "contentMarkdown": "Each list contributes one over the constant plus position, so agreement between lists compounds while a single list's top hit does not dominate. A larger constant flattens the curve and spreads credit deeper down each list. Because only order matters, adding a third ranker needs no recalibration."
+  },
+  {
+    "id": "e17",
+    "url": "https://opensearch.org/blog/hybrid-search/",
+    "title": "Hybrid search in practice: keyword plus dense retrieval",
+    "summary": "A keyword ranker finds exact terms and identifiers that an embedding model smooths away, while a dense ranker finds paraphrases that share no words with the query. Running both and merging their orderings covers each one's blind spot.",
+    "takeaway": "The two legs fail on different queries, which is exactly why merging them wins.",
+    "question": "Which query shapes does a dense-only retriever handle worse than a keyword index?",
+    "tags": ["retrieval", "hybrid-search", "ranking"],
+    "contentMarkdown": "Exact identifiers, error codes and rare product names are keyword strengths and embedding weaknesses. Paraphrases with no shared terms are the mirror image. Merging orderings from both, rather than picking one, is what makes recall hold across both shapes of query."
+  },
+  {
+    "id": "e18",
+    "url": "https://www.pinecone.io/learn/series/faiss/hnsw/",
+    "title": "Tuning HNSW: efConstruction, M and recall",
+    "summary": "HNSW builds a layered proximity graph where M sets neighbours per node and efConstruction sets how hard the builder searches while linking. Both raise index size and build time in exchange for recall at a given query effort.",
+    "takeaway": "An approximate nearest neighbour index has no single quality number; recall is a function of query effort.",
+    "question": "What does raising efSearch cost at query time?",
+    "tags": ["ann", "hnsw", "vector-index"],
+    "contentMarkdown": "Greedy descent through upper layers narrows the region before a careful search of the base layer. More neighbours per node means more edges to follow and better paths, so recall rises and memory grows. Recall must always be reported next to the effort parameter it was measured at."
+  },
+  {
+    "id": "e19",
+    "url": "https://www.anthropic.com/news/contextual-retrieval",
+    "title": "Chunking for retrieval: prepend the context",
+    "summary": "Splitting a document into windows destroys the context each window needs to be findable, so a chunk that begins mid-argument retrieves badly. Prefixing every chunk with its document title and section restores enough context to embed well.",
+    "takeaway": "A chunk should be readable on its own, because that is how it will be retrieved and shown.",
+    "question": "Why does a mid-document chunk retrieve worse than the same text with a heading attached?",
+    "tags": ["rag", "chunking", "retrieval"],
+    "contentMarkdown": "Fixed-size windows cut sentences away from the subject they refer to, leaving pronouns with no antecedent. Prepending title and heading text gives the embedding model the topic the window is about. Overlap between windows reduces boundary loss at the cost of duplicated storage."
+  },
+  {
+    "id": "e20",
+    "url": "https://developers.google.com/machine-learning/recommendation/cold-start",
+    "title": "The cold start problem for a brand new user",
+    "summary": "A recommender has nothing to personalise with until a person has interacted with something, so the first session must be driven by popularity, editorial picks or declared interests. Asking a few onboarding questions buys signal cheaply.",
+    "takeaway": "Treat the first session as a data collection problem, not a ranking problem.",
+    "question": "What should a recommender show someone with no interaction history at all?",
+    "tags": ["recommenders", "cold-start", "personalisation"],
+    "contentMarkdown": "Collaborative filtering needs overlap with other people's behaviour, which a newcomer has none of. Popularity baselines and content features cover the gap while implicit signals accumulate. A short onboarding questionnaire converts the gap into declared preferences."
+  },
+  {
+    "id": "e21",
+    "url": "https://jalammar.github.io/illustrated-transformer/",
+    "title": "Attention with queries, keys and values",
+    "summary": "Self-attention projects every position into a query, a key and a value, and each position mixes values weighted by how well its query matches every key. Comparing all pairs is why cost grows with the square of sequence length.",
+    "takeaway": "The quadratic term comes from comparing every position with every other one, not from model width.",
+    "question": "Which part of self-attention scales with the square of the sequence length?",
+    "tags": ["transformers", "attention", "machine-learning"],
+    "contentMarkdown": "A dot product between a query and every key produces a weight per position, normalised and applied to the values. Doing this for every position is a matrix of pairwise interactions. Multiple heads run the same operation in parallel subspaces and concatenate the results."
+  },
+  {
+    "id": "e22",
+    "url": "https://platform.openai.com/docs/guides/prompt-caching",
+    "title": "Context windows are billed per token",
+    "summary": "Model pricing counts input and output tokens separately, so a long system prompt resent on every turn dominates the bill of a chat application. Caching a stable prefix cuts the repeated input cost sharply.",
+    "takeaway": "The cheapest optimisation in a chat product is not resending what has not changed.",
+    "question": "Why does a chat transcript get more expensive with every turn?",
+    "tags": ["llm", "pricing", "context-window"],
+    "contentMarkdown": "Every turn resends the whole transcript plus the system prompt, so input grows linearly while the answer stays short. Prefix caching charges a reduced rate for an unchanged leading segment. Trimming or summarising old turns is the other lever."
+  },
+  {
+    "id": "e23",
+    "url": "https://simonwillison.net/2023/Apr/14/worst-that-can-happen/",
+    "title": "Prompt injection arrives inside retrieved documents",
+    "summary": "Any text an assistant fetches can carry instructions aimed at the model rather than the reader, and a model that cannot separate data from directives will follow them. The mitigation is structural: mark retrieved material as untrusted and keep privileged actions out of the model's reach.",
+    "takeaway": "Treat every tool result as hostile data, never as a continuation of the user's request.",
+    "question": "Why is filtering suspicious phrases a weak defence against injected instructions?",
+    "tags": ["security", "prompt-injection", "llm"],
+    "contentMarkdown": "The model sees one flat sequence, so retrieved page text and the user's words look alike unless the surrounding structure says otherwise. Blocklists fail because the same instruction can be rephrased endlessly. Limiting what the assistant is able to do is the only defence that does not depend on the model behaving."
+  },
+  {
+    "id": "e24",
+    "url": "https://huggingface.co/BAAI/bge-m3",
+    "title": "bge-m3: multilingual embeddings at 1024 dimensions",
+    "summary": "The bge-m3 model produces 1024-dimensional multilingual embeddings and is commonly used with cosine similarity. Normalising every vector to unit length turns that similarity into a plain dot product and keeps two backends ranking alike.",
+    "takeaway": "Normalise on the way in; a store that mixes normalised and raw vectors ranks nonsense.",
+    "question": "Why does unit length make cosine similarity equal to a dot product?",
+    "tags": ["embeddings", "bge-m3", "vector-search"],
+    "contentMarkdown": "Cosine similarity divides a dot product by both magnitudes, which is a no-op when both are one. Storing unit vectors moves that division to write time and makes queries cheaper. It also protects against a second backend that normalises when this one does not."
+  },
+  {
+    "id": "e25",
+    "url": "https://hamel.dev/blog/posts/llm-judge/",
+    "title": "LLM as judge: three-point rubrics, not ten-point scores",
+    "summary": "A grading model asked for a score out of ten produces noise clustered around seven, while a short rubric with three labelled levels produces something repeatable. The judge must also differ from the model being graded, or it rewards its own habits.",
+    "takeaway": "Write the rubric first and validate the judge against human labels before trusting any number it emits.",
+    "question": "Why does a wide numeric scale make an automated grader less reliable?",
+    "tags": ["evaluation", "llm-judge", "rubrics"],
+    "contentMarkdown": "Fine-grained scales force distinctions the grader cannot make consistently, so repeat runs disagree. Three labelled levels with explicit criteria collapse that variance. Grading with the same family that generated the answer inflates scores in a way that is easy to miss."
+  },
+  {
+    "id": "e26",
+    "url": "https://aws.amazon.com/blogs/compute/operating-lambda-performance-optimization-part-1/",
+    "title": "Lambda cold starts: the init phase you pay for once",
+    "summary": "The first invocation of a new execution environment runs your initialisation code before the handler, and that added latency is the cold start. Provisioned concurrency keeps environments warm; smaller deployment artifacts and lazy imports shrink the init itself.",
+    "takeaway": "Move work out of module initialisation unless every invocation needs it.",
+    "question": "What part of a serverless invocation happens only on the first request to a new environment?",
+    "tags": ["serverless", "latency", "aws-lambda"],
+    "contentMarkdown": "Creating an environment downloads the artifact, starts the runtime and runs module-level code before the handler is called. Later invocations reuse that environment and skip the phase entirely. Provisioned concurrency pre-creates environments so the phase never lands on a user request."
+  },
+  {
+    "id": "e27",
+    "url": "https://mechanical-sympathy.blogspot.com/2011/07/false-sharing.html",
+    "title": "False sharing: two cores fighting over one cache line",
+    "summary": "Processors move memory in fixed-size lines, so two variables that sit in the same line ping-pong between cores even when no thread touches the other's variable. Padding the hot fields apart removes the invalidation traffic.",
+    "takeaway": "Independent counters must not share a line, or your threads serialise on the memory system.",
+    "question": "How can two threads writing different variables still contend?",
+    "tags": ["performance", "cpu-cache", "concurrency"],
+    "contentMarkdown": "Coherence protocols track ownership per line, not per variable. A write invalidates the whole line in every other core, so a neighbouring hot counter is dragged along. Padding or per-core slots restore independence at the cost of memory."
+  },
+  {
+    "id": "e28",
+    "url": "https://web.dev/articles/stale-while-revalidate",
+    "title": "stale-while-revalidate in HTTP caching",
+    "summary": "A response can be served past its freshness lifetime while a background request refreshes it, which hides revalidation latency from the visitor. The directive sits alongside max-age in Cache-Control and needs the shared cache to honour it.",
+    "takeaway": "Serving one slightly stale response is usually better than making somebody wait for a fresh one.",
+    "question": "What does a shared cache do during the stale-while-revalidate window?",
+    "tags": ["http", "caching", "web-performance"],
+    "contentMarkdown": "During the window the cache answers immediately from its stored copy and fetches a replacement out of band. Visitors see one stale response at most per window per cache node. Immutable asset URLs plus long lifetimes make the whole question moot for static files."
+  },
+  {
+    "id": "e29",
+    "url": "https://www.fastly.com/blog/surrogate-keys-part-1",
+    "title": "Surrogate keys make CDN purging surgical",
+    "summary": "Tagging every response with surrogate keys lets an origin invalidate exactly the objects affected by a change instead of flushing whole paths. One product update can then clear its own page, the listings it appears on and nothing else.",
+    "takeaway": "Design purge keys with the same care as database keys; they decide your blast radius.",
+    "question": "Why is purging by URL path a blunt instrument?",
+    "tags": ["cdn", "purging", "web-performance"],
+    "contentMarkdown": "A response can carry several keys, one per entity it depends on. Invalidating a key clears every response tagged with it wherever it is stored. Path-based purges either miss dependants or clear far too much."
+  },
+  {
+    "id": "e30",
+    "url": "https://smudge.ai/blog/ratelimit-algorithms",
+    "title": "Rate limiting: token bucket versus leaky bucket",
+    "summary": "A token bucket refills at a steady rate and lets a caller spend saved capacity in a burst, while a leaky bucket drains at a fixed rate and smooths bursts away. Fixed windows are simpler but let twice the intended volume through at a boundary.",
+    "takeaway": "Pick the algorithm from whether bursts are a feature or a problem for the backend behind it.",
+    "question": "Why does a fixed window admit double the limit at its edge?",
+    "tags": ["apis", "rate-limiting", "algorithms"],
+    "contentMarkdown": "Bucket capacity sets the burst a caller may spend at once and refill rate sets the sustained allowance. A leaky bucket queues arrivals and releases them evenly, trading latency for smoothness. Sliding windows fix the boundary doubling that fixed windows suffer."
+  },
+  {
+    "id": "e31",
+    "url": "https://unixism.net/loti/what_is_io_uring.html",
+    "title": "io_uring: submission and completion rings",
+    "summary": "io_uring gives a process two shared ring buffers, one for submitting operations and one for collecting results, so many requests cross the kernel boundary per system call. Polled modes can remove the syscall from the hot path entirely.",
+    "takeaway": "The win is amortising the boundary crossing, not making any single operation faster.",
+    "question": "How does io_uring reduce the number of system calls per operation?",
+    "tags": ["linux", "io_uring", "performance"],
+    "contentMarkdown": "A process writes entries into the submission ring and the kernel writes results into the completion ring. One call can carry a whole batch, and registered buffers and files remove repeated setup. Polling modes let both sides watch the rings without any call at all."
+  },
+  {
+    "id": "e32",
+    "url": "https://llvm.org/docs/Vectorizers.html",
+    "title": "Auto-vectorisation: when the compiler uses SIMD",
+    "summary": "A compiler can rewrite a loop to process several elements per instruction, but only when it can prove the iterations are independent and the trip count is known well enough. Aliasing between pointers is the usual reason it silently refuses.",
+    "takeaway": "Read the optimisation report; a loop you assumed was vectorised often is not.",
+    "question": "What stops a compiler from widening a loop into SIMD instructions?",
+    "tags": ["compilers", "simd", "performance"],
+    "contentMarkdown": "Independence must be provable, so a possible overlap between two pointers blocks the transformation. Restrict qualifiers, alignment hints and simpler control flow all help the analysis. Remainder iterations are handled by a scalar epilogue."
+  },
+  {
+    "id": "e33",
+    "url": "https://simonwillison.net/2023/Oct/23/embeddings/",
+    "title": "A brute-force scan beats an approximate index at small scale",
+    "summary": "Comparing a query against a few thousand stored vectors takes milliseconds in ordinary code, so the graph index, its build time and its recall loss buy nothing at that size. The crossover only arrives with hundreds of thousands of items.",
+    "takeaway": "Measure the linear scan before installing anything; small corpora rarely need an approximate structure.",
+    "question": "At roughly what corpus size does an approximate structure start to pay for itself?",
+    "tags": ["vector-search", "scaling", "simplicity"],
+    "contentMarkdown": "A dot product over a few thousand rows is a tight numeric loop and finishes well inside a request budget. An approximate structure adds build cost, memory, a recall parameter and an operational dependency. Those costs are worth paying only once the exhaustive comparison stops fitting in the latency budget."
+  },
+  {
+    "id": "e34",
+    "url": "https://css-tricks.com/svg-performance/",
+    "title": "Why complex SVG scenes stall the browser",
+    "summary": "Each shape in scalable vector graphics becomes a document node with its own style resolution and paint work, so a drawing with thousands of paths costs like a large page rather than like an image. Flattening detail or rasterising ahead of time restores frame rate.",
+    "takeaway": "Path count, not file size, is what makes a drawing expensive to animate.",
+    "question": "Why does animating a detailed illustration cost more than animating a photograph?",
+    "tags": ["frontend", "svg", "rendering"],
+    "contentMarkdown": "Every element participates in style resolution, layout and paint, which is why node count dominates. Simplifying geometry, merging paths and pre-rendering static layers all cut the per-frame work. A canvas or a bitmap sidesteps the node overhead entirely."
+  },
+  {
+    "id": "e35",
+    "url": "https://doc.rust-lang.org/nomicon/races.html",
+    "title": "Rust's borrow checker rules out data races",
+    "summary": "Ownership allows either one mutable reference or many shared ones, never both, so two threads cannot hold conflicting access to the same value. Send and Sync then decide what may cross a thread boundary at all, and the check happens at compile time.",
+    "takeaway": "The guarantee is about data races specifically; logical races over ordering are still yours to get right.",
+    "question": "Which class of concurrency bug does the borrow checker not prevent?",
+    "tags": ["rust", "ownership", "concurrency"],
+    "contentMarkdown": "Aliasing and mutation cannot coexist, which is exactly the precondition a data race needs. Marker traits describe whether a type may be moved to or shared with another thread. Deadlocks and ordering mistakes remain possible because they are not aliasing violations."
+  },
+  {
+    "id": "e36",
+    "url": "https://buttondown.com/hillelwayne/archive/flaky-tests-are-a-race/",
+    "title": "Most flaky tests are a race with the setup",
+    "summary": "A suite that fails one run in thirty usually starts asserting before its fixtures finished landing, so the failure is a timing bug in the harness rather than in the code under test. Waiting on a readiness signal instead of sleeping removes the whole class.",
+    "takeaway": "A retry hides the timing bug; a readiness check fixes it.",
+    "question": "Why is a fixed sleep the wrong way to wait for a test server?",
+    "tags": ["testing", "flakiness", "ci"],
+    "contentMarkdown": "Fixture seeding, server startup and the first assertion overlap in wall-clock time. A sleep is a guess that fails on a loaded machine and wastes time on a fast one. Polling a health endpoint or awaiting a promise turns the guess into a fact."
+  },
+  {
+    "id": "e37",
+    "url": "https://www.typescriptlang.org/docs/handbook/2/conditional-types.html",
+    "title": "Conditional types and inference positions",
+    "summary": "A conditional type chooses a branch by testing assignability, and the infer keyword captures part of the tested type for use in that branch. Distribution over unions is what makes helpers such as Extract behave elementwise.",
+    "takeaway": "Wrap the checked type in a tuple when you want to stop a conditional distributing over a union.",
+    "question": "How do you prevent a conditional type from distributing across a union?",
+    "tags": ["typescript", "types", "generics"],
+    "contentMarkdown": "The test compares two types and picks a branch, and infer names a piece of the left side for the true branch. A naked type parameter distributes, so each union member is tested separately. Wrapping both sides in one-element tuples suppresses that behaviour."
+  },
+  {
+    "id": "e38",
+    "url": "https://go.dev/blog/context",
+    "title": "Passing context for cancellation in Go",
+    "summary": "A context carries deadlines and a cancellation channel down a call tree, and every blocking call is expected to accept one and return early when it closes. Storing a context in a struct instead of passing it as the first argument breaks that chain.",
+    "takeaway": "Cancellation only works if every layer forwards the context it was given.",
+    "question": "What breaks when a library swallows the context it was handed?",
+    "tags": ["go", "context", "cancellation"],
+    "contentMarkdown": "Deriving a child context with a deadline lets a caller bound the whole subtree. Callees select on the done channel and unwind promptly when it closes. A layer that ignores the parameter makes everything beneath it uncancellable."
+  },
+  {
+    "id": "e39",
+    "url": "https://ziglang.org/documentation/master/#comptime",
+    "title": "Zig comptime: the same language at compile time",
+    "summary": "Zig runs ordinary functions during compilation, so generics are just functions taking types as values and there is no separate template dialect to learn. What escapes into the binary is whatever the compile-time evaluation produced.",
+    "takeaway": "One language for both phases removes the need for macros and template metaprogramming.",
+    "question": "How does Zig express a generic container without a template syntax?",
+    "tags": ["zig", "comptime", "metaprogramming"],
+    "contentMarkdown": "Values marked for compile-time evaluation are computed by the compiler and can include types themselves. A container is therefore a function returning a struct type. Errors surface as ordinary compile-time evaluation failures with a stack of call sites."
+  },
+  {
+    "id": "e40",
+    "url": "https://malloc.se/blog/zgc-jdk21",
+    "title": "JVM collectors: G1 regions versus ZGC pause targets",
+    "summary": "Garbage collection on the JVM comes in two shapes. G1 divides the heap into regions and evacuates the ones with most rubbish during short stop-the-world pauses, while ZGC uses coloured pointers and load barriers to move objects concurrently, so pause time stops scaling with heap size and throughput pays a little instead.",
+    "takeaway": "Choose a collector by the pause profile you need, not by which one is newest.",
+    "question": "Why do ZGC pauses stay flat as the heap grows?",
+    "tags": ["jvm", "garbage-collection", "performance"],
+    "contentMarkdown": "Region-based evacuation keeps pauses short by collecting only part of the heap at a time. Coloured pointers plus load barriers let relocation proceed while application threads run. The remaining pauses handle roots, which do not grow with heap size."
+  },
+  {
+    "id": "e41",
+    "url": "https://aws.amazon.com/blogs/storage/reducing-storage-costs-with-s3-lifecycle-rules/",
+    "title": "Lifecycle rules as garbage collection for object storage",
+    "summary": "Uploads abandoned midway and versions nobody references keep costing money until a lifecycle rule expires them, because object storage never reclaims anything on its own. Rules for incomplete multipart uploads and noncurrent versions recover most of the waste.",
+    "takeaway": "A bucket without expiry rules is a slow leak with a monthly invoice.",
+    "question": "Which invisible objects inflate a bucket bill the most?",
+    "tags": ["cloud", "object-storage", "cost"],
+    "contentMarkdown": "Incomplete multipart uploads hold their parts indefinitely and do not appear in a normal listing. Versioning keeps every superseded copy until a noncurrent expiry rule removes it. Both are configuration problems, not application bugs."
+  },
+  {
+    "id": "e42",
+    "url": "https://opentelemetry.io/docs/concepts/context-propagation/",
+    "title": "OTLP traces and context propagation across services",
+    "summary": "A trace is a tree of spans sharing an identifier, and it only stays connected if every hop forwards the trace headers. Where instrumentation is missing the tree silently splits into unrelated fragments.",
+    "takeaway": "A broken trace is nearly always a hop that dropped the propagation headers.",
+    "question": "Why does one uninstrumented service split a trace in two?",
+    "tags": ["observability", "opentelemetry", "tracing"],
+    "contentMarkdown": "Each span records a parent identifier, and the parent arrives in request headers. A hop that does not read and re-emit them starts a fresh root. Collectors then export both fragments over OTLP with no way to relate them."
+  },
+  {
+    "id": "e43",
+    "url": "https://www.brendangregg.com/blog/2019-01-01/learn-ebpf-tracing.html",
+    "title": "eBPF profiling without rebuilding anything",
+    "summary": "Verified programs attached to kernel and user probes can count, time and stack-sample a running process with no recompilation and very little overhead. Continuous profilers built this way make a flame graph of production a routine artifact.",
+    "takeaway": "You can profile a live process without a debug build or a restart.",
+    "question": "What makes it safe to load a tracing program into a running kernel?",
+    "tags": ["linux", "ebpf", "profiling"],
+    "contentMarkdown": "A verifier proves the program terminates and touches only permitted memory before it is allowed to run. Probes at function entry and on timers collect stacks into efficient maps. Aggregating in the kernel keeps the data volume small enough for always-on use."
+  },
+  {
+    "id": "e44",
+    "url": "https://sre.google/sre-book/practical-alerting/",
+    "title": "Alert fatigue and the paging budget",
+    "summary": "Every page that does not need a human response teaches the on-call engineer to ignore the next one, so noisy alerts actively reduce reliability. Alerting on symptoms users feel, and moving the rest to a dashboard, is what keeps the response sharp.",
+    "takeaway": "Treat pages as a scarce budget spent on things a person must act on tonight.",
+    "question": "Which alerts should become tickets or dashboards instead of pages?",
+    "tags": ["on-call", "alerting", "reliability"],
+    "contentMarkdown": "Cause-based rules fire on internal conditions that often have no user impact. Symptom-based rules track what a customer would notice and are far fewer. Anything actionable tomorrow belongs in a queue, not on a phone at three in the morning."
+  },
+  {
+    "id": "e45",
+    "url": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/Cookies",
+    "title": "Signed cookie sessions and how to revoke them",
+    "summary": "A server-side session record can be deleted the moment an account is compromised, which is the property a self-contained credential lacks. Marking the cookie same-site, secure and http-only removes the easy theft paths.",
+    "takeaway": "Revocation is the deciding argument for keeping session state on the server.",
+    "question": "Why is logging somebody out everywhere easy with server-side sessions?",
+    "tags": ["security", "sessions", "cookies"],
+    "contentMarkdown": "The cookie carries only an opaque identifier and the record behind it can be dropped at will. SameSite limits cross-origin submission, secure keeps it off plaintext connections, and http-only hides it from scripts. Rotation on privilege change limits the value of a stolen identifier."
+  },
+  {
+    "id": "e46",
+    "url": "https://blog.logrocket.com/jwt-authentication-best-practices/",
+    "title": "JWT authentication and the revocation problem",
+    "summary": "A signed token is validated without a lookup, which is the whole appeal and also why it cannot be withdrawn before it expires. Short lifetimes with refresh, or a deny list checked on every request, are the two ways back to revocability.",
+    "takeaway": "Statelessness and instant revocation are in direct tension; pick which one you actually need.",
+    "question": "How do you invalidate a signed token before its expiry?",
+    "tags": ["security", "jwt", "authentication"],
+    "contentMarkdown": "Verification needs only the signature and the claims, so no store is consulted and nothing can be withdrawn. Short expiry plus a refresh exchange shrinks the exposure window. A deny list restores control but reintroduces the lookup the design was avoiding."
+  },
+  {
+    "id": "e47",
+    "url": "https://charity.wtf/2020/03/03/kafkaesque-oncall/",
+    "title": "Kafkaesque on-call: the process debt nobody owns",
+    "summary": "Rotations decay into rituals whose purpose nobody remembers, and each incident adds a checklist step that outlives the failure that caused it. Deleting steps needs the same review discipline as adding them.",
+    "takeaway": "Runbook steps need an owner and an expiry, or the process becomes the outage.",
+    "question": "How do you tell an obsolete runbook step from a load-bearing one?",
+    "tags": ["on-call", "process", "engineering-culture"],
+    "contentMarkdown": "Each postmortem tends to append a precaution and remove nothing. Years later the rotation follows a script whose original failure no longer exists. Reviewing and pruning it is unglamorous and pays every rotation."
+  },
+  {
+    "id": "e48",
+    "url": "https://blog.npmjs.org/post/supply-chain-attacks",
+    "title": "Supply-chain attacks through install scripts",
+    "summary": "A dependency can run arbitrary code during installation, which turns a typo-squatted or newly compromised package into code execution on a developer machine and in continuous integration. Lockfiles, disabled install scripts and an allow list narrow the exposure.",
+    "takeaway": "Installing a package is executing code; treat it with the caution that deserves.",
+    "question": "Why does a lockfile alone not stop a malicious dependency?",
+    "tags": ["security", "supply-chain", "npm"],
+    "contentMarkdown": "Install hooks execute with the developer's privileges and network access. A lockfile pins versions but does nothing about a version that was already malicious when pinned. Disabling hooks by default and vetting the few packages that genuinely need them is the practical control."
+  },
+  {
+    "id": "e49",
+    "url": "https://git-scm.com/docs/git-bisect",
+    "title": "Hunting a regression with git bisect",
+    "summary": "Bisect walks a binary search over history, asking at each step whether a commit is good or bad, and finds the first bad one in a logarithmic number of checks. A scripted test makes the whole search automatic.",
+    "takeaway": "A reliable one-command reproduction turns hours of archaeology into a two-minute automated search.",
+    "question": "What does bisect need before it can run unattended?",
+    "tags": ["git", "debugging", "workflow"],
+    "contentMarkdown": "Marking one good and one bad revision bounds the range, and each answer halves what remains. A script exiting zero for good and non-zero for bad lets the run proceed without a human. Skipping revisions that cannot be built keeps the search honest."
+  },
+  {
+    "id": "e50",
+    "url": "https://web.dev/articles/reduce-webfont-size",
+    "title": "Subsetting a webfont down to the glyphs you use",
+    "summary": "A full typeface carries glyphs for languages a page never renders, and subsetting to the characters actually used often removes most of the bytes. Compressing the result and declaring the ranges lets the browser skip files it does not need.",
+    "takeaway": "Subset and range-declare before reaching for a preload hint.",
+    "question": "How does declaring character ranges save a download entirely?",
+    "tags": ["frontend", "webfonts", "web-performance"],
+    "contentMarkdown": "Latin text needs a small fraction of the glyphs a multilingual family ships. Subsetting tools drop the rest and the compressed result is far smaller. Declaring which characters a file covers lets the browser fetch only the files a page actually needs."
+  }
+]

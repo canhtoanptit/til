@@ -1,0 +1,140 @@
+[
+  {
+    "id": "cs01",
+    "turns": ["What have I saved about hybrid search?"],
+    "expectTool": "search_entries",
+    "note": "Baseline grounded lookup; two near-duplicate entries match, so a good answer cites at least one of them."
+  },
+  {
+    "id": "cs02",
+    "turns": ["Do I have anything saved about Raft?"],
+    "expectTool": "search_entries",
+    "note": "Exact-term lookup the keyword leg should nail."
+  },
+  {
+    "id": "cs03",
+    "turns": ["How many links have I saved in total?"],
+    "expectTool": "stats",
+    "note": "A count must come from the stats tool, never from counting search results."
+  },
+  {
+    "id": "cs04",
+    "turns": ["What are my most common tags?"],
+    "expectTool": "stats",
+    "note": "top_tags aggregate; a search-based answer would be a guess."
+  },
+  {
+    "id": "cs05",
+    "turns": ["What is my current saving streak?"],
+    "expectTool": "stats",
+    "note": "streak aggregate; models like to invent streak numbers."
+  },
+  {
+    "id": "cs06",
+    "turns": ["Which sites do I read from the most?"],
+    "expectTool": "stats",
+    "note": "top_domains aggregate."
+  },
+  {
+    "id": "cs07",
+    "turns": ["How many entries did I save in the last thirty days?"],
+    "expectTool": "stats",
+    "note": "Windowed count: exercises sinceDays on the stats tool."
+  },
+  {
+    "id": "cs08",
+    "turns": ["Have I saved anything about Erlang supervision trees?"],
+    "expectTool": "search_entries",
+    "expectRefusal": true,
+    "note": "Nothing in the corpus is about Erlang, so the honest answer names zero entries and cites zero urls."
+  },
+  {
+    "id": "cs09",
+    "turns": ["What did I save about migrating a COBOL mainframe?"],
+    "expectTool": "search_entries",
+    "expectRefusal": true,
+    "note": "Second miss case, phrased with a word ('migrating') the corpus does use, so the keyword leg returns something irrelevant that must not be cited as an answer."
+  },
+  {
+    "id": "cs10",
+    "turns": [
+      "I think I saved two unrelated things that both talk about cold starts — what are they?"
+    ],
+    "expectTool": "search_entries",
+    "note": "The deliberate ambiguity in the corpus: a good answer separates the recommender problem from the serverless one."
+  },
+  {
+    "id": "cs11",
+    "turns": [
+      "What did I save about SQLite?",
+      "Which of those is about checkpointing?"
+    ],
+    "expectTool": "search_entries",
+    "note": "Two turns: the follow-up must be answered from the same near-duplicate pair rather than from memory."
+  },
+  {
+    "id": "cs12",
+    "turns": ["Show me the full digest of my entry about eBPF profiling."],
+    "expectTool": "get_entry",
+    "note": "Requires chaining: search for the id, then get_entry for the detail."
+  },
+  {
+    "id": "cs13",
+    "turns": ["Hi!"],
+    "expectTool": null,
+    "note": "A greeting needs no tool call; calling one wastes a step and a token budget."
+  },
+  {
+    "id": "cs14",
+    "turns": ["What can you do for me?"],
+    "expectTool": null,
+    "note": "Capability question, answerable from the system prompt alone."
+  },
+  {
+    "id": "cs15",
+    "turns": ["Delete the entry about JWTs for me, and re-tag the Raft one."],
+    "expectTool": null,
+    "expectRefusal": true,
+    "note": "All three tools are read-only: the answer must decline and must not claim anything changed, so it cites nothing."
+  },
+  {
+    "id": "cs16",
+    "turns": ["What is the weather in Dublin tomorrow?"],
+    "expectTool": null,
+    "expectRefusal": true,
+    "note": "Out of scope with no tool that could help; must not fabricate a forecast or cite entries."
+  },
+  {
+    "id": "cs17",
+    "turns": [
+      "Based only on my saved reading, what should I learn next about retrieval?"
+    ],
+    "expectTool": "search_entries",
+    "note": "Opinion grounded in retrieved entries — the citation-precision case that matters most."
+  },
+  {
+    "id": "cs18",
+    "turns": [
+      "Compare what I saved about JWTs with what I saved about cookie sessions."
+    ],
+    "expectTool": "search_entries",
+    "note": "Near-duplicate pair compared side by side; both urls must come from tool output."
+  },
+  {
+    "id": "cs19",
+    "turns": [
+      "Which entry explains why bm25 does not let common words dominate?"
+    ],
+    "expectTool": "search_entries",
+    "note": "A stored question reused as a chat turn; the answer should cite exactly one entry."
+  },
+  {
+    "id": "cs20",
+    "turns": [
+      "What are my top tags?",
+      "Now show me what I saved under the sqlite tag."
+    ],
+    "expectTool": "search_entries",
+    "note": "Tool switch inside one conversation: stats first, then a tag-filtered search."
+  }
+]

@@ -53,6 +53,13 @@ export {
 } from "./ollama-embedder.js";
 export type { OllamaEmbedderOptions } from "./ollama-embedder.js";
 export {
+  createWorkersAIRestEmbedder,
+  WORKERS_AI_DEFAULT_MODEL,
+  WORKERS_AI_REST_BASE_URL,
+  WorkersAIRestEmbedder,
+} from "./workers-ai-rest-embedder.js";
+export type { WorkersAIRestEmbedderOptions } from "./workers-ai-rest-embedder.js";
+export {
   CHAT_SEARCH_DEFAULT_TOP_K,
   CHAT_SEARCH_MAX_TOP_K,
   CHAT_STATS_KINDS,

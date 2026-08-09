@@ -1,8 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
-import { OllamaEmbedder } from "@til/core";
+import { OllamaEmbedder, WorkersAIRestEmbedder } from "@til/core";
 import { WorkersAIEmbedder } from "./embedders.js";
 import { ReadabilityExtractor, WorkersAIExtractor } from "./extractors.js";
-import { resolveStack, resolveStackMode } from "./stack.js";
+import {
+  resolveLocalEmbedderKind,
+  resolveStack,
+  resolveStackMode,
+} from "./stack.js";
 import { createTestDb } from "./test-harness.js";
 import { D1VectorStore, VectorizeStore } from "./vector-store.js";
 
@@ -41,6 +45,29 @@ describe("resolveStackMode", () => {
   it("falls back to local on garbage and says so", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     expect(resolveStackMode("quantum")).toBe("local");
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+  });
+});
+
+describe("resolveLocalEmbedderKind", () => {
+  it("defaults to ollama when unset", () => {
+    expect(resolveLocalEmbedderKind(undefined)).toBe("ollama");
+    expect(resolveLocalEmbedderKind(null)).toBe("ollama");
+    expect(resolveLocalEmbedderKind("")).toBe("ollama");
+    expect(resolveLocalEmbedderKind("  ")).toBe("ollama");
+  });
+
+  it("accepts both kinds, case- and whitespace-insensitively", () => {
+    expect(resolveLocalEmbedderKind("ollama")).toBe("ollama");
+    expect(resolveLocalEmbedderKind(" Ollama ")).toBe("ollama");
+    expect(resolveLocalEmbedderKind("workers-ai")).toBe("workers-ai");
+    expect(resolveLocalEmbedderKind(" WORKERS-AI ")).toBe("workers-ai");
+  });
+
+  it("falls back to ollama on garbage and says so", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    expect(resolveLocalEmbedderKind("word2vec")).toBe("ollama");
     expect(warn).toHaveBeenCalled();
     warn.mockRestore();
   });
@@ -93,6 +120,79 @@ describe("resolveStack", () => {
     expect((stack.embedder as OllamaEmbedder).endpoint).toBe(
       "http://127.0.0.1:9999/api/embed",
     );
+  });
+
+  it("local + TIL_EMBEDDER=workers-ai selects the REST embedder over D1 vectors", async () => {
+    const stack = resolveStack(
+      {
+        TIL_STACK: "local",
+        TIL_EMBEDDER: "workers-ai",
+        CF_ACCOUNT_ID: "acct-1",
+        WORKERS_AI_API_TOKEN: "tok-1",
+      },
+      ctx(),
+    );
+    expect(stack.mode).toBe("local");
+    expect(stack.extractor).toBeInstanceOf(ReadabilityExtractor);
+    expect(stack.embedder).toBeInstanceOf(WorkersAIRestEmbedder);
+    expect(stack.vectorStore).toBeInstanceOf(D1VectorStore);
+    expect((stack.embedder as WorkersAIRestEmbedder).endpoint).toContain(
+      "/accounts/acct-1/ai/run/@cf/baai/bge-m3",
+    );
+    // Credentials are the only free liveness signal: every call bills neurons.
+    await expect(stack.probeEmbedder()).resolves.toBe("ok");
+  });
+
+  it("workers-ai without credentials warns and leaves the embedder null", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const stack = resolveStack(
+      { TIL_EMBEDDER: "workers-ai", CF_ACCOUNT_ID: "acct-1" },
+      ctx(),
+    );
+    expect(warn).toHaveBeenCalled();
+    expect(warn.mock.calls.flat().join(" ")).toContain("WORKERS_AI_API_TOKEN");
+    warn.mockRestore();
+    expect(stack.embedder).toBeNull();
+    // The vector store stays: reembed can backfill once the token is set.
+    expect(stack.vectorStore).toBeInstanceOf(D1VectorStore);
+    await expect(stack.probeEmbedder()).resolves.toBe("unavailable");
+  });
+
+  it("workers-ai with a blank token is treated as missing", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const stack = resolveStack(
+      {
+        TIL_EMBEDDER: "workers-ai",
+        CF_ACCOUNT_ID: "  ",
+        WORKERS_AI_API_TOKEN: "  ",
+      },
+      ctx(),
+    );
+    warn.mockRestore();
+    expect(stack.embedder).toBeNull();
+  });
+
+  it("garbage TIL_EMBEDDER falls back to ollama", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const stack = resolveStack({ TIL_EMBEDDER: "nonsense" }, ctx());
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+    expect(stack.embedder).toBeInstanceOf(OllamaEmbedder);
+  });
+
+  it("TIL_EMBEDDER is ignored in cloud mode", () => {
+    const stack = resolveStack(
+      {
+        TIL_STACK: "cloud",
+        TIL_EMBEDDER: "workers-ai",
+        CF_ACCOUNT_ID: "acct-1",
+        WORKERS_AI_API_TOKEN: "tok-1",
+        ...CLOUD_BINDINGS,
+      },
+      ctx(),
+    );
+    expect(stack.embedder).toBeInstanceOf(WorkersAIEmbedder);
+    expect(stack.vectorStore).toBeInstanceOf(VectorizeStore);
   });
 });
 

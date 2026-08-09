@@ -1,6 +1,6 @@
 # ADR-0009: Retrieval & insight layer — Workers AI embeddings + Vectorize + D1 FTS5
 
-- **Status:** Accepted
+- **Status:** Accepted (measured 2026-08-10 — see the P17 note at the end; fusion fix queued as P17.1)
 - **Date:** 2026-08-02
 - **Related:** [ADR-0002](./0002-ai-stack-vercel-ai-sdk-cloudflare-ai-gateway.md), [ADR-0004](./0004-database-d1-drizzle.md)
 
@@ -48,3 +48,7 @@ Build the layer from Cloudflare-native pieces, populated **at ingest time from M
 - Changing the embedding model later means re-embedding everything — record the model name per vector (metadata) from the start.
 - FTS5 virtual tables and triggers are hand-written migrations (drizzle-kit cannot generate them).
 - Vectorize is Cloudflare-locked; exit path is trivial at this scale (re-embed into pgvector/libSQL) but nonzero.
+
+## Measured (P17 baseline, 2026-08-10 — bge-m3, 50-entry fixture corpus, 41 gold queries; `packages/evals/history/`)
+
+The open question — _does hybrid beat FTS-only?_ — is answered **yes, but it's the wrong question**: nDCG@8 overall was FTS 0.593, **hybrid 0.674**, **vector-only 0.816**. Hybrid beat FTS everywhere (9.5× on the semantic slice) yet lost to plain vector search **on every slice**, because the fusion degrades the semantic leg: (a) `sanitizeFtsQuery` ORs every token including stopwords, so the keyword leg never abstains and always supplies a full pool of confidently-wrong candidates (top-1 wrong 16/16 on semantic queries); (b) RRF gives equal scores to equal ranks and `rrfMerge` breaks ties **alphabetically by entry id**, interleaving junk ahead of correct vector hits. Reproduced independently on the owner's real data. Sweeps confirmed RRF `k` is not the lever (best config k=20/pool 4× still only reached 0.721). Fix queued as **P17.1**: an abstaining keyword leg (stopword filtering, empty → no candidates), leg weighting, a principled tiebreak, the hybrid fusion lifted into `@til/core` so app and evals share one implementation — every change measured against this baseline. Also noted: the keyword slice scored 1.000 in all modes, i.e. it doesn't yet discriminate; identifier-style cases (error codes, CVEs) are needed to guard the abstain policy.
