@@ -2,7 +2,7 @@
 
 - **Status:** Accepted (v2, 2026-08-02 — AI stack revised to Vercel AI SDK, retrieval layer and auth added after review)
 - **Date:** 2026-08-02
-- **Related:** ADRs [0001](./adr/0001-cross-platform-web-first-tauri2.md)–[0009](./adr/0009-retrieval-insight-layer.md) · [Implementation plan](./implementation-plan.md)
+- **Related:** ADRs [0001](./adr/0001-cross-platform-web-first-tauri2.md)–[0012](./adr/0012-ui-system-shadcn.md) · [Implementation plan](./implementation-plan.md)
 
 ---
 
@@ -131,6 +131,10 @@ Indexes: **unique on `canonical_url`** (dedupe — resubmitting a URL returns th
 | `cf_account_id`, `cf_gateway_id`, `cf_aig_token?` | AI Gateway routing                                                                                                                           |
 | `created_at` / `updated_at`                       | epoch ms                                                                                                                                     |
 
+Built since v2 (see migrations): `digests` + `digest_items` (M2), `entry_vectors` (local-mode vector store, [ADR-0010](./adr/0010-dual-mode-local-cloud-stack.md)), `chats` conversation index (M3).
+
+**Planned for M-FEAT1 / online evals** (contracts frozen in the [implementation plan](./implementation-plan.md), migrations `0005+`): `feeds` (digest source list, replacing the hardcoded defaults), `reviews` (SM-2-lite state keyed to `entries.id`), `feedback` (👍/👎 on chat answers, post-deploy), plus a nullable `interest_score` on `digest_items` for personalized ranking.
+
 Migrations: `drizzle-kit generate` → `wrangler d1 migrations apply til`.
 
 ## 8. API surface (Hono, under `/api`)
@@ -228,8 +232,19 @@ M2's digest pipeline runs as a **Cloudflare Workflow** (durable steps + cron). M
 - **Deploy hardening (was M1.5 — deferred to after M3 on 2026-08-03).** Everything through M3 is built and verified locally first; Workers AI and Vectorize have no local emulator, so local runs use substitute adapters (Readability extraction, Ollama/remote `bge-m3`, D1 brute-force cosine) behind the existing seams. `APP_TOKEN` + optional CF Access, create real D1/Vectorize/AI Gateway, `wrangler deploy`, scheduled D1 export → R2, optionally move the BYOK key to gateway-stored keys ([ADR-0007](./adr/0007-single-user-local-first.md)).
 - **M2 — Interesting-things digest.** A **Cloudflare Workflow** (durable steps: query-plan → multi-source fetch across keyless sources (HN/Lobsters/arXiv/RSS — **Reddit dropped: unauthenticated JSON returned 403 from May 2026 and OAuth is closed to personal scripts**) → rank into scored "evidence clusters" → synthesize) + AI SDK calls, scheduled via Cron Triggers — the `mvanhorn/last30days-skill` _pattern_, Worker-native. A pipeline, not an autonomous agent.
 - **M3 — Chat agent. Backend complete 2026-08-08** (UI in progress). Agents SDK `AIChatAgent` on a Durable Object with SQLite-persisted sessions; the AI-SDK tool loop lives in `packages/core` as `streamChat`, so the DO never imports `ai`. Tools per [ADR-0009](./adr/0009-retrieval-insight-layer.md): hybrid `search_entries` (vector + FTS5 fused by RRF), `get_entry`, `stats`. All read-only; tool output is framed as untrusted data. Three implementation realities worth carrying forward: chat is **WebSocket-only** (`@cloudflare/ai-chat` exposes no HTTP chat path), the WS handshake is authorised by a **60 s HMAC ticket** because browsers cannot set handshake headers ([ADR-0007](./adr/0007-single-user-local-first.md)), and the Agents SDK **re-requires `nodejs_compat`** ([ADR-0003](./adr/0003-runtime-cloudflare-workers-vite-plugin.md)).
-- **M4 — Desktop + mobile.** PWA pass first (installability, zero store friction), then wrap the same client build with Tauri 2. Client API base URL becomes configurable; API adds CORS for the Tauri origin. Store-distribution caveats noted in [ADR-0001](./adr/0001-cross-platform-web-first-tauri2.md).
-- **M5 — (optional).** Multi-user (auth + per-user keys + multi-tenant D1), Browser-Rendering extraction, spaced-repetition review.
+  _The following milestones were added 2026-08-09 after M3 shipped; M4/M5 keep their historical numbers because other docs reference them. Execution order (reordered same day — deploy moved ahead of the feature waves once the owner adopted an all-on-Cloudflare posture; their machine cannot run Ollama): M-EVAL → M-UI → **deploy** → M-FEAT1 → M-FEAT2 → M4._
+
+- **M-EVAL — Measurement** ([ADR-0011](./adr/0011-evaluation-and-measurement.md)). `@til/evals`: golden-set retrieval metrics (Recall@5, MRR, nDCG@10; FTS-vs-vector-vs-hybrid ablation), deterministic chat checks (tool selection, citation precision, refusal, injection canaries), opt-in LLM-judge suite (faithfulness/relevance, judge ≠ generator), history log per run. Prerequisite: local Ollama `bge-m3`. Online half (feedback thumbs, click-through) lands post-deploy.
+- **M-UI — Design system** ([ADR-0012](./adr/0012-ui-system-shadcn.md)). shadcn/ui vendored refresh of the existing six pages (dialogs replace `window.confirm`, sonner toasts, proper tables/collapsibles/badges) + dark mode + ⌘K palette over hybrid search. Pure restyle; lands before new feature UIs.
+- **M-FEAT1 — Features wave 1** (rides existing infrastructure; each measurable via M-EVAL):
+  - _Related entries_ — "more like this" on the detail page via the entry's own vector.
+  - _Personalized digest ranking_ — blend the digest's base score with similarity to the user's saved entries; degrades to base score without an embedder.
+  - _Review queue_ — spaced repetition over the until-now-unused `question` field (SM-2-lite; `reviews` table).
+  - _Digest sources UI_ — `feeds` table + settings section replacing the hardcoded `DEFAULT_RSS_FEEDS`.
+  - _Bookmarklet capture_ — `?add=<url>` handled by the feed page; no token ever embedded in the bookmarklet.
+- **M-FEAT2 — Comprehensive-product wave** (contracts sketched in the [implementation plan](./implementation-plan.md)): library organization (favorites/archive, tag browse, per-entry note), export/backup endpoint, content types (PDF via cloud `toMarkdown`; experimental YouTube transcripts), monthly reading report (digest `kind` column + monthly cron), and — deployed-only — weekly-digest **email delivery** via the `send_email` binding plus **email-in capture** via Email Routing.
+- **M4 — Desktop + mobile.** PWA pass first (installability, zero store friction, **share target** for mobile capture), then wrap the same client build with Tauri 2. Client API base URL becomes configurable; API adds CORS for the Tauri origin. Store-distribution caveats noted in [ADR-0001](./adr/0001-cross-platform-web-first-tauri2.md).
+- **M5 — (optional).** Multi-user (auth + per-user keys + multi-tenant D1), Browser-Rendering extraction, email-in capture (Email Workers), digest email delivery, YouTube/PDF ingestion, monthly reading report.
 
 ## 13. Verification (M1 definition of done)
 

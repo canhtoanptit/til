@@ -26,6 +26,8 @@ Start with the **[Technical Design (TDR)](./tech-design.md)** for the full pictu
 | [adr/0008](./adr/0008-monorepo-pnpm-turborepo.md)                      | Repository: pnpm workspaces + Turborepo                                                                   |
 | [adr/0009](./adr/0009-retrieval-insight-layer.md)                      | Retrieval & insight: Workers AI embeddings + Vectorize + D1 FTS5                                          |
 | [adr/0010](./adr/0010-dual-mode-local-cloud-stack.md)                  | Dual-mode stack: `TIL_STACK=local` (Readability + Ollama + D1 cosine) vs `cloud`                          |
+| [adr/0011](./adr/0011-evaluation-and-measurement.md)                   | Evals: hand-rolled offline harness, deterministic-first, judge ≠ generator                                |
+| [adr/0012](./adr/0012-ui-system-shadcn.md)                             | UI system: shadcn/ui vendored, adopted before the feature wave                                            |
 
 ## Decision summary
 
@@ -40,6 +42,8 @@ Start with the **[Technical Design (TDR)](./tech-design.md)** for the full pictu
 | 7   | Users & auth        | Single-tenant self-hosted; bearer `APP_TOKEN` mandatory before deploy              | Multi-user SaaS from day 1; no-auth-when-deployed                     |
 | 8   | Repo                | pnpm workspaces + Turborepo                                                        | Single package; Nx                                                    |
 | 9   | Retrieval & insight | Workers AI `bge-m3` + Vectorize + D1 FTS5, embed at ingest; insights via SQL tools | AI Search (managed); provider embeddings; FTS-only                    |
+| 10  | Evaluation          | `@til/evals` hand-rolled harness; deterministic metrics first, LLM-judge opt-in    | promptfoo; Evalite; Ragas; Langfuse/Braintrust                        |
+| 11  | UI system           | shadcn/ui vendored + Tailwind v4 vars; dark mode + ⌘K; before the feature wave     | keep hand-rolled; Mantine/MUI dependency; Radix direct; AI Elements first |
 
 ## Prerequisites (for when we deploy)
 

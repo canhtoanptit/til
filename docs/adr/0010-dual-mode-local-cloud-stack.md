@@ -1,6 +1,6 @@
 # ADR-0010: Dual-mode stack — `TIL_STACK=local | cloud`
 
-- **Status:** Accepted
+- **Status:** Accepted (amended 2026-08-09: `WorkersAIRestEmbedder` added — the owner's machine cannot run Ollama)
 - **Date:** 2026-08-04
 - **Related:** [ADR-0009](./0009-retrieval-insight-layer.md), [ADR-0006](./0006-content-extraction-to-markdown.md), [ADR-0005](./0005-byok-llmclient-abstraction.md)
 
@@ -27,6 +27,8 @@ One environment variable selects a **coherent set of adapters**:
 - **`Embedder` implementations MUST return L2-normalized (unit-length) vectors.** Ollama's `/api/embed` already does; other adapters normalize explicitly. This makes cosine similarity a dot product in `D1VectorStore` and keeps every mode consistent with Vectorize's cosine metric.
 - Vector metadata records `embedModel` and dimensions; writes validate the dimension against the index.
 - The BYOK chat/digest provider (Groq/OpenAI/Anthropic) is **not** part of the mode — it stays runtime `settings` in D1 ([ADR-0005](./0005-byok-llmclient-abstraction.md)). Infrastructure and provider choice are orthogonal.
+
+**Amendment (2026-08-09): a third embedder adapter, `WorkersAIRestEmbedder`.** The owner's machine cannot run Ollama (minimum-requirements miss), which broke local mode's semantic leg. Workers AI is also reachable over its plain **REST API** (`POST https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/run/@cf/baai/bge-m3`, auth by API token) — no binding, no remote-proxy dev session, callable from the Worker _and_ from Node (which the eval harness needs). Local mode's embedder is now selected explicitly by **`TIL_EMBEDDER=ollama | workers-ai`** (default `ollama` for machines that have it); `workers-ai` requires `CF_ACCOUNT_ID` + `WORKERS_AI_API_TOKEN` in env. Same bge-m3 model, so the vector space is unchanged — and REST-embedded vectors are _exact_ production parity, not just same-model parity. Costs: embeddings stop being offline/free (Workers AI free tier ~10k neurons/day dwarfs single-user usage) and an API token lands in `.dev.vars`. Extraction and vector store stay as the mode table says — this amendment changes only the embedding leg.
 
 ## Alternatives considered
 
