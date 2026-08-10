@@ -12,7 +12,7 @@ export function ChatMessageView({ message }: { message: ChatMessageLike }) {
     const text = textOf(message.parts);
     return (
       <div className="flex justify-end">
-        <p className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-sm bg-slate-900 px-4 py-2 text-sm text-white">
+        <p className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-sm bg-primary px-4 py-2 text-sm text-primary-foreground">
           {text}
         </p>
       </div>
@@ -42,7 +42,7 @@ function PartView({ part }: { part: ChatUIPart }) {
   if (part.type === "text") {
     if (part.text.length === 0) return null;
     return (
-      <p className="whitespace-pre-wrap text-sm leading-relaxed text-slate-800">
+      <p className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">
         {part.text}
       </p>
     );

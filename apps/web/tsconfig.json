@@ -3,5 +3,14 @@
   "references": [
     { "path": "./tsconfig.client.json" },
     { "path": "./tsconfig.worker.json" }
-  ]
+  ],
+  "compilerOptions": {
+    // Nothing compiles through this solution file (`files: []`); the alias is
+    // declared here because the shadcn CLI reads path aliases from the root
+    // tsconfig.json when resolving where to write generated components. The
+    // alias that actually type-checks is the one in tsconfig.client.json.
+    "paths": {
+      "@/*": ["./src/client/*"]
+    }
+  }
 }

@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../api";
+import { cn } from "@/lib/utils";
 
 export function HealthDot() {
   const { data, isLoading, isError } = useQuery({
@@ -9,19 +10,19 @@ export function HealthDot() {
     retry: false,
   });
   const state = isLoading
-    ? { color: "bg-slate-300", label: "checking" }
+    ? { color: "bg-muted-foreground/40", label: "checking" }
     : isError || !data?.ok
-      ? { color: "bg-red-500", label: "api unreachable" }
-      : { color: "bg-emerald-500", label: "api ok" };
+      ? { color: "bg-destructive", label: "api unreachable" }
+      : { color: "bg-success", label: "api ok" };
   return (
     <span
-      className="inline-flex items-center gap-1 text-xs text-slate-500"
+      className="inline-flex items-center gap-1 text-xs text-muted-foreground"
       title={state.label}
       aria-label={state.label}
     >
       <span
         aria-hidden="true"
-        className={`inline-block h-2 w-2 rounded-full ${state.color}`}
+        className={cn("inline-block size-2 rounded-full", state.color)}
       />
       <span className="hidden sm:inline">{state.label}</span>
     </span>

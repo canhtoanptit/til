@@ -11,6 +11,7 @@ import { ChatPage } from "./pages/ChatPage";
 import { DigestListPage } from "./pages/DigestListPage";
 import { DigestDetailPage } from "./pages/DigestDetailPage";
 import { SettingsPage } from "./pages/SettingsPage";
+import { Card } from "@/components/ui/card";
 
 export function App() {
   const qc = useQueryClient();
@@ -48,9 +49,9 @@ export function App() {
 
 function NotFound() {
   return (
-    <div className="rounded border border-slate-200 bg-white p-6 text-center">
+    <Card className="gap-0 p-6 text-center">
       <h1 className="text-lg font-semibold">Not found</h1>
-      <p className="mt-1 text-sm text-slate-600">That page doesn't exist.</p>
-    </div>
+      <p className="mt-1 text-sm text-muted-foreground">That page doesn't exist.</p>
+    </Card>
   );
 }

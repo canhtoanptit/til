@@ -1,14 +1,23 @@
-export function Spinner({ label }: { label?: string }) {
+import { Loader2Icon } from "lucide-react";
+import { cn } from "@/lib/utils";
+
+export function Spinner({
+  label,
+  className,
+}: {
+  label?: string;
+  className?: string;
+}) {
   return (
     <span
       role="status"
       aria-live="polite"
-      className="inline-flex items-center gap-2 text-sm text-slate-500"
+      className={cn(
+        "inline-flex items-center gap-2 text-sm text-muted-foreground",
+        className,
+      )}
     >
-      <span
-        aria-hidden="true"
-        className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-slate-300 border-t-slate-600"
-      />
+      <Loader2Icon aria-hidden="true" className="size-3.5 animate-spin" />
       {label ? <span>{label}</span> : <span className="sr-only">Loading</span>}
     </span>
   );

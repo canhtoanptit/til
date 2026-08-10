@@ -7,6 +7,7 @@ import {
 } from "@tanstack/react-query";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router";
+import { toast } from "sonner";
 import {
   ApiError,
   DuplicateUrlError,
@@ -14,9 +15,11 @@ import {
   type EntryDTO,
   type EntryListPage,
 } from "../api";
-import { EntryCard } from "../components/EntryCard";
-import { EntryCardSkeleton } from "../components/Skeleton";
+import { EntryCard, EntryCardSkeleton } from "../components/EntryCard";
 import { ErrorBanner, friendlyMessage } from "../components/ErrorBanner";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 
 export function FeedPage() {
   const navigate = useNavigate();
@@ -51,6 +54,9 @@ export function FeedPage() {
     onSuccess: (data) => {
       setUrl("");
       setAddError(null);
+      toast.success("Link saved", {
+        description: "Extracting and summarising it now.",
+      });
       // Optimistic pending card at the top of the feed.
       const now = Date.now();
       const optimistic: EntryDTO = {
@@ -86,19 +92,29 @@ export function FeedPage() {
     },
     onError: (e) => {
       if (e instanceof DuplicateUrlError) {
-        navigate(`/entries/${encodeURIComponent(e.existingId)}`);
+        toast.info("You already saved that link", {
+          description: "Opening the entry you already have.",
+        });
+        void navigate(`/entries/${encodeURIComponent(e.existingId)}`);
         setUrl("");
         setAddError(null);
         return;
       }
       setAddError(e);
+      toast.error("Could not save that link", {
+        description: friendlyMessage(e),
+      });
     },
   });
 
   const reingestMutation = useMutation({
     mutationFn: (id: string) => api.reingestEntry(id),
     onSuccess: () => {
+      toast.success("Reingesting", { description: "Fetching the link again." });
       void qc.invalidateQueries({ queryKey: ["entries"] });
+    },
+    onError: (e) => {
+      toast.error("Reingest failed", { description: friendlyMessage(e) });
     },
   });
 
@@ -137,26 +153,22 @@ export function FeedPage() {
           <label htmlFor="til-url" className="sr-only">
             URL
           </label>
-          <input
+          <Input
             id="til-url"
             type="url"
             required
             placeholder="Paste a URL to save…"
             value={url}
             onChange={(e) => setUrl(e.target.value)}
-            className="flex-1 rounded border border-slate-300 bg-white px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
+            className="flex-1"
             disabled={createMutation.isPending}
           />
-          <button
-            type="submit"
-            disabled={createMutation.isPending || !url.trim()}
-            className="rounded bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-50"
-          >
+          <Button type="submit" disabled={createMutation.isPending || !url.trim()}>
             {createMutation.isPending ? "Adding…" : "Add"}
-          </button>
+          </Button>
         </form>
         {addError !== null && (
-          <p className="mt-2 text-sm text-red-700" role="alert">
+          <p className="mt-2 text-sm text-destructive" role="alert">
             {friendlyMessage(addError)}
           </p>
         )}
@@ -166,13 +178,12 @@ export function FeedPage() {
         <label htmlFor="til-search" className="sr-only">
           Search entries
         </label>
-        <input
+        <Input
           id="til-search"
           type="search"
           placeholder="Search your feed…"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          className="w-full rounded border border-slate-300 bg-white px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
         />
       </section>
 
@@ -205,14 +216,14 @@ export function FeedPage() {
         )}
         {!isSearching && listQuery.hasNextPage && (
           <div className="mt-4 flex justify-center">
-            <button
+            <Button
               type="button"
+              variant="outline"
               onClick={() => listQuery.fetchNextPage()}
               disabled={listQuery.isFetchingNextPage}
-              className="rounded border border-slate-300 bg-white px-4 py-2 text-sm text-slate-700 hover:bg-slate-100 disabled:opacity-50"
             >
               {listQuery.isFetchingNextPage ? "Loading…" : "Load more"}
-            </button>
+            </Button>
           </div>
         )}
       </section>
@@ -223,16 +234,18 @@ export function FeedPage() {
 function EmptyState({ searching, query }: { searching: boolean; query: string }) {
   if (searching) {
     return (
-      <p className="rounded border border-dashed border-slate-300 bg-white p-8 text-center text-sm text-slate-500">
-        No matches for <span className="font-medium">"{query}"</span>.
-      </p>
+      <Card className="gap-0 border-dashed bg-transparent p-8 text-center text-sm text-muted-foreground shadow-none">
+        <p>
+          No matches for <span className="font-medium">"{query}"</span>.
+        </p>
+      </Card>
     );
   }
   return (
-    <div className="rounded border border-dashed border-slate-300 bg-white p-8 text-center text-sm text-slate-500">
-      <p className="font-medium text-slate-700">Your feed is empty.</p>
+    <Card className="gap-0 border-dashed bg-transparent p-8 text-center text-sm text-muted-foreground shadow-none">
+      <p className="font-medium text-foreground">Your feed is empty.</p>
       <p className="mt-1">Paste a link above to save your first learning.</p>
-    </div>
+    </Card>
   );
 }
 

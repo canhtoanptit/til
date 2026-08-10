@@ -1,27 +1,36 @@
 import { ApiError } from "../api";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
 export function ErrorBanner({
   error,
   onRetry,
+  className,
 }: {
   error: unknown;
   onRetry?: () => void;
+  className?: string;
 }) {
   const message = friendlyMessage(error);
   return (
     <div
       role="alert"
-      className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-800"
+      className={cn(
+        "rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive",
+        className,
+      )}
     >
       <p>{message}</p>
       {onRetry && (
-        <button
+        <Button
           type="button"
+          variant="outline"
+          size="xs"
+          className="mt-2"
           onClick={onRetry}
-          className="mt-2 rounded border border-red-300 bg-white px-2 py-1 text-xs font-medium text-red-800 hover:bg-red-100"
         >
           Retry
-        </button>
+        </Button>
       )}
     </div>
   );

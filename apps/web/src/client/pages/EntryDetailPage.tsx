@@ -1,9 +1,20 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useId, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
+import { toast } from "sonner";
+import { ChevronDownIcon } from "lucide-react";
 import { ApiError, api } from "../api";
+import { ConfirmDialog } from "../components/ConfirmDialog";
 import { ErrorBanner, friendlyMessage } from "../components/ErrorBanner";
 import { Spinner } from "../components/Spinner";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 
 function formatDate(ms: number): string {
   try {
@@ -21,7 +32,7 @@ export function EntryDetailPage() {
   const id = params.id ?? "";
   const navigate = useNavigate();
   const qc = useQueryClient();
-  const [showMarkdown, setShowMarkdown] = useState(false);
+  const markdownId = useId();
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   const query = useQuery({
@@ -38,16 +49,28 @@ export function EntryDetailPage() {
   const reingest = useMutation({
     mutationFn: () => api.reingestEntry(id),
     onSuccess: () => {
+      toast.success("Reingesting", { description: "Fetching the link again." });
       void qc.invalidateQueries({ queryKey: ["entry", id] });
       void qc.invalidateQueries({ queryKey: ["entries"] });
+    },
+    onError: (e) => {
+      toast.error("Reingest failed", { description: friendlyMessage(e) });
     },
   });
 
   const remove = useMutation({
     mutationFn: () => api.deleteEntry(id),
     onSuccess: () => {
+      setConfirmDelete(false);
+      toast.success("Entry deleted");
       void qc.invalidateQueries({ queryKey: ["entries"] });
-      navigate("/");
+      void navigate("/");
+    },
+    onError: (e) => {
+      setConfirmDelete(false);
+      toast.error("Could not delete that entry", {
+        description: friendlyMessage(e),
+      });
     },
   });
 
@@ -59,15 +82,12 @@ export function EntryDetailPage() {
     const err = query.error;
     if (err instanceof ApiError && err.status === 404) {
       return (
-        <div className="rounded border border-slate-200 bg-white p-6 text-center">
-          <p className="text-sm text-slate-600">This entry doesn't exist.</p>
-          <Link
-            to="/"
-            className="mt-3 inline-block text-sm font-medium text-slate-900 underline"
-          >
-            Back to feed
-          </Link>
-        </div>
+        <Card className="gap-0 p-6 text-center">
+          <p className="text-sm text-muted-foreground">This entry doesn't exist.</p>
+          <Button asChild variant="link" className="mt-3">
+            <Link to="/">Back to feed</Link>
+          </Button>
+        </Card>
       );
     }
     return <ErrorBanner error={err} onRetry={() => query.refetch()} />;
@@ -81,13 +101,13 @@ export function EntryDetailPage() {
   return (
     <article className="space-y-5">
       <div>
-        <Link to="/" className="text-sm text-slate-500 hover:underline">
+        <Link to="/" className="text-sm text-muted-foreground hover:underline">
           ← Back
         </Link>
       </div>
 
       <header className="space-y-2">
-        <h1 className="text-2xl font-semibold text-slate-900">
+        <h1 className="text-2xl font-semibold">
           <a
             href={entry.url}
             target="_blank"
@@ -97,7 +117,7 @@ export function EntryDetailPage() {
             {title}
           </a>
         </h1>
-        <div className="flex flex-wrap items-center gap-x-2 text-xs text-slate-500">
+        <div className="flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
           {entry.sourceDomain && <span>{entry.sourceDomain}</span>}
           {entry.sourceDomain && <span aria-hidden="true">·</span>}
           <span>{formatDate(entry.createdAt)}</span>
@@ -113,28 +133,27 @@ export function EntryDetailPage() {
       {entry.status === "failed" && (
         <div
           role="alert"
-          className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-800"
+          className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"
         >
           <p className="font-medium">Ingest failed.</p>
           {entry.error && <p className="mt-1 italic">{entry.error}</p>}
-          <button
+          <Button
             type="button"
+            variant="outline"
+            size="xs"
+            className="mt-2"
             onClick={() => reingest.mutate()}
             disabled={reingest.isPending}
-            className="mt-2 rounded border border-red-300 bg-white px-2 py-1 text-xs font-medium text-red-800 hover:bg-red-100 disabled:opacity-50"
           >
             {reingest.isPending ? "Reingesting…" : "Reingest"}
-          </button>
+          </Button>
         </div>
       )}
 
       {entry.status === "pending" && (
-        <div
-          role="status"
-          className="rounded-md border border-slate-200 bg-white p-3 text-sm text-slate-600"
-        >
+        <Card role="status" className="gap-0 p-3">
           <Spinner label="Waiting for the LLM to finish processing this link…" />
-        </div>
+        </Card>
       )}
 
       {entry.status === "ready" && (
@@ -142,40 +161,37 @@ export function EntryDetailPage() {
           {entry.takeaway && (
             <section
               aria-label="Takeaway"
-              className="rounded-md border-l-4 border-emerald-500 bg-emerald-50/70 p-4"
+              className="rounded-md border-l-4 border-success bg-success/10 p-4"
             >
-              <h2 className="text-xs font-semibold uppercase tracking-wide text-emerald-800">
+              <h2 className="text-xs font-semibold uppercase tracking-wide text-success">
                 Takeaway
               </h2>
-              <p className="mt-1 text-base text-slate-900">{entry.takeaway}</p>
+              <p className="mt-1 text-base">{entry.takeaway}</p>
             </section>
           )}
           {entry.summary && (
             <section aria-label="Summary">
-              <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 Summary
               </h2>
-              <p className="mt-1 whitespace-pre-wrap text-sm text-slate-800">
-                {entry.summary}
-              </p>
+              <p className="mt-1 whitespace-pre-wrap text-sm">{entry.summary}</p>
             </section>
           )}
           {entry.question && (
             <section aria-label="Follow-up">
-              <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 Follow-up
               </h2>
-              <p className="mt-1 text-sm italic text-slate-700">{entry.question}</p>
+              <p className="mt-1 text-sm italic text-muted-foreground">
+                {entry.question}
+              </p>
             </section>
           )}
           {entry.tags.length > 0 && (
             <ul className="flex flex-wrap gap-1">
               {entry.tags.map((t) => (
-                <li
-                  key={t}
-                  className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600"
-                >
-                  {t}
+                <li key={t}>
+                  <Badge variant="secondary">{t}</Badge>
                 </li>
               ))}
             </ul>
@@ -184,66 +200,56 @@ export function EntryDetailPage() {
       )}
 
       {entry.contentMarkdown && (
-        <section aria-label="Extracted content" className="border-t border-slate-200 pt-4">
-          <button
-            type="button"
-            onClick={() => setShowMarkdown((s) => !s)}
-            aria-expanded={showMarkdown}
-            className="text-sm font-medium text-slate-700 hover:underline"
-          >
-            {showMarkdown ? "Hide" : "Show"} extracted content
-          </button>
-          {showMarkdown && (
-            <pre className="mt-3 max-h-[60vh] overflow-auto whitespace-pre-wrap rounded border border-slate-200 bg-white p-3 text-xs leading-relaxed text-slate-800">
-              {entry.contentMarkdown}
-            </pre>
-          )}
-        </section>
+        <Collapsible asChild>
+          <section aria-label="Extracted content" className="border-t pt-4">
+            <CollapsibleTrigger
+              aria-controls={markdownId}
+              className="group inline-flex items-center gap-1 text-sm font-medium hover:underline focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
+            >
+              <span className="group-data-[state=open]:hidden">
+                Show extracted content
+              </span>
+              <span className="hidden group-data-[state=open]:inline">
+                Hide extracted content
+              </span>
+              <ChevronDownIcon
+                aria-hidden="true"
+                className="size-3.5 transition-transform group-data-[state=open]:rotate-180"
+              />
+            </CollapsibleTrigger>
+            <CollapsibleContent id={markdownId}>
+              <pre className="mt-3 max-h-[60vh] overflow-auto whitespace-pre-wrap rounded-md border bg-card p-3 text-xs leading-relaxed">
+                {entry.contentMarkdown}
+              </pre>
+            </CollapsibleContent>
+          </section>
+        </Collapsible>
       )}
 
-      <div className="flex flex-wrap items-center gap-2 border-t border-slate-200 pt-4">
-        <button
+      <div className="flex flex-wrap items-center gap-2 border-t pt-4">
+        <Button
           type="button"
+          variant="outline"
           onClick={() => reingest.mutate()}
           disabled={reingest.isPending || entry.status === "pending"}
-          className="rounded border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-800 hover:bg-slate-100 disabled:opacity-50"
         >
           {reingest.isPending ? "Reingesting…" : "Reingest"}
-        </button>
-        {!confirmDelete ? (
-          <button
-            type="button"
-            onClick={() => setConfirmDelete(true)}
-            className="rounded border border-red-300 bg-white px-3 py-1.5 text-sm text-red-700 hover:bg-red-50"
-          >
-            Delete
-          </button>
-        ) : (
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-slate-700">Are you sure?</span>
-            <button
-              type="button"
-              onClick={() => remove.mutate()}
-              disabled={remove.isPending}
-              className="rounded bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
-            >
-              {remove.isPending ? "Deleting…" : "Delete permanently"}
-            </button>
-            <button
-              type="button"
-              onClick={() => setConfirmDelete(false)}
-              className="rounded px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-100"
-            >
-              Cancel
-            </button>
-          </div>
-        )}
-        {reingest.isError && (
-          <p className="text-sm text-red-700">{friendlyMessage(reingest.error)}</p>
-        )}
-        {remove.isError && (
-          <p className="text-sm text-red-700">{friendlyMessage(remove.error)}</p>
-        )}
+        </Button>
+        <ConfirmDialog
+          open={confirmDelete}
+          onOpenChange={setConfirmDelete}
+          trigger={
+            <Button type="button" variant="destructive">
+              Delete
+            </Button>
+          }
+          title="Delete this entry?"
+          description={`"${title}" and its extracted content will be removed permanently. This cannot be undone.`}
+          confirmLabel="Delete permanently"
+          pendingLabel="Deleting…"
+          pending={remove.isPending}
+          onConfirm={() => remove.mutate()}
+        />
       </div>
     </article>
   );

@@ -1,6 +1,10 @@
 import { Link } from "react-router";
 import type { EntryDTO } from "../api";
 import { Spinner } from "./Spinner";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 
 function formatDate(ms: number): string {
   try {
@@ -25,54 +29,78 @@ export function EntryCard({
 }) {
   const title = entry.title?.trim() || entry.canonicalUrl;
   return (
-    <article className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm transition hover:shadow-md">
-      <div className="flex items-start justify-between gap-3">
-        <Link
-          to={`/entries/${encodeURIComponent(entry.id)}`}
-          className="flex-1 text-base font-semibold text-slate-900 hover:underline"
-        >
-          {title}
-        </Link>
-        {entry.status === "pending" && <Spinner label="ingesting" />}
-      </div>
-      <div className="mt-1 flex flex-wrap items-center gap-x-2 text-xs text-slate-500">
-        {entry.sourceDomain && <span>{entry.sourceDomain}</span>}
-        {entry.sourceDomain && <span aria-hidden="true">·</span>}
-        <span>{formatDate(entry.createdAt)}</span>
-      </div>
-      {entry.status === "ready" && entry.takeaway && (
-        <p className="mt-3 line-clamp-3 text-sm text-slate-700">{entry.takeaway}</p>
-      )}
-      {entry.status === "failed" && (
-        <div className="mt-3 rounded border border-red-200 bg-red-50 p-2 text-sm text-red-800">
-          <p>
-            Ingest failed
-            {entry.error ? <>: <span className="italic">{entry.error}</span></> : "."}
-          </p>
-          {onRetry && (
-            <button
-              type="button"
-              onClick={() => onRetry(entry.id)}
-              disabled={retrying}
-              className="mt-2 rounded border border-red-300 bg-white px-2 py-1 text-xs font-medium text-red-800 hover:bg-red-100 disabled:opacity-50"
-            >
-              {retrying ? "Retrying…" : "Retry"}
-            </button>
-          )}
+    <Card asChild className="gap-0 p-4 transition-shadow hover:shadow-md">
+      <article>
+        <div className="flex items-start justify-between gap-3">
+          <Link
+            to={`/entries/${encodeURIComponent(entry.id)}`}
+            className="flex-1 text-base font-semibold hover:underline"
+          >
+            {title}
+          </Link>
+          {entry.status === "pending" && <Spinner label="ingesting" />}
         </div>
-      )}
-      {entry.tags.length > 0 && (
-        <ul className="mt-3 flex flex-wrap gap-1">
-          {entry.tags.map((t) => (
-            <li
-              key={t}
-              className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600"
-            >
-              {t}
-            </li>
-          ))}
-        </ul>
-      )}
-    </article>
+        <div className="mt-1 flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
+          {entry.sourceDomain && <span>{entry.sourceDomain}</span>}
+          {entry.sourceDomain && <span aria-hidden="true">·</span>}
+          <span>{formatDate(entry.createdAt)}</span>
+        </div>
+        {entry.status === "ready" && entry.takeaway && (
+          <p className="mt-3 line-clamp-3 text-sm text-muted-foreground">
+            {entry.takeaway}
+          </p>
+        )}
+        {entry.status === "failed" && (
+          <div className="mt-3 rounded-md border border-destructive/30 bg-destructive/10 p-2 text-sm text-destructive">
+            <p>
+              Ingest failed
+              {entry.error ? (
+                <>
+                  : <span className="italic">{entry.error}</span>
+                </>
+              ) : (
+                "."
+              )}
+            </p>
+            {onRetry && (
+              <Button
+                type="button"
+                variant="outline"
+                size="xs"
+                className="mt-2"
+                onClick={() => onRetry(entry.id)}
+                disabled={retrying}
+              >
+                {retrying ? "Retrying…" : "Retry"}
+              </Button>
+            )}
+          </div>
+        )}
+        {entry.tags.length > 0 && (
+          <ul className="mt-3 flex flex-wrap gap-1">
+            {entry.tags.map((t) => (
+              <li key={t}>
+                <Badge variant="secondary">{t}</Badge>
+              </li>
+            ))}
+          </ul>
+        )}
+      </article>
+    </Card>
+  );
+}
+
+export function EntryCardSkeleton() {
+  return (
+    <Card aria-hidden="true" className="gap-0 p-4">
+      <Skeleton className="h-4 w-2/3" />
+      <Skeleton className="mt-2 h-3 w-1/3" />
+      <Skeleton className="mt-4 h-3 w-full" />
+      <Skeleton className="mt-2 h-3 w-5/6" />
+      <div className="mt-3 flex gap-2">
+        <Skeleton className="h-4 w-12 rounded-full" />
+        <Skeleton className="h-4 w-16 rounded-full" />
+      </div>
+    </Card>
   );
 }

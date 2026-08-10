@@ -11,12 +11,17 @@ import { Link, useNavigate, useParams } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAgent } from "agents/react";
 import { useAgentChat } from "@cloudflare/ai-chat/react";
+import { toast } from "sonner";
 import { api, getToken } from "../api";
 import { ChatErrorBoundary } from "../components/ChatErrorBoundary";
 import { ChatMessageView } from "../components/ChatMessageView";
+import { ConfirmDialog } from "../components/ConfirmDialog";
 import { ErrorBanner, friendlyMessage } from "../components/ErrorBanner";
 import { Spinner } from "../components/Spinner";
 import { chatConversationTitle } from "../components/chat-format";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Textarea } from "@/components/ui/textarea";
 
 /** The signed ticket lives 60s server-side; re-mint well inside that so a
  * partysocket reconnect never presents an expired one. */
@@ -45,8 +50,16 @@ export function ChatPage() {
   const remove = useMutation({
     mutationFn: () => api.deleteChat(id),
     onSuccess: () => {
+      setConfirmDelete(false);
+      toast.success("Conversation deleted");
       void qc.invalidateQueries({ queryKey: ["chats"] });
-      navigate("/chat");
+      void navigate("/chat");
+    },
+    onError: (e) => {
+      setConfirmDelete(false);
+      toast.error("Could not delete that conversation", {
+        description: friendlyMessage(e),
+      });
     },
   });
 
@@ -55,65 +68,49 @@ export function ChatPage() {
 
   if (id.length === 0) {
     return (
-      <div className="rounded border border-slate-200 bg-white p-6 text-center">
-        <p className="text-sm text-slate-600">That conversation doesn't exist.</p>
-        <Link
-          to="/chat"
-          className="mt-3 inline-block text-sm font-medium text-slate-900 underline"
-        >
-          Back to chat
-        </Link>
-      </div>
+      <Card className="gap-0 p-6 text-center">
+        <p className="text-sm text-muted-foreground">
+          That conversation doesn't exist.
+        </p>
+        <Button asChild variant="link" className="mt-3">
+          <Link to="/chat">Back to chat</Link>
+        </Button>
+      </Card>
     );
   }
 
   return (
     <div className="space-y-4">
       <div>
-        <Link to="/chat" className="text-sm text-slate-500 hover:underline">
+        <Link to="/chat" className="text-sm text-muted-foreground hover:underline">
           ← All conversations
         </Link>
       </div>
 
       <header className="flex flex-wrap items-start justify-between gap-3">
-        <h1 className="min-w-0 flex-1 text-lg font-semibold text-slate-900">
-          {heading}
-        </h1>
-        {!confirmDelete ? (
-          <button
-            type="button"
-            onClick={() => setConfirmDelete(true)}
-            className="shrink-0 rounded border border-slate-300 bg-white px-2 py-1 text-xs text-slate-600 hover:bg-slate-100"
-          >
-            Delete
-          </button>
-        ) : (
-          <div className="flex shrink-0 items-center gap-2">
-            <span className="text-xs text-slate-600">Delete this conversation?</span>
-            <button
+        <h1 className="min-w-0 flex-1 text-lg font-semibold">{heading}</h1>
+        <ConfirmDialog
+          open={confirmDelete}
+          onOpenChange={setConfirmDelete}
+          trigger={
+            <Button
               type="button"
-              onClick={() => remove.mutate()}
-              disabled={remove.isPending}
-              className="rounded bg-red-600 px-2 py-1 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-50"
+              variant="outline"
+              size="xs"
+              className="shrink-0"
+              aria-label={`Delete conversation: ${heading}`}
             >
-              {remove.isPending ? "Deleting…" : "Confirm"}
-            </button>
-            <button
-              type="button"
-              onClick={() => setConfirmDelete(false)}
-              className="rounded px-2 py-1 text-xs text-slate-600 hover:bg-slate-100"
-            >
-              Cancel
-            </button>
-          </div>
-        )}
+              Delete
+            </Button>
+          }
+          title="Delete this conversation?"
+          description={`"${heading}" and all of its messages will be removed permanently. This cannot be undone.`}
+          confirmLabel="Delete permanently"
+          pendingLabel="Deleting…"
+          pending={remove.isPending}
+          onConfirm={() => remove.mutate()}
+        />
       </header>
-
-      {remove.isError && (
-        <p className="text-sm text-red-700" role="alert">
-          {friendlyMessage(remove.error)}
-        </p>
-      )}
 
       <ChatErrorBoundary onReset={() => setAttempt((n) => n + 1)}>
         <Suspense fallback={<Spinner label="Connecting to your reading…" />}>
@@ -235,7 +232,7 @@ function Conversation({
       {ticketError === null && connectionError !== null && (
         <div
           role="alert"
-          className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-800"
+          className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"
         >
           <p>
             Lost the connection to the chat agent
@@ -247,13 +244,15 @@ function Conversation({
               "."
             )}
           </p>
-          <button
+          <Button
             type="button"
+            variant="outline"
+            size="xs"
+            className="mt-2"
             onClick={onRetry}
-            className="mt-2 rounded border border-red-300 bg-white px-2 py-1 text-xs font-medium text-red-800 hover:bg-red-100"
           >
             Reconnect
-          </button>
+          </Button>
         </div>
       )}
 
@@ -281,7 +280,7 @@ function Conversation({
       {error !== undefined && (
         <div
           role="alert"
-          className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-800"
+          className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"
         >
           <p className="font-medium">The assistant couldn't finish that answer.</p>
           <p className="mt-1 italic">{friendlyMessage(error)}</p>
@@ -292,18 +291,20 @@ function Conversation({
             </Link>
             .
           </p>
-          <button
+          <Button
             type="button"
+            variant="outline"
+            size="xs"
+            className="mt-2"
             onClick={() => clearError()}
-            className="mt-2 rounded border border-red-300 bg-white px-2 py-1 text-xs font-medium text-red-800 hover:bg-red-100"
           >
             Dismiss
-          </button>
+          </Button>
         </div>
       )}
 
       <form
-        className="sticky bottom-0 space-y-2 border-t border-slate-200 bg-slate-50 pb-4 pt-3"
+        className="sticky bottom-0 space-y-2 border-t bg-background pb-4 pt-3"
         onSubmit={(e) => {
           e.preventDefault();
           send();
@@ -312,7 +313,7 @@ function Conversation({
         <label htmlFor="til-chat-input" className="sr-only">
           Ask about your saved reading
         </label>
-        <textarea
+        <Textarea
           id="til-chat-input"
           ref={textareaRef}
           rows={2}
@@ -321,10 +322,10 @@ function Conversation({
           onKeyDown={onKeyDown}
           disabled={busy || blocked}
           placeholder="Ask about your saved reading…  (Enter to send, Shift+Enter for a new line)"
-          className="w-full resize-y rounded border border-slate-300 bg-white px-3 py-2 text-sm focus:border-slate-500 focus:outline-none disabled:bg-slate-100"
+          className="min-h-16 resize-y text-sm"
         />
         <div className="flex items-center justify-between gap-2">
-          <span className="text-xs text-slate-500">
+          <span className="text-xs text-muted-foreground">
             {blocked
               ? "Not connected."
               : busy
@@ -333,21 +334,16 @@ function Conversation({
           </span>
           <div className="flex items-center gap-2">
             {busy && (
-              <button
-                type="button"
-                onClick={() => void stop()}
-                className="rounded border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-100"
-              >
+              <Button type="button" variant="outline" onClick={() => void stop()}>
                 Stop
-              </button>
+              </Button>
             )}
-            <button
+            <Button
               type="submit"
               disabled={busy || blocked || draft.trim().length === 0}
-              className="rounded bg-slate-900 px-4 py-1.5 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-50"
             >
               Send
-            </button>
+            </Button>
           </div>
         </div>
       </form>
@@ -363,8 +359,8 @@ function Primer({
   onPick: (text: string) => void;
 }) {
   return (
-    <div className="rounded border border-dashed border-slate-300 bg-white p-6 text-sm text-slate-600">
-      <p className="font-medium text-slate-800">Ask about what you've saved.</p>
+    <Card className="gap-0 border-dashed bg-transparent p-6 text-sm text-muted-foreground shadow-none">
+      <p className="font-medium text-foreground">Ask about what you've saved.</p>
       <p className="mt-1">
         The assistant searches your entries and cites them, so you can click
         through to the original.
@@ -372,17 +368,19 @@ function Primer({
       <ul className="mt-4 flex flex-wrap gap-2">
         {SUGGESTIONS.map((text) => (
           <li key={text}>
-            <button
+            <Button
               type="button"
+              variant="outline"
+              size="xs"
+              className="rounded-full"
               disabled={disabled}
               onClick={() => onPick(text)}
-              className="rounded-full border border-slate-300 bg-white px-3 py-1 text-xs text-slate-700 hover:bg-slate-100 disabled:opacity-50"
             >
               {text}
-            </button>
+            </Button>
           </li>
         ))}
       </ul>
-    </div>
+    </Card>
   );
 }

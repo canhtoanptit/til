@@ -4,6 +4,8 @@ import { BrowserRouter } from "react-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { App } from "./App";
 import { ApiError } from "./api";
+import { ThemeProvider } from "./components/theme-provider";
+import { Toaster } from "./components/ui/sonner";
 import "./styles.css";
 
 const queryClient = new QueryClient({
@@ -33,10 +35,13 @@ if (!root) throw new Error("root element missing");
 
 createRoot(root).render(
   <StrictMode>
-    <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
-        <App />
-      </BrowserRouter>
-    </QueryClientProvider>
+    <ThemeProvider>
+      <QueryClientProvider client={queryClient}>
+        <BrowserRouter>
+          <App />
+        </BrowserRouter>
+        <Toaster position="bottom-right" richColors closeButton />
+      </QueryClientProvider>
+    </ThemeProvider>
   </StrictMode>,
 );

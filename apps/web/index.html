@@ -5,6 +5,26 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>TIL — Today I Learned</title>
     <meta name="description" content="Paste a link. Get a searchable digest of what you learned." />
+    <script>
+      // Paint the stored theme before first paint — otherwise a dark-mode user
+      // sees a white flash while the bundle loads. Key and semantics must match
+      // src/client/components/theme-provider.tsx.
+      (function () {
+        try {
+          var stored = localStorage.getItem("til:theme");
+          var theme =
+            stored === "light" || stored === "dark"
+              ? stored
+              : window.matchMedia("(prefers-color-scheme: dark)").matches
+                ? "dark"
+                : "light";
+          document.documentElement.classList.add(theme);
+          document.documentElement.style.colorScheme = theme;
+        } catch (e) {
+          // Storage blocked or matchMedia unavailable — fall through to light.
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

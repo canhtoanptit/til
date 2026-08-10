@@ -1,9 +1,14 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
+import { toast } from "sonner";
 import { ApiError, api, type DigestItemDTO } from "../api";
+import { ConfirmDialog } from "../components/ConfirmDialog";
 import { ErrorBanner, friendlyMessage } from "../components/ErrorBanner";
 import { Spinner } from "../components/Spinner";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import {
   digestHeading,
   formatItemCount,
@@ -34,16 +39,32 @@ export function DigestDetailPage() {
   const rerun = useMutation({
     mutationFn: () => api.runDigest(),
     onSuccess: (data) => {
+      toast.success("Digest run started", {
+        description: "Gathering and ranking candidates — this takes a minute or two.",
+      });
       void qc.invalidateQueries({ queryKey: ["digests"] });
-      navigate(`/digests/${encodeURIComponent(data.id)}`);
+      void navigate(`/digests/${encodeURIComponent(data.id)}`);
+    },
+    onError: (e) => {
+      toast.error("Could not start a digest run", {
+        description: friendlyMessage(e),
+      });
     },
   });
 
   const remove = useMutation({
     mutationFn: () => api.deleteDigest(id),
     onSuccess: () => {
+      setConfirmDelete(false);
+      toast.success("Digest deleted");
       void qc.invalidateQueries({ queryKey: ["digests"] });
-      navigate("/digests");
+      void navigate("/digests");
+    },
+    onError: (e) => {
+      setConfirmDelete(false);
+      toast.error("Could not delete that digest", {
+        description: friendlyMessage(e),
+      });
     },
   });
 
@@ -55,15 +76,12 @@ export function DigestDetailPage() {
     const err = query.error;
     if (err instanceof ApiError && err.status === 404) {
       return (
-        <div className="rounded border border-slate-200 bg-white p-6 text-center">
-          <p className="text-sm text-slate-600">This digest doesn't exist.</p>
-          <Link
-            to="/digests"
-            className="mt-3 inline-block text-sm font-medium text-slate-900 underline"
-          >
-            Back to digests
-          </Link>
-        </div>
+        <Card className="gap-0 p-6 text-center">
+          <p className="text-sm text-muted-foreground">This digest doesn't exist.</p>
+          <Button asChild variant="link" className="mt-3">
+            <Link to="/digests">Back to digests</Link>
+          </Button>
+        </Card>
       );
     }
     return <ErrorBanner error={err} onRetry={() => query.refetch()} />;
@@ -77,16 +95,14 @@ export function DigestDetailPage() {
   return (
     <article className="space-y-5">
       <div>
-        <Link to="/digests" className="text-sm text-slate-500 hover:underline">
+        <Link to="/digests" className="text-sm text-muted-foreground hover:underline">
           ← Back
         </Link>
       </div>
 
       <header className="space-y-2">
-        <h1 className="text-2xl font-semibold text-slate-900">
-          {digestHeading(digest)}
-        </h1>
-        <div className="flex flex-wrap items-center gap-x-2 text-xs text-slate-500">
+        <h1 className="text-2xl font-semibold">{digestHeading(digest)}</h1>
+        <div className="flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
           <span>{formatRunDateTime(digest.runAt)}</span>
           <span aria-hidden="true">·</span>
           <span>last {digest.windowDays} days{range ? ` (${range})` : ""}</span>
@@ -104,41 +120,38 @@ export function DigestDetailPage() {
       {digest.status === "failed" && (
         <div
           role="alert"
-          className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-800"
+          className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"
         >
           <p className="font-medium">This digest run failed.</p>
           {digest.error && <p className="mt-1 italic">{digest.error}</p>}
-          <button
+          <Button
             type="button"
+            variant="outline"
+            size="xs"
+            className="mt-2"
             onClick={() => rerun.mutate()}
             disabled={rerun.isPending}
-            className="mt-2 rounded border border-red-300 bg-white px-2 py-1 text-xs font-medium text-red-800 hover:bg-red-100 disabled:opacity-50"
           >
             {rerun.isPending ? "Starting…" : "Run again"}
-          </button>
+          </Button>
         </div>
       )}
 
       {digest.status === "pending" && (
-        <div
-          role="status"
-          className="rounded-md border border-slate-200 bg-white p-3 text-sm text-slate-600"
-        >
+        <Card role="status" className="gap-0 p-3">
           <Spinner label="Gathering candidates and writing the digest — this page updates itself…" />
-        </div>
+        </Card>
       )}
 
       {digest.status === "ready" && digest.intro && (
         <section aria-label="Intro">
-          <p className="whitespace-pre-wrap text-base text-slate-800">
-            {digest.intro}
-          </p>
+          <p className="whitespace-pre-wrap text-base">{digest.intro}</p>
         </section>
       )}
 
       {digest.items.length > 0 && (
         <section aria-label="Digest items">
-          <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+          <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             Items
           </h2>
           <ol className="mt-3 space-y-3">
@@ -152,54 +165,35 @@ export function DigestDetailPage() {
       )}
 
       {digest.status === "ready" && digest.items.length === 0 && (
-        <p className="rounded border border-dashed border-slate-300 bg-white p-6 text-center text-sm text-slate-500">
-          This run finished without finding anything worth including.
-        </p>
+        <Card className="gap-0 border-dashed bg-transparent p-6 text-center text-sm text-muted-foreground shadow-none">
+          <p>This run finished without finding anything worth including.</p>
+        </Card>
       )}
 
-      <div className="flex flex-wrap items-center gap-2 border-t border-slate-200 pt-4">
-        <button
+      <div className="flex flex-wrap items-center gap-2 border-t pt-4">
+        <Button
           type="button"
+          variant="outline"
           onClick={() => rerun.mutate()}
           disabled={rerun.isPending || digest.status === "pending"}
-          className="rounded border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-800 hover:bg-slate-100 disabled:opacity-50"
         >
           {rerun.isPending ? "Starting…" : "Run again"}
-        </button>
-        {!confirmDelete ? (
-          <button
-            type="button"
-            onClick={() => setConfirmDelete(true)}
-            className="rounded border border-red-300 bg-white px-3 py-1.5 text-sm text-red-700 hover:bg-red-50"
-          >
-            Delete
-          </button>
-        ) : (
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-slate-700">Are you sure?</span>
-            <button
-              type="button"
-              onClick={() => remove.mutate()}
-              disabled={remove.isPending}
-              className="rounded bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
-            >
-              {remove.isPending ? "Deleting…" : "Delete permanently"}
-            </button>
-            <button
-              type="button"
-              onClick={() => setConfirmDelete(false)}
-              className="rounded px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-100"
-            >
-              Cancel
-            </button>
-          </div>
-        )}
-        {rerun.isError && (
-          <p className="text-sm text-red-700">{friendlyMessage(rerun.error)}</p>
-        )}
-        {remove.isError && (
-          <p className="text-sm text-red-700">{friendlyMessage(remove.error)}</p>
-        )}
+        </Button>
+        <ConfirmDialog
+          open={confirmDelete}
+          onOpenChange={setConfirmDelete}
+          trigger={
+            <Button type="button" variant="destructive">
+              Delete
+            </Button>
+          }
+          title="Delete this digest?"
+          description={`"${digestHeading(digest)}" and all of its ranked items will be removed permanently. This cannot be undone.`}
+          confirmLabel="Delete permanently"
+          pendingLabel="Deleting…"
+          pending={remove.isPending}
+          onConfirm={() => remove.mutate()}
+        />
       </div>
     </article>
   );
@@ -208,66 +202,65 @@ export function DigestDetailPage() {
 function DigestItem({ item }: { item: DigestItemDTO }) {
   const score = formatScore(item.score);
   return (
-    <article className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm transition hover:shadow-md">
-      <div className="flex items-start gap-3">
-        <span
-          aria-hidden="true"
-          className="mt-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-semibold text-slate-600"
-        >
-          {item.rank}
-        </span>
-        <div className="min-w-0 flex-1">
-          <h3 className="text-base font-semibold text-slate-900">
-            <a
-              href={item.url}
-              target="_blank"
-              rel="noreferrer noopener"
-              className="hover:underline"
-            >
-              {item.title}
-            </a>
-          </h3>
-          <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-500">
-            <span
-              title={item.sourceName}
-              className="rounded-full bg-slate-100 px-2 py-0.5 text-slate-600"
-            >
-              {sourceLabel(item.sourceName)}
-            </span>
-            {item.sourceDomain && <span>{item.sourceDomain}</span>}
-            {score !== null && (
-              <>
-                <span aria-hidden="true">·</span>
-                <span title="ranking score" className="text-slate-400">
-                  score {score}
-                </span>
-              </>
+    <Card asChild className="gap-0 p-4 transition-shadow hover:shadow-md">
+      <article>
+        <div className="flex items-start gap-3">
+          <span
+            aria-hidden="true"
+            className="mt-0.5 inline-flex size-6 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-semibold text-muted-foreground"
+          >
+            {item.rank}
+          </span>
+          <div className="min-w-0 flex-1">
+            <h3 className="text-base font-semibold">
+              <a
+                href={item.url}
+                target="_blank"
+                rel="noreferrer noopener"
+                className="hover:underline"
+              >
+                {item.title}
+              </a>
+            </h3>
+            <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+              <Badge variant="secondary" title={item.sourceName}>
+                {sourceLabel(item.sourceName)}
+              </Badge>
+              {item.sourceDomain && <span>{item.sourceDomain}</span>}
+              {score !== null && (
+                <>
+                  <span aria-hidden="true">·</span>
+                  <span title="ranking score" className="opacity-70">
+                    score {score}
+                  </span>
+                </>
+              )}
+            </div>
+            {item.why && (
+              <p className="mt-3 border-l-4 border-success bg-success/10 py-2 pl-3 text-sm">
+                {item.why}
+              </p>
+            )}
+            {item.evidence.length > 0 && (
+              <p className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+                <span>also on</span>
+                {item.evidence.map((ev) => (
+                  <a
+                    key={`${ev.sourceName}-${ev.url}`}
+                    href={ev.url}
+                    target="_blank"
+                    rel="noreferrer noopener"
+                    title={ev.title}
+                    className="underline hover:text-foreground"
+                  >
+                    {sourceLabel(ev.sourceName)}
+                  </a>
+                ))}
+              </p>
             )}
           </div>
-          {item.why && (
-            <p className="mt-3 border-l-4 border-emerald-500 bg-emerald-50/70 py-2 pl-3 text-sm text-slate-900">
-              {item.why}
-            </p>
-          )}
-          {item.evidence.length > 0 && (
-            <p className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-500">
-              <span>also on</span>
-              {item.evidence.map((ev) => (
-                <a
-                  key={`${ev.sourceName}-${ev.url}`}
-                  href={ev.url}
-                  target="_blank"
-                  rel="noreferrer noopener"
-                  title={ev.title}
-                  className="underline hover:text-slate-700"
-                >
-                  {sourceLabel(ev.sourceName)}
-                </a>
-              ))}
-            </p>
-          )}
         </div>
-      </div>
-    </article>
+      </article>
+    </Card>
   );
 }

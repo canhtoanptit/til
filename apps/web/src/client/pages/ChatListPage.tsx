@@ -1,9 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link, useNavigate } from "react-router";
+import { toast } from "sonner";
 import { api, type ChatConversationDTO } from "../api";
+import { ConfirmDialog } from "../components/ConfirmDialog";
 import { ErrorBanner, friendlyMessage } from "../components/ErrorBanner";
-import { Skeleton } from "../components/Skeleton";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   chatConversationTitle,
   formatChatDate,
@@ -25,7 +29,14 @@ export function ChatListPage() {
     mutationFn: (id: string) => api.deleteChat(id),
     onSuccess: () => {
       setConfirmId(null);
+      toast.success("Conversation deleted");
       void qc.invalidateQueries({ queryKey: ["chats"] });
+    },
+    onError: (e) => {
+      setConfirmId(null);
+      toast.error("Could not delete that conversation", {
+        description: friendlyMessage(e),
+      });
     },
   });
 
@@ -36,25 +47,18 @@ export function ChatListPage() {
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold">Chat</h1>
-          <p className="mt-1 text-sm text-slate-600">
+          <p className="mt-1 text-sm text-muted-foreground">
             Ask questions about the things you have saved. Answers only ever come
             from your own entries.
           </p>
         </div>
-        <button
+        <Button
           type="button"
-          onClick={() => navigate(`/chat/${crypto.randomUUID()}`)}
-          className="rounded bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800"
+          onClick={() => void navigate(`/chat/${crypto.randomUUID()}`)}
         >
           New chat
-        </button>
+        </Button>
       </header>
-
-      {remove.isError && (
-        <p className="text-sm text-red-700" role="alert">
-          {friendlyMessage(remove.error)}
-        </p>
-      )}
 
       <section aria-label="Conversations">
         {listQuery.isLoading ? (
@@ -75,8 +79,7 @@ export function ChatListPage() {
                   chat={chat}
                   confirming={confirmId === chat.id}
                   deleting={remove.isPending && remove.variables === chat.id}
-                  onAskDelete={() => setConfirmId(chat.id)}
-                  onCancelDelete={() => setConfirmId(null)}
+                  onConfirmingChange={(open) => setConfirmId(open ? chat.id : null)}
                   onConfirmDelete={() => remove.mutate(chat.id)}
                 />
               </li>
@@ -92,80 +95,73 @@ function ConversationRow({
   chat,
   confirming,
   deleting,
-  onAskDelete,
-  onCancelDelete,
+  onConfirmingChange,
   onConfirmDelete,
 }: {
   chat: ChatConversationDTO;
   confirming: boolean;
   deleting: boolean;
-  onAskDelete: () => void;
-  onCancelDelete: () => void;
+  onConfirmingChange: (open: boolean) => void;
   onConfirmDelete: () => void;
 }) {
   const title = chatConversationTitle(chat);
   return (
-    <article className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm transition hover:shadow-md">
-      <div className="flex items-start justify-between gap-3">
-        <Link
-          to={`/chat/${encodeURIComponent(chat.id)}`}
-          className="min-w-0 flex-1 text-base font-semibold text-slate-900 hover:underline"
-        >
-          {title}
-        </Link>
-        {!confirming ? (
-          <button
-            type="button"
-            onClick={onAskDelete}
-            className="shrink-0 rounded border border-slate-300 bg-white px-2 py-1 text-xs text-slate-600 hover:bg-slate-100"
-            aria-label={`Delete conversation: ${title}`}
+    <Card asChild className="gap-0 p-4 transition-shadow hover:shadow-md">
+      <article>
+        <div className="flex items-start justify-between gap-3">
+          <Link
+            to={`/chat/${encodeURIComponent(chat.id)}`}
+            className="min-w-0 flex-1 text-base font-semibold hover:underline"
           >
-            Delete
-          </button>
-        ) : (
-          <div className="flex shrink-0 items-center gap-2">
-            <button
-              type="button"
-              onClick={onConfirmDelete}
-              disabled={deleting}
-              className="rounded bg-red-600 px-2 py-1 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-50"
-            >
-              {deleting ? "Deleting…" : "Confirm"}
-            </button>
-            <button
-              type="button"
-              onClick={onCancelDelete}
-              className="rounded px-2 py-1 text-xs text-slate-600 hover:bg-slate-100"
-            >
-              Cancel
-            </button>
-          </div>
-        )}
-      </div>
-      <div className="mt-1 flex flex-wrap items-center gap-x-2 text-xs text-slate-500">
-        <span title={formatChatDate(chat.updatedAt)}>
-          {formatRelative(chat.updatedAt)}
-        </span>
-        <span aria-hidden="true">·</span>
-        <span>{formatMessageCount(chat.messageCount)}</span>
-      </div>
-    </article>
+            {title}
+          </Link>
+          <ConfirmDialog
+            open={confirming}
+            onOpenChange={onConfirmingChange}
+            trigger={
+              <Button
+                type="button"
+                variant="outline"
+                size="xs"
+                className="shrink-0"
+                aria-label={`Delete conversation: ${title}`}
+              >
+                Delete
+              </Button>
+            }
+            title="Delete this conversation?"
+            description={`"${title}" and all of its messages will be removed permanently. This cannot be undone.`}
+            confirmLabel="Delete permanently"
+            pendingLabel="Deleting…"
+            pending={deleting}
+            onConfirm={onConfirmDelete}
+          />
+        </div>
+        <div className="mt-1 flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
+          <span title={formatChatDate(chat.updatedAt)}>
+            {formatRelative(chat.updatedAt)}
+          </span>
+          <span aria-hidden="true">·</span>
+          <span>{formatMessageCount(chat.messageCount)}</span>
+        </div>
+      </article>
+    </Card>
   );
 }
 
 function RowSkeleton() {
   return (
-    <article className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+    <Card aria-hidden="true" className="gap-0 p-4">
       <Skeleton className="h-4 w-1/2" />
       <Skeleton className="mt-2 h-3 w-1/3" />
-    </article>
+    </Card>
   );
 }
 
 function EmptyState() {
   return (
-    <div className="rounded border border-dashed border-slate-300 bg-white p-8 text-center text-sm text-slate-500">
-      <p className="font-medium text-slate-700">No conversations yet.</p>
+    <Card className="gap-0 border-dashed bg-transparent p-8 text-center text-sm text-muted-foreground shadow-none">
+      <p className="font-medium text-foreground">No conversations yet.</p>
       <p className="mt-1">
         Start one and ask things like{" "}
         <span className="font-medium">“what have I saved about CSS?”</span>,{" "}
@@ -176,6 +172,6 @@ function EmptyState() {
         It searches your saved entries and links back to them, so you can always
         check the source.
       </p>
-    </div>
+    </Card>
   );
 }
