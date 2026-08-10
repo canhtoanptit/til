@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
+  compareIds,
   cosineSimilarity,
   embeddingTextFor,
   normalizeVector,
   RRF_K,
   rrfMerge,
+  rrfScores,
 } from "./retrieval.js";
 
 function magnitude(v: readonly number[]): number {
@@ -118,6 +120,47 @@ describe("rrfMerge", () => {
     ]);
     expect(merged.map((m) => m.id)).toEqual(["ok"]);
     expect(Number.isFinite(merged[0]?.score ?? Number.NaN)).toBe(true);
+  });
+});
+
+describe("rrfScores", () => {
+  it("weights a list's contribution, defaulting to 1", () => {
+    const scores = rrfScores(
+      [
+        { items: [{ id: "a", rank: 1 }], weight: 0.7 },
+        { items: [{ id: "b", rank: 1 }] },
+      ],
+      9,
+    );
+    expect(scores.get("a")).toBeCloseTo(0.7 / 10, 12);
+    expect(scores.get("b")).toBeCloseTo(1 / 10, 12);
+  });
+
+  it("treats a negative or non-finite weight as 0 and 1 respectively", () => {
+    const scores = rrfScores(
+      [
+        { items: [{ id: "a", rank: 1 }], weight: -3 },
+        { items: [{ id: "b", rank: 1 }], weight: Number.NaN },
+      ],
+      9,
+    );
+    expect(scores.get("a")).toBe(0);
+    expect(scores.get("b")).toBeCloseTo(1 / 10, 12);
+  });
+
+  it("is what rrfMerge scores with", () => {
+    const lists = [[{ id: "a", rank: 2 }], [{ id: "a", rank: 5 }]];
+    const merged = rrfMerge(lists);
+    const scores = rrfScores(lists.map((items) => ({ items })));
+    expect(merged[0]?.score).toBe(scores.get("a"));
+  });
+});
+
+describe("compareIds", () => {
+  it("orders ascending and reports equality as 0", () => {
+    expect(compareIds("a", "b")).toBe(-1);
+    expect(compareIds("b", "a")).toBe(1);
+    expect(compareIds("a", "a")).toBe(0);
   });
 });
 

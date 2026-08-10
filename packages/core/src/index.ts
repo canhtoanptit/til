@@ -36,13 +36,30 @@ export {
   titleTokens,
 } from "./ranking.js";
 export {
+  compareIds,
   cosineSimilarity,
   embeddingTextFor,
   normalizeVector,
   RRF_K,
   rrfMerge,
+  rrfScores,
 } from "./retrieval.js";
-export type { FusedId, RankedId } from "./retrieval.js";
+export type { FusedId, RankedId, WeightedRanks } from "./retrieval.js";
+export {
+  ftsTokens,
+  fuseHybrid,
+  HYBRID_DEFAULTS,
+  sanitizeFtsQuery,
+  SELECTIVE_KEYWORD_HITS,
+  STOPWORDS,
+} from "./hybrid.js";
+export type {
+  FuseHybridOptions,
+  HybridTiebreak,
+  HybridWeights,
+  KeywordVote,
+  SanitizeFtsQueryOptions,
+} from "./hybrid.js";
 export {
   createOllamaEmbedder,
   EMBEDDING_DIMENSIONS,

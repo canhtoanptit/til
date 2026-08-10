@@ -1,27 +1,6 @@
 import { describe, expect, it } from "vitest";
-import {
-  buildTestApp,
-  insertEntry,
-  makeStubEmbedder,
-} from "./test-harness.js";
+import { buildTestApp, insertEntry, makeStubEmbedder } from "./test-harness.js";
 import { indexEntry } from "./indexing.js";
-import { sanitizeFtsQuery } from "./search.js";
-
-describe("sanitizeFtsQuery", () => {
-  it("returns null for empty/whitespace", () => {
-    expect(sanitizeFtsQuery("")).toBeNull();
-    expect(sanitizeFtsQuery("   ")).toBeNull();
-  });
-
-  it("strips FTS operators and quotes each term", () => {
-    const q = sanitizeFtsQuery('foo AND "bar*" OR (baz):');
-    expect(q).toBe('"foo" OR "bar" OR "baz"');
-  });
-
-  it("returns null when only operators are provided", () => {
-    expect(sanitizeFtsQuery("AND OR NOT")).toBeNull();
-  });
-});
 
 describe("GET /api/search", () => {
   it("returns empty items for empty q", async () => {
@@ -135,6 +114,27 @@ describe("GET /api/search", () => {
     const res = await t.request("/api/search?q=kubernetes");
     const body = (await res.json()) as { items: Array<{ id: string }> };
     expect(body.items.map((x) => x.id)).toEqual(["k8s-1"]);
+  });
+
+  it("returns nothing for a query of pure function words with no embedder", async () => {
+    const t = buildTestApp();
+    await insertEntry(t.deps.db, {
+      id: "stop-1",
+      canonicalUrl: "https://example.com/stop",
+      url: "https://example.com/stop",
+      title: "How the thing works",
+      summary: "It is what it is",
+      takeaway: "Use it well",
+      tags: ["misc"],
+    });
+    // FTS-only (no embedder) plus an abstaining keyword leg is the only shape in
+    // which a bag of function words can be answered with nothing at all.
+    const res = await t.request(
+      `/api/search?q=${encodeURIComponent("how do I get the thing to do that")}`,
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { items: unknown[] };
+    expect(body.items).toEqual([]);
   });
 
   it("caps limit at the chat tool ceiling", async () => {

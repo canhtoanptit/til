@@ -8,17 +8,23 @@ import { mean, mrr, ndcgAtK, recallAtK } from "./metrics.js";
 import { appendHistory, gitSha, printTable } from "./report.js";
 import type { TableRow } from "./report.js";
 import {
+  CONTROL_POLICY,
   DEFAULT_RETRIEVAL_CONFIG,
+  FUSION_POLICIES,
   RETRIEVAL_MODES,
   retrieve,
 } from "./retrieval.js";
-import type { RetrievalConfig, RetrievalMode } from "./retrieval.js";
+import type {
+  FusionPolicy,
+  RetrievalConfig,
+  RetrievalMode,
+} from "./retrieval.js";
 import { buildEvalStack } from "./runner.js";
 import type { EvalStack } from "./runner.js";
 
 const KINDS: readonly GoldKind[] = ["semantic", "keyword", "mixed"];
 const SHALLOW_K = 3;
-const RRF_K_SWEEP = [20, 60, 120];
+const RRF_K_SWEEP = [20, 60];
 const POOL_SWEEP = [2, 3, 4];
 
 export interface CaseScore {
@@ -75,8 +81,13 @@ export function bySlice(scores: CaseScore[]): Record<string, Aggregate> {
 
 export interface ModeRun {
   mode: RetrievalMode;
+  label: string;
   scores: CaseScore[];
   slices: Record<string, Aggregate>;
+}
+
+export function describePolicy(policy: FusionPolicy): string {
+  return `${policy.id} (abstain=${policy.abstain ? "yes" : "no"}, w=${policy.weights.semantic}/${policy.weights.keyword}, tie=${policy.tiebreak})`;
 }
 
 export async function runMode(
@@ -85,6 +96,7 @@ export async function runMode(
   queryVectors: Map<string, number[]>,
   mode: RetrievalMode,
   config: RetrievalConfig,
+  label: string = mode,
 ): Promise<ModeRun> {
   const scores: CaseScore[] = [];
   for (const item of gold) {
@@ -95,7 +107,7 @@ export async function runMode(
     const ranked = await retrieve(stack, mode, item.query, vector, config);
     scores.push(scoreCase(item, ranked, config.topK));
   }
-  return { mode, scores, slices: bySlice(scores) };
+  return { mode, label, scores, slices: bySlice(scores) };
 }
 
 const METRIC_COLUMNS = [
@@ -131,7 +143,7 @@ function comparisonRows(runs: ModeRun[]): TableRow[] {
       const value = run.slices[slice];
       if (value === undefined) continue;
       rows.push({
-        slice: `${slice}/${run.mode}`,
+        slice: `${slice}/${run.label}`,
         n: value.n,
         recall3: value.recallShallow,
         recallK: value.recallTopK,
@@ -184,7 +196,19 @@ async function main(): Promise<void> {
     for (const mode of RETRIEVAL_MODES) {
       runs.push(await runMode(stack, gold, queryVectors, mode, config));
     }
+    // The pre-P17.1 fusion at the same budget: the before/after every claim in
+    // the report is measured against, on this dataset rather than an older one.
+    const controlRun = await runMode(
+      stack,
+      gold,
+      queryVectors,
+      "hybrid",
+      { ...config, policy: CONTROL_POLICY },
+      "hybrid-control",
+    );
+    runs.push(controlRun);
 
+    console.log(`[evals] shipped policy: ${describePolicy(config.policy)}`);
     printTable(
       `Retrieval modes (topK=${config.topK}, pool=${config.poolMultiplier}x, rrfK=${config.rrfK})`,
       METRIC_COLUMNS,
@@ -192,36 +216,39 @@ async function main(): Promise<void> {
     );
 
     for (const run of runs) {
-      printTable(`mode=${run.mode}`, METRIC_COLUMNS, sliceRows(run.slices));
+      printTable(`mode=${run.label}`, METRIC_COLUMNS, sliceRows(run.slices));
     }
 
     const ablations: TableRow[] = [];
     let best = { label: "", ndcg: -1 };
-    for (const rrfK of RRF_K_SWEEP) {
-      for (const poolMultiplier of POOL_SWEEP) {
-        const run = await runMode(stack, gold, queryVectors, "hybrid", {
-          ...config,
-          rrfK,
-          poolMultiplier,
-        });
-        const overall = run.slices.overall as Aggregate;
-        const label = `k=${rrfK} pool=${poolMultiplier}x`;
-        ablations.push({
-          slice: label,
-          n: overall.n,
-          recall3: overall.recallShallow,
-          recallK: overall.recallTopK,
-          mrr: overall.mrr,
-          ndcg: overall.ndcg,
-          semantic: (run.slices.semantic as Aggregate).ndcg,
-          keyword: (run.slices.keyword as Aggregate).ndcg,
-          mixed: (run.slices.mixed as Aggregate).ndcg,
-        });
-        if (overall.ndcg > best.ndcg) best = { label, ndcg: overall.ndcg };
+    for (const policy of FUSION_POLICIES) {
+      for (const rrfK of RRF_K_SWEEP) {
+        for (const poolMultiplier of POOL_SWEEP) {
+          const run = await runMode(stack, gold, queryVectors, "hybrid", {
+            ...config,
+            rrfK,
+            poolMultiplier,
+            policy,
+          });
+          const overall = run.slices.overall as Aggregate;
+          const label = `${policy.id} k=${rrfK} pool=${poolMultiplier}x`;
+          ablations.push({
+            slice: label,
+            n: overall.n,
+            recall3: overall.recallShallow,
+            recallK: overall.recallTopK,
+            mrr: overall.mrr,
+            ndcg: overall.ndcg,
+            semantic: (run.slices.semantic as Aggregate).ndcg,
+            keyword: (run.slices.keyword as Aggregate).ndcg,
+            mixed: (run.slices.mixed as Aggregate).ndcg,
+          });
+          if (overall.ndcg > best.ndcg) best = { label, ndcg: overall.ndcg };
+        }
       }
     }
     printTable(
-      "Hybrid ablations (nDCG columns are per-kind)",
+      "Hybrid ablations: policy x rrfK x pool (nDCG columns are per-kind)",
       [
         ...METRIC_COLUMNS,
         { key: "semantic", label: "sem nDCG", decimals: 3 },
@@ -257,9 +284,10 @@ async function main(): Promise<void> {
         poolMultiplier: config.poolMultiplier,
         rrfK: config.rrfK,
         shallowK: SHALLOW_K,
+        policy: config.policy,
       },
       scores: {
-        modes: Object.fromEntries(runs.map((run) => [run.mode, run.slices])),
+        modes: Object.fromEntries(runs.map((run) => [run.label, run.slices])),
         ablations: ablations.map((row) => ({
           config: row.slice,
           recallTopK: row.recallK,

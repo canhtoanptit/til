@@ -285,5 +285,40 @@
     "expected": ["e04", "e05"],
     "kind": "mixed",
     "note": "Keyword trap on 'index': a B-tree of sorted pages and an inverted posting list are both correct answers, and nothing else in the corpus is about index layout."
+  },
+  {
+    "id": "gr42",
+    "query": "ECONNRESET keep-alive",
+    "expected": ["e51"],
+    "kind": "keyword",
+    "note": "An errno is semantically empty: the dense leg has to guess between every reliability and networking entry, while FTS matches the literal token."
+  },
+  {
+    "id": "gr43",
+    "query": "CVE-2021-44228",
+    "expected": ["e52"],
+    "kind": "keyword",
+    "note": "A bare CVE id, with the identifier only in the article body: nothing in the digest fields the embedder sees carries it, so this is the keyword leg's case to win."
+  },
+  {
+    "id": "gr44",
+    "query": "innodb_flush_log_at_trx_commit=2",
+    "expected": ["e53"],
+    "kind": "keyword",
+    "note": "A config flag whose tokens mean nothing on their own; the surrounding topic (commit durability) is shared with the WAL and isolation entries, so the dense leg has close distractors."
+  },
+  {
+    "id": "gr45",
+    "query": "18.17.0 verbatim dns",
+    "expected": ["e54"],
+    "kind": "keyword",
+    "note": "A version string plus the flag value it changed, both present only in the body text, which is indexed for FTS but never embedded."
+  },
+  {
+    "id": "gr46",
+    "query": "OOMKilled exit 137",
+    "expected": ["e55"],
+    "kind": "keyword",
+    "note": "A runtime status word that appears only in the body, competing with two garbage-collection entries and a serverless one for the dense leg's attention."
   }
 ]

@@ -5,14 +5,20 @@ import type { SQL } from "drizzle-orm";
 import {
   CHAT_SEARCH_DEFAULT_TOP_K,
   CHAT_SEARCH_MAX_TOP_K,
-  rrfMerge,
+  fuseHybrid,
+  HYBRID_DEFAULTS,
+  sanitizeFtsQuery,
 } from "@til/core";
 import type { StatsKind } from "@til/core";
 import type { Deps } from "./deps.js";
 import { parseTags } from "./dto.js";
-import { sanitizeFtsQuery } from "./search.js";
 
-export const CANDIDATE_POOL_MULTIPLIER = 2;
+/**
+ * The fusion policy `@til/evals`' retrieval suite measured (P17.1): the pool
+ * budget and the weights/k/tie-break live together in `HYBRID_DEFAULTS`, so
+ * changing what production ranks with is one edit in one file.
+ */
+export const CANDIDATE_POOL_MULTIPLIER = HYBRID_DEFAULTS.poolMultiplier;
 export const MAX_STATS_ROWS = 52;
 export const MAX_TOP_ROWS = 25;
 
@@ -72,9 +78,11 @@ export function clampTopK(raw: number | undefined): number {
 
 /**
  * Hybrid retrieval: the semantic and keyword legs each produce a ranked list of
- * entry ids, RRF fuses them, and the survivors are hydrated from D1 in fused
- * order. When the embedder is unavailable (Ollama down, no AI binding) the
- * semantic leg contributes nothing and this degrades to FTS-only.
+ * entry ids, `fuseHybrid` merges them under the shipped policy, and the survivors
+ * are hydrated from D1 in fused order. When the embedder is unavailable (Ollama
+ * down, no AI binding) the semantic leg contributes nothing and this degrades to
+ * FTS-only; when the query is all function words the keyword leg abstains and it
+ * degrades to vector-only.
  */
 export async function searchEntryRows(
   deps: Deps,
@@ -89,7 +97,7 @@ export async function searchEntryRows(
   ]);
   if (semantic.length === 0 && keyword.length === 0) return [];
 
-  const fused = rrfMerge([semantic, keyword]);
+  const fused = fuseHybrid(semantic, keyword, { ...HYBRID_DEFAULTS, pool });
   const ids = fused.map((hit) => hit.id);
   if (ids.length === 0) return [];
 

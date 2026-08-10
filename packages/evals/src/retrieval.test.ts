@@ -1,10 +1,13 @@
 import { beforeAll, afterAll, describe, expect, it } from "vitest";
+import { HYBRID_DEFAULTS } from "@til/core";
 import type { CorpusEntry } from "./datasets.js";
 import {
+  CONTROL_POLICY,
   DEFAULT_RETRIEVAL_CONFIG,
   ftsRanks,
+  FUSION_POLICIES,
   retrieve,
-  sanitizeFtsQuery,
+  SHIPPED_POLICY,
   vectorRanks,
 } from "./retrieval.js";
 import {
@@ -78,26 +81,6 @@ async function queryVector(text: string): Promise<number[]> {
   if (vector === undefined) throw new Error("no stub vector");
   return vector;
 }
-
-describe("sanitizeFtsQuery", () => {
-  it("quotes each term and joins them with OR", () => {
-    expect(sanitizeFtsQuery("wal checkpoint")).toBe('"wal" OR "checkpoint"');
-  });
-
-  it("drops FTS operators and reserved words", () => {
-    expect(sanitizeFtsQuery('wal AND "checkpoint*"')).toBe(
-      '"wal" OR "checkpoint"',
-    );
-    expect(sanitizeFtsQuery("NEAR(a b)")).toBe('"a" OR "b"');
-  });
-
-  it("returns null when nothing usable is left", () => {
-    expect(sanitizeFtsQuery("")).toBeNull();
-    expect(sanitizeFtsQuery("   ")).toBeNull();
-    expect(sanitizeFtsQuery("AND OR NOT")).toBeNull();
-    expect(sanitizeFtsQuery("-- ::")).toBeNull();
-  });
-});
 
 describe("the seeded stack", () => {
   it("indexes every entry into FTS through the real triggers", () => {
@@ -200,6 +183,67 @@ describe("retrieve", () => {
       rrfK: 500,
     });
     expect([...tight].sort()).toEqual([...loose].sort());
+  });
+});
+
+describe("fusion policies", () => {
+  const STOPWORD_QUERY = "what is it that they do with the thing";
+
+  it("abstains on a function-word query unless the control arm says otherwise", () => {
+    expect(ftsRanks(stack, STOPWORD_QUERY, 10)).toEqual([]);
+    expect(
+      ftsRanks(stack, STOPWORD_QUERY, 10, { abstain: false }).length,
+    ).toBeGreaterThan(0);
+  });
+
+  it("degrades hybrid to vector-only when the keyword leg abstains", async () => {
+    const vector = await queryVector("wal");
+    const hybrid = await retrieve(stack, "hybrid", STOPWORD_QUERY, vector);
+    const vectorOnly = await retrieve(stack, "vector", STOPWORD_QUERY, vector);
+    expect(hybrid).toEqual(vectorOnly);
+
+    const control = await retrieve(stack, "hybrid", STOPWORD_QUERY, vector, {
+      ...DEFAULT_RETRIEVAL_CONFIG,
+      policy: CONTROL_POLICY,
+    });
+    expect(control).not.toEqual(vectorOnly);
+  });
+
+  // The P17 defect in miniature: rank 1 of either leg scores 1/(k+1) under equal
+  // weights, so the winner was whichever entry id sorted first.
+  it("stops an alphabetically-lucky keyword hit from displacing the semantic top hit", async () => {
+    const budget = { ...DEFAULT_RETRIEVAL_CONFIG, topK: 1, poolMultiplier: 1 };
+    const vector = await queryVector("kubernetes pods");
+    const control = await retrieve(stack, "hybrid", "wal", vector, {
+      ...budget,
+      policy: CONTROL_POLICY,
+    });
+    const shipped = await retrieve(stack, "hybrid", "wal", vector, {
+      ...budget,
+      policy: SHIPPED_POLICY,
+    });
+    expect(control).toEqual(["a1"]);
+    expect(shipped).toEqual(["a3"]);
+  });
+
+  it("measures what core ships, under unique labels", () => {
+    expect(SHIPPED_POLICY.weights).toEqual(HYBRID_DEFAULTS.weights);
+    expect(SHIPPED_POLICY.tiebreak).toBe(HYBRID_DEFAULTS.tiebreak);
+    expect(DEFAULT_RETRIEVAL_CONFIG.rrfK).toBe(HYBRID_DEFAULTS.k);
+    expect(DEFAULT_RETRIEVAL_CONFIG.poolMultiplier).toBe(
+      HYBRID_DEFAULTS.poolMultiplier,
+    );
+    const ids = FUSION_POLICIES.map((policy) => policy.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(ids).toContain(CONTROL_POLICY.id);
+    expect(
+      FUSION_POLICIES.some(
+        (policy) =>
+          policy.abstain &&
+          policy.weights.semantic === HYBRID_DEFAULTS.weights.semantic &&
+          policy.weights.keyword === HYBRID_DEFAULTS.weights.keyword,
+      ),
+    ).toBe(true);
   });
 });
 

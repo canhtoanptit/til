@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { HYBRID_DEFAULTS } from "@til/core";
 import type { Embedder } from "@til/core";
 import type { Deps } from "./deps.js";
 import { indexEntry } from "./indexing.js";
@@ -233,6 +234,48 @@ describe("searchEntries (hybrid)", () => {
     const t = await seedCorpus({ embedder: null });
     const out = await searchEntries(t.deps, { query: "sqlite", topK: 8 });
     expect(out.items.map((i) => i.id)).toEqual(["db-1"]);
+  });
+
+  it("degrades to vector-only when the query is all function words", async () => {
+    const t = await seedCorpus();
+    // A bag of function words must make the keyword leg abstain, so every score
+    // here is the semantic leg's contribution alone: weight / (k + rank).
+    const out = await searchEntries(t.deps, {
+      query: "what is it that they do with the thing",
+      topK: 8,
+    });
+    expect(out.items).toHaveLength(4);
+    out.items.forEach((item, index) => {
+      expect(item.score, item.id).toBeCloseTo(
+        HYBRID_DEFAULTS.weights.semantic / (HYBRID_DEFAULTS.k + index + 1),
+        12,
+      );
+    });
+  });
+
+  it("keeps a keyword-only match reachable, below the semantic leg", async () => {
+    const t = await seedCorpus();
+    // The shipped weights make the keyword leg a corroborating vote: its
+    // exclusive hit still surfaces, but it cannot outrank a semantic match.
+    const out = await searchEntries(t.deps, {
+      query: "zygohistomorphic ownership memory safety",
+      topK: 8,
+    });
+    const ids = out.items.map((i) => i.id);
+    expect(ids[0]).toBe("semantic-only");
+    expect(ids).toContain("keyword-only");
+    expect(ids.indexOf("keyword-only")).toBeGreaterThan(
+      ids.indexOf("semantic-only"),
+    );
+  });
+
+  it("promotes an entry both legs agree on to the top", async () => {
+    const t = await seedCorpus();
+    const out = await searchEntries(t.deps, {
+      query: "kubernetes pods cluster ownership",
+      topK: 8,
+    });
+    expect(out.items[0]?.id).toBe("k8s-1");
   });
 
   it("still embeds the query only once per search", async () => {

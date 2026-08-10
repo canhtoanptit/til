@@ -498,5 +498,55 @@
     "question": "How does declaring character ranges save a download entirely?",
     "tags": ["frontend", "webfonts", "web-performance"],
     "contentMarkdown": "Latin text needs a small fraction of the glyphs a multilingual family ships. Subsetting tools drop the rest and the compressed result is far smaller. Declaring which characters a file covers lets the browser fetch only the files a page actually needs."
+  },
+  {
+    "id": "e51",
+    "url": "https://nodejs.org/api/errors.html#common-system-errors",
+    "title": "ECONNRESET is the far end hanging up mid-request",
+    "summary": "A socket reports ECONNRESET when the peer sends a reset instead of closing gracefully, which is exactly what a pooled keep-alive connection reaped by a load balancer looks like from the client. The distinction matters because a reset can arrive after the request was already accepted.",
+    "takeaway": "Retrying an idempotent request once absorbs a reset from a reaped keep-alive socket; retrying anything that writes does not.",
+    "question": "Which end closed the connection when a reset arrives rather than a clean close?",
+    "tags": ["node", "sockets", "reliability"],
+    "contentMarkdown": "A reset surfaces as ECONNRESET, a peer that simply disappears as ETIMEDOUT, and a write to an already-closed pipe as EPIPE. Agents hold keep-alive sockets open longer than a balancer's idle window, so the first request onto a stale socket loses. Setting the agent's keep-alive below that window removes most of them."
+  },
+  {
+    "id": "e52",
+    "url": "https://nvd.nist.gov/vuln/detail/CVE-2021-44228",
+    "title": "Log4Shell: a logged string became remote code execution",
+    "summary": "A logging library expanded lookup expressions found inside message text, so anybody who could get a string into a log line could make the process fetch and run a remote class. No authentication was needed because ordinary request headers get logged.",
+    "takeaway": "A formatter that resolves lookups turns logging into evaluation, so every logged value is attacker-controlled input.",
+    "question": "Why did filtering the lookup prefix fail as a mitigation?",
+    "tags": ["security", "java", "logging"],
+    "contentMarkdown": "Tracked as CVE-2021-44228, scored 10.0, and only properly closed in 2.17.0 after 2.15.0 was found incomplete. A User-Agent header was enough on most deployments. Filters that matched the literal lookup prefix were bypassed within days by nesting the lookups inside each other."
+  },
+  {
+    "id": "e53",
+    "url": "https://dev.mysql.com/doc/refman/8.0/en/innodb-parameters.html",
+    "title": "innodb_flush_log_at_trx_commit is the durability dial",
+    "summary": "At the default of 1 every commit forces the log to stable storage. At 2 the write only reaches the operating system, which survives a process crash but not a machine loss, and at 0 roughly a second of committed work can vanish.",
+    "takeaway": "Only the default survives sudden power loss; the faster settings buy throughput with a window of acknowledged-but-lost commits.",
+    "question": "Which failure does the middle setting protect against, and which does it not?",
+    "tags": ["mysql", "durability", "operations"],
+    "contentMarkdown": "Benchmarks that report a huge gain from innodb_flush_log_at_trx_commit=2 are usually measuring fsync latency rather than the database. Group commit already amortises one fsync across concurrent sessions, so the honest comparison is at the concurrency actually run in production."
+  },
+  {
+    "id": "e54",
+    "url": "https://github.com/nodejs/node/releases/tag/v18.17.0",
+    "title": "Node stopped reordering resolver answers and broke a staging box",
+    "summary": "The runtime's default result order flipped, so addresses come back exactly as the resolver returned them instead of with the legacy family first. A host whose newer-family record pointed somewhere unreachable started failing where it used to quietly fall back.",
+    "takeaway": "A default that reorders network answers is a behaviour change wearing a patch release's clothes; pin the order if anything depends on it.",
+    "question": "What exactly changes when the legacy order is restored per process?",
+    "tags": ["node", "dns", "networking"],
+    "contentMarkdown": "The switch shipped in 18.17.0: dns.setDefaultResultOrder now defaults to verbatim, and --dns-result-order=ipv4first restores the old behaviour for one process. Anything that assumed the first address was reachable has to try the rest of the list instead."
+  },
+  {
+    "id": "e55",
+    "url": "https://kubernetes.io/docs/tasks/configure-pod-container/assign-memory-resource/",
+    "title": "Exit code 137 is the kernel killing a container, not a crash",
+    "summary": "A container that goes past its memory limit is sent an uncatchable kill signal by the cgroup out-of-memory handler, and the runtime reports 128 plus that signal number. Nothing in the process runs afterwards, so no stack trace exists.",
+    "takeaway": "137 means the limit was too low or something leaked; there is no application error to catch, only a memory profile taken at the limit.",
+    "question": "Why can a process not log anything on its way out of a 137?",
+    "tags": ["kubernetes", "memory", "debugging"],
+    "contentMarkdown": "kubectl describe reports the last state as OOMKilled for a 137, while a segmentation fault shows as 139 because SIGSEGV is signal 11. Raising the limit hides a leak rather than fixing it; a heap profile captured at the old limit says which of the two it was."
   }
 ]

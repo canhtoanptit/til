@@ -1,6 +1,11 @@
 import { sql } from "drizzle-orm";
-import { RRF_K, rrfMerge } from "@til/core";
-import type { RankedId } from "@til/core";
+import { fuseHybrid, HYBRID_DEFAULTS, sanitizeFtsQuery } from "@til/core";
+import type {
+  HybridTiebreak,
+  HybridWeights,
+  KeywordVote,
+  RankedId,
+} from "@til/core";
 import type { EvalStack } from "./runner.js";
 
 export type RetrievalMode = "fts" | "vector" | "hybrid";
@@ -11,57 +16,145 @@ export const RETRIEVAL_MODES: readonly RetrievalMode[] = [
   "hybrid",
 ];
 
+/**
+ * One candidate fusion policy. `abstain` is about the keyword leg's *query*
+ * (stop-word filtering, so a question made of function words produces no
+ * candidates instead of confident junk); the rest are about the merge.
+ */
+export interface FusionPolicy {
+  id: string;
+  abstain: boolean;
+  weights: HybridWeights;
+  tiebreak: HybridTiebreak;
+  keywordVote: KeywordVote;
+}
+
+const EVEN: HybridWeights = { semantic: 1, keyword: 1 };
+
+/** Pre-P17.1 production: no abstention, equal weights, ties broken by entry id. */
+export const CONTROL_POLICY: FusionPolicy = {
+  id: "control",
+  abstain: false,
+  weights: EVEN,
+  tiebreak: "id",
+  keywordVote: "flat",
+};
+
+/** Whatever `@til/core` currently ships, so the suite measures production. */
+export const SHIPPED_POLICY: FusionPolicy = {
+  id: "shipped",
+  abstain: true,
+  weights: HYBRID_DEFAULTS.weights,
+  tiebreak: HYBRID_DEFAULTS.tiebreak,
+  keywordVote: HYBRID_DEFAULTS.keywordVote,
+};
+
+/**
+ * The arms of the P17.1 ablation. The three mechanisms — abstention, weighting and
+ * the selective keyword vote — are varied independently, and two arms drop
+ * abstention while keeping the rest, so a win cannot be credited to the wrong one.
+ */
+export const FUSION_POLICIES: readonly FusionPolicy[] = [
+  CONTROL_POLICY,
+  {
+    id: "abstain",
+    abstain: true,
+    weights: EVEN,
+    tiebreak: "id",
+    keywordVote: "flat",
+  },
+  {
+    id: "abstain+semfirst",
+    abstain: true,
+    weights: EVEN,
+    tiebreak: "semantic",
+    keywordVote: "flat",
+  },
+  {
+    id: "abstain+w60/40",
+    abstain: true,
+    weights: { semantic: 0.6, keyword: 0.4 },
+    tiebreak: "semantic",
+    keywordVote: "flat",
+  },
+  {
+    id: "abstain+w70/30",
+    abstain: true,
+    weights: { semantic: 0.7, keyword: 0.3 },
+    tiebreak: "semantic",
+    keywordVote: "flat",
+  },
+  {
+    id: "abstain+w80/20",
+    abstain: true,
+    weights: { semantic: 0.8, keyword: 0.2 },
+    tiebreak: "semantic",
+    keywordVote: "flat",
+  },
+  {
+    id: "w70/30 only",
+    abstain: false,
+    weights: { semantic: 0.7, keyword: 0.3 },
+    tiebreak: "semantic",
+    keywordVote: "flat",
+  },
+  {
+    id: "abstain+w70/30+selective",
+    abstain: true,
+    weights: { semantic: 0.7, keyword: 0.3 },
+    tiebreak: "semantic",
+    keywordVote: "selective",
+  },
+  {
+    id: "abstain+w60/40+selective",
+    abstain: true,
+    weights: { semantic: 0.6, keyword: 0.4 },
+    tiebreak: "semantic",
+    keywordVote: "selective",
+  },
+  {
+    id: "abstain+w80/20+selective",
+    abstain: true,
+    weights: { semantic: 0.8, keyword: 0.2 },
+    tiebreak: "semantic",
+    keywordVote: "selective",
+  },
+  {
+    id: "w70/30+selective only",
+    abstain: false,
+    weights: { semantic: 0.7, keyword: 0.3 },
+    tiebreak: "semantic",
+    keywordVote: "selective",
+  },
+];
+
 export interface RetrievalConfig {
   topK: number;
   /** Candidates each leg fetches, as a multiple of topK. */
   poolMultiplier: number;
   rrfK: number;
+  policy: FusionPolicy;
 }
 
-/**
- * The production defaults this suite exists to question: `topK` from
- * `CHAT_SEARCH_DEFAULT_TOP_K`, the multiplier from `CANDIDATE_POOL_MULTIPLIER`
- * and `rrfK` from core's `RRF_K`.
- */
+/** The production defaults this suite exists to question, read from core. */
 export const DEFAULT_RETRIEVAL_CONFIG: RetrievalConfig = {
   topK: 8,
-  poolMultiplier: 2,
-  rrfK: RRF_K,
+  poolMultiplier: HYBRID_DEFAULTS.poolMultiplier,
+  rrfK: HYBRID_DEFAULTS.k,
+  policy: SHIPPED_POLICY,
 };
-
-/**
- * Verbatim copy of `sanitizeFtsQuery` in `apps/web/src/worker/search.ts`. The
- * app is a Worker entrypoint with no package exports, so the alternative was
- * measuring a differently-shaped query than production runs — a copy that must
- * be kept in sync is the lesser evil, and `retrieval.test.ts` pins the shape.
- */
-export function sanitizeFtsQuery(raw: string): string | null {
-  if (!raw) return null;
-  const cleaned = raw
-    .replace(/["'`]/g, " ")
-    .replace(/[():*^~]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-  if (cleaned.length === 0) return null;
-
-  const RESERVED = new Set(["and", "or", "not", "near"]);
-  const parts = cleaned.split(" ").filter((p) => {
-    if (p.length === 0) return false;
-    if (RESERVED.has(p.toLowerCase())) return false;
-    return /[A-Za-z0-9À-￿]/.test(p);
-  });
-  if (parts.length === 0) return null;
-
-  return parts.map((p) => `"${p.replace(/"/g, "")}"`).join(" OR ");
-}
 
 /** The keyword leg: FTS5 `MATCH` ordered by bm25, exactly as the app queries it. */
 export function ftsRanks(
   stack: EvalStack,
   query: string,
   limit: number,
+  opts: { abstain?: boolean } = {},
 ): RankedId[] {
-  const clean = sanitizeFtsQuery(query);
+  const clean = sanitizeFtsQuery(
+    query,
+    opts.abstain === false ? { stopwords: null } : {},
+  );
   if (clean === null || limit <= 0) return [];
   const rows = stack.db.all<{ id: string }>(
     sql`
@@ -99,8 +192,9 @@ export async function retrieve(
   config: RetrievalConfig = DEFAULT_RETRIEVAL_CONFIG,
 ): Promise<string[]> {
   const pool = Math.max(1, Math.trunc(config.topK * config.poolMultiplier));
+  const { policy } = config;
   if (mode === "fts") {
-    return ftsRanks(stack, query, pool)
+    return ftsRanks(stack, query, pool, { abstain: policy.abstain })
       .map((hit) => hit.id)
       .slice(0, config.topK);
   }
@@ -110,9 +204,15 @@ export async function retrieve(
   }
   const [semantic, keyword] = await Promise.all([
     vectorRanks(stack, queryVector, pool),
-    Promise.resolve(ftsRanks(stack, query, pool)),
+    Promise.resolve(ftsRanks(stack, query, pool, { abstain: policy.abstain })),
   ]);
-  return rrfMerge([semantic, keyword], config.rrfK)
+  return fuseHybrid(semantic, keyword, {
+    k: config.rrfK,
+    weights: policy.weights,
+    tiebreak: policy.tiebreak,
+    keywordVote: policy.keywordVote,
+    pool,
+  })
     .map((hit) => hit.id)
     .slice(0, config.topK);
 }
