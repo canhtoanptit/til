@@ -27,7 +27,7 @@ It's built to be run by one person, in their own Cloudflare account, with their 
 
 ### Coming next
 
-- **Deploy** — first `wrangler deploy` once the full flow is done locally.
+- **Deploy** — first `wrangler deploy` once the full flow is done locally. Step-by-step guide: [docs/deploy.md](./docs/deploy.md).
 - **Desktop & mobile** — PWA first, then a Tauri 2 shell around the same build.
 
 ---
