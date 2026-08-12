@@ -10,8 +10,8 @@ import {
   jsonModeSystemPrompt,
   parseDigest,
   parseSynthesis,
-  SYNTHESIS_SYSTEM_PROMPT,
   synthesisJsonModeSystemPrompt,
+  synthesisSystemPrompt,
 } from "./prompt.js";
 import type {
   Digest,
@@ -19,6 +19,7 @@ import type {
   LLMClient,
   LLMSettings,
   SynthesisInput,
+  SynthesisOptions,
 } from "./types.js";
 
 const digestSchema = z.object({
@@ -83,7 +84,7 @@ export class AISDKClient implements LLMClient {
 
   async synthesizeDigest(
     inputs: SynthesisInput[],
-    opts: { windowDays: number; maxItems: number },
+    opts: SynthesisOptions,
   ): Promise<DigestSynthesis> {
     const user = buildSynthesisUserMessage(inputs, opts);
     const jsonMode = this.settings.provider === "groq";
@@ -91,8 +92,8 @@ export class AISDKClient implements LLMClient {
       const { output } = await generateText({
         model: this.model,
         system: jsonMode
-          ? synthesisJsonModeSystemPrompt()
-          : SYNTHESIS_SYSTEM_PROMPT,
+          ? synthesisJsonModeSystemPrompt(opts.kind)
+          : synthesisSystemPrompt(opts.kind),
         prompt: user,
         ...(jsonMode
           ? { providerOptions: { groq: { structuredOutputs: false } } }
@@ -100,7 +101,10 @@ export class AISDKClient implements LLMClient {
         output: Output.object({
           schema: synthesisSchema,
           name: "digest_synthesis",
-          description: "Selected and ordered items for the weekly digest.",
+          description:
+            opts.kind === "monthly-report"
+              ? "The monthly reading report and the saves it highlights, in order."
+              : "Selected and ordered items for the weekly digest.",
         }),
       });
       return parseSynthesis(output, inputs, opts.maxItems);

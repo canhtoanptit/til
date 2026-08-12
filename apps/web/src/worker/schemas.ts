@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { DIGEST_KINDS } from "@til/core";
 import {
   MAX_MAX_ITEMS,
   MAX_WINDOW_DAYS,
@@ -46,6 +47,11 @@ export const runDigestSchema = z.object({
     .max(MAX_WINDOW_DAYS)
     .optional(),
   maxItems: z.number().int().min(MIN_MAX_ITEMS).max(MAX_MAX_ITEMS).optional(),
+  // WHY strict rather than clamped-to-weekly: `kind` decides what the run reads
+  // and which prompt it uses, so silently correcting a typo would hand back a
+  // digest to someone who asked for a report. Omitted still means weekly, which is
+  // what every caller before P26 meant.
+  kind: z.enum(DIGEST_KINDS).optional(),
 });
 
 export const settingsSchema = z.object({

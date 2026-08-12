@@ -1,4 +1,4 @@
-import type { DigestSummaryDTO } from "../api";
+import type { DigestKind, DigestSummaryDTO } from "../api";
 
 const DAY_MS = 86_400_000;
 
@@ -7,7 +7,14 @@ const SOURCE_LABELS: Record<string, string> = {
   lobsters: "Lobsters",
   arxiv: "arXiv",
   rss: "RSS",
+  // What a monthly report writes for every item: the source is your own library.
+  // Mirrors REPORT_ITEM_SOURCE_NAME in apps/web/src/worker/digest-run.ts.
+  saved: "Saved",
 };
+
+export function digestKindLabel(kind: DigestKind): string {
+  return kind === "monthly-report" ? "Monthly report" : "Weekly digest";
+}
 
 export function formatRunDate(ms: number): string {
   if (!Number.isFinite(ms)) return "";
@@ -54,12 +61,13 @@ export function formatWindowRange(runAt: number, windowDays: number): string {
   }
 }
 
-/** Title once the LLM has written one; otherwise the window it covers. */
+/** Title once the LLM has written one; otherwise the kind and the window it covers. */
 export function digestHeading(digest: DigestSummaryDTO): string {
   const title = digest.title?.trim();
   if (title) return title;
+  const label = digestKindLabel(digest.kind);
   const range = formatWindowRange(digest.runAt, digest.windowDays);
-  return range ? `Digest · ${range}` : "Digest";
+  return range ? `${label} · ${range}` : label;
 }
 
 export function sourceLabel(sourceName: string): string {

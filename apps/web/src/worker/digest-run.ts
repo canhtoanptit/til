@@ -2,7 +2,9 @@ import {
   clusterCandidates,
   scoreClusters,
   type Candidate,
+  type DigestKind,
   type DigestSynthesis,
+  type LLMClient,
 } from "@til/core";
 import { digestItems, digests, settings as settingsTable } from "@til/db";
 import type { NewDigestItem } from "@til/db";
@@ -12,6 +14,8 @@ import {
   CANDIDATES_PER_SOURCE,
   clampMaxItems,
   clampWindowDays,
+  digestKindForCron,
+  normalizeDigestKind,
   synthesisPoolSize,
   toRankedItems,
   toSynthesisInputs,
@@ -21,6 +25,12 @@ import {
   type RankedItem,
 } from "./digest.js";
 import { personalizeRanked } from "./digest-interest.js";
+import {
+  collectReportSnapshot,
+  reportSkipReason,
+  toReportSynthesisInputs,
+  type ReportEntrySnapshot,
+} from "./digest-report.js";
 import { listEnabledFeedUrls } from "./feeds.js";
 import { HttpError } from "./http-error.js";
 import { toLLMSettings } from "./settings.js";
@@ -63,6 +73,18 @@ const PERSONALIZE: DigestStepConfig = {
   timeout: "1 minute",
 };
 
+/**
+ * The monthly report's only input step: D1 reads of the owner's own saves plus the
+ * shared stats aggregations. Retry shape follows `rank` rather than `fetch-*` —
+ * it is local database I/O with no network hop and no source that can be flaky —
+ * but it gets a second retry because unlike `rank` it can fail for reasons that
+ * pass on their own.
+ */
+const COLLECT: DigestStepConfig = {
+  retries: { limit: 2, delay: "1 second", backoff: "exponential" },
+  timeout: "1 minute",
+};
+
 const SYNTHESIZE: DigestStepConfig = {
   retries: { limit: 2, delay: "15 seconds", backoff: "exponential" },
   timeout: "2 minutes",
@@ -81,7 +103,11 @@ export interface DigestPlan {
   runAt: number;
   windowDays: number;
   maxItems: number;
-  /** Enabled `feeds` rows at plan time — see planRun for why it is frozen here. */
+  kind: DigestKind;
+  /**
+   * Enabled `feeds` rows at plan time — see planRun for why it is frozen here.
+   * Always empty for a monthly report, which reads no external sources at all.
+   */
   feeds: string[];
 }
 
@@ -95,6 +121,7 @@ export interface DigestRunOutcome {
 export interface StartDigestInput {
   windowDays?: number;
   maxItems?: number;
+  kind?: DigestKind;
   id?: string;
 }
 
@@ -103,6 +130,7 @@ export interface StartedDigestRun {
   runAt: number;
   windowDays: number;
   maxItems: number;
+  kind: DigestKind;
 }
 
 /**
@@ -123,7 +151,8 @@ export async function startDigestRun(
     );
   }
 
-  const windowDays = clampWindowDays(input.windowDays);
+  const kind = normalizeDigestKind(input.kind);
+  const windowDays = clampWindowDays(input.windowDays, kind);
   const maxItems = clampMaxItems(input.maxItems);
   const id = input.id ?? crypto.randomUUID();
   const runAt = deps.now();
@@ -132,6 +161,7 @@ export async function startDigestRun(
     id,
     runAt,
     windowDays,
+    kind,
     status: "pending",
     createdAt: runAt,
     updatedAt: runAt,
@@ -140,7 +170,7 @@ export async function startDigestRun(
   try {
     await workflow.create({
       id,
-      params: { digestId: id, windowDays, maxItems, now: runAt },
+      params: { digestId: id, windowDays, maxItems, kind, now: runAt },
     });
   } catch (err) {
     const message = describeError(err);
@@ -159,7 +189,19 @@ export async function startDigestRun(
     );
   }
 
-  return { id, runAt, windowDays, maxItems };
+  return { id, runAt, windowDays, maxItems, kind };
+}
+
+/**
+ * The cron entry point. Which flavour a schedule asks for is decided from the cron
+ * expression alone (see `digestKindForCron`), so this is the whole of the routing
+ * and it is testable without a Workers runtime.
+ */
+export async function startScheduledRun(
+  deps: Deps,
+  cron: string,
+): Promise<StartedDigestRun> {
+  return startDigestRun(deps, { kind: digestKindForCron(cron) });
 }
 
 export async function runDigest(
@@ -170,26 +212,10 @@ export async function runDigest(
   const plan = await step.do("plan", PLAN, () => planRun(deps, params));
 
   try {
-    const pooled = await fetchCandidates(deps, plan, step);
-    const ranked = await step.do("rank", RANK, async () =>
-      rankCandidates(pooled, plan),
-    );
-    if (ranked.length === 0) {
-      throw new Error(
-        `no candidates found in the last ${plan.windowDays} day(s)`,
-      );
-    }
-
-    // Ranking and selection use the blend from here on; `ranked` is the fallback
-    // the run keeps when personalization does not apply or degrades.
-    const pool = (await personalize(deps, plan, ranked, step)) ?? ranked;
-
-    const synthesis = await step.do("synthesize", SYNTHESIZE, () =>
-      synthesize(deps, plan, pool),
-    );
-    const persisted = await step.do("persist", PERSIST, () =>
-      persist(deps, plan, pool, synthesis),
-    );
+    const persisted =
+      plan.kind === "monthly-report"
+        ? await runMonthlyReport(deps, plan, step)
+        : await runWeeklyDigest(deps, plan, step);
     return {
       digestId: plan.digestId,
       status: "ready",
@@ -210,6 +236,78 @@ export async function runDigest(
   }
 }
 
+/** The original path: external candidates, clustered, ranked, personalized. */
+async function runWeeklyDigest(
+  deps: Deps,
+  plan: DigestPlan,
+  step: DigestStep,
+): Promise<{ itemCount: number }> {
+  const pooled = await fetchCandidates(deps, plan, step);
+  const ranked = await step.do("rank", RANK, async () =>
+    rankCandidates(pooled, plan),
+  );
+  if (ranked.length === 0) {
+    throw new Error(`no candidates found in the last ${plan.windowDays} day(s)`);
+  }
+
+  // Ranking and selection use the blend from here on; `ranked` is the fallback
+  // the run keeps when personalization does not apply or degrades.
+  const pool = (await personalize(deps, plan, ranked, step)) ?? ranked;
+
+  const synthesis = await step.do("synthesize", SYNTHESIZE, () =>
+    synthesize(deps, plan, toSynthesisInputs(pool), {}),
+  );
+  return step.do("persist", PERSIST, () =>
+    persist(deps, plan, synthesis, weeklyItemResolver(pool)),
+  );
+}
+
+/**
+ * The monthly retrospective (P26). Same Workflow, same row shape, different input:
+ * the owner's own saved entries rather than anything fetched, so there is no
+ * fetch, no clustering and no personalization — those exist to find and order
+ * things you have not read, and every input here is something you did read.
+ *
+ * The synthesis and persist steps keep their weekly names and retry budgets so a
+ * report and a digest are the same run to the Workflow, and only the middle of the
+ * pipeline differs.
+ */
+async function runMonthlyReport(
+  deps: Deps,
+  plan: DigestPlan,
+  step: DigestStep,
+): Promise<{ itemCount: number }> {
+  const snapshot = await step.do("collect-entries", COLLECT, () =>
+    collectReportSnapshot(deps, {
+      runAt: plan.runAt,
+      windowDays: plan.windowDays,
+    }),
+  );
+
+  // An empty month is not a bug, but the row has to end up somewhere terminal or
+  // the stale-pending sweep turns it into "digest run timed out" 15 minutes later.
+  // Recorded as failed-with-reason rather than a new `skipped` status: the reason
+  // is already rendered verbatim by the list card and the detail page, and adding
+  // a fourth status would mean a DTO union change that older clients would
+  // normalize to "pending" and poll forever.
+  const skip = reportSkipReason(snapshot);
+  if (skip !== null) throw new Error(skip);
+
+  console.log(
+    `[digest ${plan.digestId}] monthly report over ${snapshot.entries.length} saved entr(ies) of ${snapshot.context.saved} in the window`,
+  );
+
+  const synthesis = await step.do("synthesize", SYNTHESIZE, () =>
+    synthesize(deps, plan, toReportSynthesisInputs(snapshot.entries), {
+      kind: "monthly-report",
+      report: snapshot.context,
+    }),
+  );
+  return step.do("persist", PERSIST, () =>
+    persist(deps, plan, synthesis, reportItemResolver(snapshot.entries)),
+  );
+}
+
 // WHY: this step exists to freeze `runAt` in durable storage. Every later step and
 // every adapter reads it, so retries and replays cannot shift the window. The
 // enabled feed list is frozen the same way and for the same reason: a run that
@@ -220,9 +318,13 @@ async function planRun(
   params: DigestRunParams,
 ): Promise<DigestPlan> {
   const runAt = params.now ?? deps.now();
-  const windowDays = clampWindowDays(params.windowDays);
+  const kind = normalizeDigestKind(params.kind);
+  const windowDays = clampWindowDays(params.windowDays, kind);
   const maxItems = clampMaxItems(params.maxItems);
-  const feeds = await listEnabledFeedUrls(deps.db);
+  // A monthly report reads no external sources, so it neither needs the feed list
+  // nor should pay a D1 read for one.
+  const feeds =
+    kind === "monthly-report" ? [] : await listEnabledFeedUrls(deps.db);
 
   const existing = await deps.db
     .select({ id: digests.id })
@@ -233,20 +335,27 @@ async function planRun(
   if (existing[0]) {
     await deps.db
       .update(digests)
-      .set({ status: "pending", error: null, windowDays, updatedAt: runAt })
+      .set({
+        status: "pending",
+        error: null,
+        windowDays,
+        kind,
+        updatedAt: runAt,
+      })
       .where(eq(digests.id, params.digestId));
   } else {
     await deps.db.insert(digests).values({
       id: params.digestId,
       runAt,
       windowDays,
+      kind,
       status: "pending",
       createdAt: runAt,
       updatedAt: runAt,
     });
   }
 
-  return { digestId: params.digestId, runAt, windowDays, maxItems, feeds };
+  return { digestId: params.digestId, runAt, windowDays, maxItems, kind, feeds };
 }
 
 async function fetchCandidates(
@@ -351,10 +460,19 @@ async function personalize(
   }
 }
 
+/**
+ * Both flavours go through one `synthesizeDigest` call. The LLM settings lookup and
+ * its readable failure are shared deliberately: a missing-settings monthly report
+ * must fail with the same sentence as a missing-settings weekly digest.
+ */
 async function synthesize(
   deps: Deps,
   plan: DigestPlan,
-  ranked: readonly RankedItem[],
+  inputs: Parameters<LLMClient["synthesizeDigest"]>[0],
+  flavour: Omit<
+    Parameters<LLMClient["synthesizeDigest"]>[1],
+    "windowDays" | "maxItems"
+  >,
 ) {
   const rows = await deps.db.select().from(settingsTable).limit(1);
   const row = rows[0];
@@ -364,31 +482,35 @@ async function synthesize(
     );
   }
   const llm = deps.llmFactory(toLLMSettings(row));
-  return llm.synthesizeDigest(toSynthesisInputs(ranked), {
+  return llm.synthesizeDigest(inputs, {
     windowDays: plan.windowDays,
     maxItems: plan.maxItems,
+    ...flavour,
   });
 }
 
-async function persist(
-  deps: Deps,
-  plan: DigestPlan,
-  ranked: readonly RankedItem[],
-  synthesis: DigestSynthesis,
-): Promise<{ itemCount: number }> {
-  const byUrl = new Map(ranked.map((item) => [item.canonicalUrl, item]));
-  const createdAt = deps.now();
+/**
+ * The columns a flavour decides for itself. Everything else about a
+ * `digest_items` row — id, rank, `why`, createdAt — is the same either way and is
+ * filled in by `persist`.
+ */
+type ResolvedItem = Omit<
+  NewDigestItem,
+  "id" | "digestId" | "rank" | "why" | "createdAt"
+>;
 
-  const rows: NewDigestItem[] = [];
-  for (const draft of synthesis.items) {
+/** Turns one synthesis draft into a row, or null when it names nothing we sent. */
+type ItemResolver = (
+  draft: DigestSynthesis["items"][number],
+) => ResolvedItem | null;
+
+function weeklyItemResolver(pool: readonly RankedItem[]): ItemResolver {
+  const byUrl = new Map(pool.map((item) => [item.canonicalUrl, item]));
+  return (draft) => {
     const source = byUrl.get(draft.canonicalUrl);
-    if (!source) continue;
+    if (!source) return null;
     const title = draft.title.trim();
-    const why = draft.why.trim();
-    rows.push({
-      id: crypto.randomUUID(),
-      digestId: plan.digestId,
-      rank: rows.length + 1,
+    return {
       title: title.length > 0 ? title : source.title,
       url: source.url,
       sourceName: source.sourceName,
@@ -396,8 +518,62 @@ async function persist(
       score: source.score,
       // Null, not 0, when personalization did not run — see migration 0006.
       interestScore: source.interestScore ?? null,
-      why: why.length > 0 ? why : null,
       evidence: JSON.stringify(source.evidence),
+    };
+  };
+}
+
+/**
+ * `sourceName` for a highlighted save. The literal "saved" rather than a feed or
+ * aggregator name, because that is the honest answer to "where did this come from"
+ * for a report: the owner's own library.
+ */
+export const REPORT_ITEM_SOURCE_NAME = "saved";
+
+/**
+ * `score` is 0 and `evidence` empty because a report has neither — nothing ranked
+ * these and no other source corroborated them. The detail page hides the score
+ * chip for this kind rather than rendering a meaningless "score 0.00".
+ */
+function reportItemResolver(
+  pool: readonly ReportEntrySnapshot[],
+): ItemResolver {
+  const byUrl = new Map(pool.map((entry) => [entry.canonicalUrl, entry]));
+  return (draft) => {
+    const source = byUrl.get(draft.canonicalUrl);
+    if (!source) return null;
+    const title = draft.title.trim();
+    return {
+      title: title.length > 0 ? title : source.title,
+      url: source.url,
+      sourceName: REPORT_ITEM_SOURCE_NAME,
+      sourceDomain: source.sourceDomain,
+      score: 0,
+      interestScore: null,
+      evidence: "[]",
+    };
+  };
+}
+
+async function persist(
+  deps: Deps,
+  plan: DigestPlan,
+  synthesis: DigestSynthesis,
+  resolve: ItemResolver,
+): Promise<{ itemCount: number }> {
+  const createdAt = deps.now();
+
+  const rows: NewDigestItem[] = [];
+  for (const draft of synthesis.items) {
+    const resolved = resolve(draft);
+    if (resolved === null) continue;
+    const why = draft.why.trim();
+    rows.push({
+      id: crypto.randomUUID(),
+      digestId: plan.digestId,
+      rank: rows.length + 1,
+      ...resolved,
+      why: why.length > 0 ? why : null,
       createdAt,
     });
   }

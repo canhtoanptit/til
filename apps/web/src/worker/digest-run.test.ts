@@ -1,16 +1,28 @@
 import { describe, expect, it } from "vitest";
 import { digestItems, digests, settings as settingsTable } from "@til/db";
 import { asc, eq } from "drizzle-orm";
-import type { Candidate, Embedder, SynthesisInput } from "@til/core";
+import type {
+  Candidate,
+  Embedder,
+  SynthesisInput,
+  SynthesisOptions,
+} from "@til/core";
 import {
   chunkForD1Insert,
   D1_MAX_BOUND_PARAMS,
+  REPORT_ITEM_SOURCE_NAME,
   runDigest,
+  startScheduledRun,
 } from "./digest-run.js";
-import type { DigestRunParams } from "./digest.js";
+import {
+  MONTHLY_REPORT_CRON,
+  WEEKLY_CRON,
+  type DigestRunParams,
+} from "./digest.js";
 import { parseEvidence } from "./dto.js";
 import {
   buildTestApp,
+  createRecordingWorkflow,
   inlineStep,
   insertEntry,
   makeCandidate,
@@ -584,6 +596,357 @@ describe("runDigest", () => {
     for (const config of step.configs) {
       expect(config.retries?.limit).toBeGreaterThanOrEqual(1);
     }
+  });
+});
+
+describe("runDigest — monthly report (P26)", () => {
+  const REPORT_ID = "report-1";
+
+  function reportParams(
+    overrides: Partial<DigestRunParams> = {},
+  ): DigestRunParams {
+    return {
+      digestId: REPORT_ID,
+      windowDays: 30,
+      maxItems: 10,
+      kind: "monthly-report",
+      now: PINNED,
+      ...overrides,
+    };
+  }
+
+  /** An entry the owner saved `daysAgo` before the run instant. */
+  async function save(
+    deps: Deps,
+    id: string,
+    daysAgo: number,
+    overrides: {
+      status?: "pending" | "ready" | "failed";
+      title?: string;
+      takeaway?: string;
+      tags?: string[];
+      domain?: string;
+    } = {},
+  ): Promise<void> {
+    const domain = overrides.domain ?? "example.com";
+    await insertEntry(deps.db, {
+      id,
+      url: `https://${domain}/${id}`,
+      canonicalUrl: `https://${domain}/${id}`,
+      title: overrides.title ?? `Saved ${id}`,
+      takeaway: overrides.takeaway ?? `Takeaway ${id}`,
+      tags: overrides.tags ?? ["alpha"],
+      sourceDomain: domain,
+      status: overrides.status ?? "ready",
+      createdAt: PINNED - daysAgo * DAY,
+    });
+  }
+
+  /** Adapters that would throw: a report must never touch an external source. */
+  function forbiddenAdapters(): Deps["adapters"] {
+    return () => [
+      makeStubAdapter("hn", new Error("a report must not fetch candidates")),
+    ];
+  }
+
+  it("persists a ready report over the owner's saves, with kind on the row", async () => {
+    const t = buildTestApp({ now: () => NOW, adapters: forbiddenAdapters() });
+    await insertSettings(t.deps.db);
+    await save(t.deps, "rust", 2, { title: "Rust incremental builds" });
+    await save(t.deps, "sqlite", 9, { title: "SQLite WAL mode" });
+    const step = inlineStep();
+
+    const outcome = await runDigest(t.deps, reportParams(), step.step);
+
+    expect(outcome).toEqual({
+      digestId: REPORT_ID,
+      status: "ready",
+      itemCount: 2,
+    });
+    // No fetch-*, no rank, no personalize: those exist to find and order things
+    // you have not read, and every input here is something you did read.
+    expect(step.names).toEqual([
+      "plan",
+      "collect-entries",
+      "synthesize",
+      "persist",
+    ]);
+
+    const run = (
+      await t.deps.db.select().from(digests).where(eq(digests.id, REPORT_ID))
+    )[0];
+    expect(run?.kind).toBe("monthly-report");
+    expect(run?.status).toBe("ready");
+    expect(run?.windowDays).toBe(30);
+    expect(run?.runAt).toBe(PINNED);
+    expect(run?.title).toBe("Stub Digest");
+    expect(run?.error).toBeNull();
+  });
+
+  it("writes report items as saves: no score, no evidence, sourceName 'saved'", async () => {
+    const t = buildTestApp({ now: () => NOW, adapters: forbiddenAdapters() });
+    await insertSettings(t.deps.db);
+    await save(t.deps, "one", 1, { domain: "pgblog.example" });
+    await save(t.deps, "two", 5, { domain: "rust-lang.org" });
+
+    await runDigest(t.deps, reportParams(), inlineStep().step);
+
+    const items = await t.deps.db
+      .select()
+      .from(digestItems)
+      .where(eq(digestItems.digestId, REPORT_ID))
+      .orderBy(asc(digestItems.rank));
+    expect(items.map((i) => i.rank)).toEqual([1, 2]);
+    // Most recently saved first, which is the only order the pool has.
+    expect(items[0]?.url).toBe("https://pgblog.example/one");
+    expect(items[0]?.sourceName).toBe(REPORT_ITEM_SOURCE_NAME);
+    expect(items[0]?.sourceDomain).toBe("pgblog.example");
+    expect(items[0]?.score).toBe(0);
+    expect(items[0]?.interestScore).toBeNull();
+    expect(parseEvidence(items[0]?.evidence)).toEqual([]);
+    expect(items[0]?.why).toContain("https://pgblog.example/one");
+  });
+
+  it("hands the model the month's aggregates and the entries, and nothing else", async () => {
+    const seenInputs: SynthesisInput[][] = [];
+    const seenOpts: SynthesisOptions[] = [];
+    const t = buildTestApp({
+      now: () => NOW,
+      adapters: forbiddenAdapters(),
+      llmFactory: () =>
+        makeStubLLM({
+          synthesizeDigest: async (inputs, opts) => {
+            seenInputs.push(inputs);
+            seenOpts.push(opts);
+            return { title: "Month", intro: "Intro.", items: [] };
+          },
+        }),
+    });
+    await insertSettings(t.deps.db);
+    await save(t.deps, "a", 1, {
+      domain: "rust-lang.org",
+      tags: ["rust"],
+      takeaway: "Incremental compilation landed.",
+    });
+    await save(t.deps, "b", 2, { domain: "rust-lang.org", tags: ["rust"] });
+    await save(t.deps, "c", 3, { domain: "sqlite.org", tags: ["sqlite"] });
+    await save(t.deps, "old", 45, { domain: "ancient.example", tags: ["old"] });
+
+    await runDigest(t.deps, reportParams(), inlineStep().step);
+
+    expect(seenOpts[0]?.kind).toBe("monthly-report");
+    expect(seenOpts[0]?.windowDays).toBe(30);
+    expect(seenOpts[0]?.report).toMatchObject({
+      saved: 3,
+      ready: 3,
+      pending: 0,
+      failed: 0,
+      topDomains: [
+        { domain: "rust-lang.org", count: 2 },
+        { domain: "sqlite.org", count: 1 },
+      ],
+      reviewsGraded: 0,
+    });
+    // The out-of-window save is in neither the aggregates nor the pool.
+    expect(seenInputs[0]?.map((i) => i.canonicalUrl)).toEqual([
+      "https://rust-lang.org/a",
+      "https://rust-lang.org/b",
+      "https://sqlite.org/c",
+    ]);
+    expect(seenInputs[0]?.[0]?.snippet).toBe("Incremental compilation landed.");
+    expect(seenInputs[0]?.[0]?.tags).toEqual(["rust"]);
+    // Saved-at, not a publish date the app never learned.
+    expect(seenInputs[0]?.[0]?.publishedAt).toBe(PINNED - DAY);
+  });
+
+  it("cannot highlight an entry the owner never saved", async () => {
+    const t = buildTestApp({
+      now: () => NOW,
+      adapters: forbiddenAdapters(),
+      llmFactory: () =>
+        makeStubLLM({
+          synthesizeDigest: async () => ({
+            title: "T",
+            intro: "I",
+            items: [
+              {
+                canonicalUrl: "https://hallucinated.example/nope",
+                title: "Nope",
+                why: "Invented.",
+              },
+            ],
+          }),
+        }),
+    });
+    await insertSettings(t.deps.db);
+    await save(t.deps, "real", 1);
+
+    const outcome = await runDigest(t.deps, reportParams(), inlineStep().step);
+
+    expect(outcome.status).toBe("ready");
+    expect(outcome.itemCount).toBe(0);
+    expect(await t.deps.db.select().from(digestItems)).toHaveLength(0);
+  });
+
+  it("skips an empty month with a readable reason, without calling the LLM", async () => {
+    let synthesisCalls = 0;
+    const t = buildTestApp({
+      now: () => NOW,
+      adapters: forbiddenAdapters(),
+      llmFactory: () =>
+        makeStubLLM({
+          synthesizeDigest: async () => {
+            synthesisCalls += 1;
+            throw new Error("should not be called");
+          },
+        }),
+    });
+    await insertSettings(t.deps.db);
+    const step = inlineStep();
+
+    const outcome = await runDigest(t.deps, reportParams(), step.step);
+
+    expect(outcome.status).toBe("failed");
+    expect(outcome.error).toContain("no entries were saved in this window");
+    expect(synthesisCalls).toBe(0);
+    expect(step.names).toContain("mark-failed");
+    // Terminal, not left pending: a pending row would be swept into "digest run
+    // timed out" 15 minutes later and lose the real reason.
+    const run = (
+      await t.deps.db.select().from(digests).where(eq(digests.id, REPORT_ID))
+    )[0];
+    expect(run?.status).toBe("failed");
+    expect(run?.kind).toBe("monthly-report");
+    expect(run?.error).toContain("nothing to report on");
+  });
+
+  it("skips when the month's saves all failed to process, and says so", async () => {
+    const t = buildTestApp({ now: () => NOW, adapters: forbiddenAdapters() });
+    await insertSettings(t.deps.db);
+    await save(t.deps, "broken", 3, { status: "failed" });
+    await save(t.deps, "stuck", 4, { status: "pending" });
+
+    const outcome = await runDigest(t.deps, reportParams(), inlineStep().step);
+
+    expect(outcome.status).toBe("failed");
+    expect(outcome.error).toContain("2 entries were saved");
+    expect(outcome.error).toContain("none finished processing");
+  });
+
+  it("fails with the same readable error as a weekly run when LLM settings are missing", async () => {
+    const t = buildTestApp({ now: () => NOW, adapters: forbiddenAdapters() });
+    await save(t.deps, "one", 1);
+
+    const outcome = await runDigest(t.deps, reportParams(), inlineStep().step);
+
+    expect(outcome.status).toBe("failed");
+    expect(outcome.error).toContain("settings not configured");
+    const run = (
+      await t.deps.db.select().from(digests).where(eq(digests.id, REPORT_ID))
+    )[0];
+    expect(run?.status).toBe("failed");
+  });
+
+  it("re-running the same report id replaces its items instead of stacking them", async () => {
+    const t = buildTestApp({ now: () => NOW, adapters: forbiddenAdapters() });
+    await insertSettings(t.deps.db);
+    await save(t.deps, "one", 1);
+
+    await runDigest(t.deps, reportParams(), inlineStep().step);
+    await runDigest(t.deps, reportParams(), inlineStep().step);
+
+    expect(await t.deps.db.select().from(digestItems)).toHaveLength(1);
+    expect(await t.deps.db.select().from(digests)).toHaveLength(1);
+  });
+
+  it("leaves a weekly run's row and pipeline untouched", async () => {
+    const t = buildTestApp({
+      now: () => NOW,
+      adapters: () => [makeStubAdapter("hn", [hnCandidate()])],
+    });
+    await insertSettings(t.deps.db);
+    const step = inlineStep();
+
+    await runDigest(t.deps, params(), step.step);
+
+    const run = (
+      await t.deps.db.select().from(digests).where(eq(digests.id, DIGEST_ID))
+    )[0];
+    expect(run?.kind).toBe("weekly");
+    expect(run?.windowDays).toBe(7);
+    expect(step.names).toEqual([
+      "plan",
+      "fetch-hn",
+      "rank",
+      "synthesize",
+      "persist",
+    ]);
+    const items = await t.deps.db.select().from(digestItems);
+    expect(items[0]?.sourceName).toBe("hn");
+    expect(items[0]?.score).toBeGreaterThan(0);
+  });
+
+  it("gives every report step a retry budget", async () => {
+    const t = buildTestApp({ now: () => NOW, adapters: forbiddenAdapters() });
+    await insertSettings(t.deps.db);
+    await save(t.deps, "one", 1);
+    const step = inlineStep();
+
+    await runDigest(t.deps, reportParams(), step.step);
+
+    for (const config of step.configs) {
+      expect(config.retries?.limit).toBeGreaterThanOrEqual(1);
+    }
+    const collectIndex = step.names.indexOf("collect-entries");
+    expect(step.configs[collectIndex]?.timeout).toBeDefined();
+  });
+});
+
+describe("startScheduledRun — cron routing (P26)", () => {
+  it("starts a weekly digest for the Monday cron", async () => {
+    const workflow = createRecordingWorkflow();
+    const t = buildTestApp({ now: () => NOW, digestWorkflow: workflow.binding });
+
+    const started = await startScheduledRun(t.deps, WEEKLY_CRON);
+
+    expect(started.kind).toBe("weekly");
+    expect(started.windowDays).toBe(7);
+    expect(workflow.created[0]?.params).toMatchObject({
+      kind: "weekly",
+      windowDays: 7,
+    });
+    const run = (
+      await t.deps.db.select().from(digests).where(eq(digests.id, started.id))
+    )[0];
+    expect(run?.kind).toBe("weekly");
+    expect(run?.status).toBe("pending");
+  });
+
+  it("starts a monthly report for the 1st-of-the-month cron", async () => {
+    const workflow = createRecordingWorkflow();
+    const t = buildTestApp({ now: () => NOW, digestWorkflow: workflow.binding });
+
+    const started = await startScheduledRun(t.deps, MONTHLY_REPORT_CRON);
+
+    expect(started.kind).toBe("monthly-report");
+    expect(started.windowDays).toBe(30);
+    expect(workflow.created[0]?.params).toMatchObject({
+      kind: "monthly-report",
+      windowDays: 30,
+    });
+    const run = (
+      await t.deps.db.select().from(digests).where(eq(digests.id, started.id))
+    )[0];
+    expect(run?.kind).toBe("monthly-report");
+    expect(run?.windowDays).toBe(30);
+  });
+
+  it("starts a weekly digest for an expression nobody claimed", async () => {
+    const workflow = createRecordingWorkflow();
+    const t = buildTestApp({ now: () => NOW, digestWorkflow: workflow.binding });
+    const started = await startScheduledRun(t.deps, "0 0 * * *");
+    expect(started.kind).toBe("weekly");
+    expect(workflow.created).toHaveLength(1);
   });
 });
 

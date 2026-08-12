@@ -284,6 +284,70 @@ describe("digests schema", () => {
     expect(item.score).toBeCloseTo(2.25);
   });
 
+  it("defaults digests.kind to 'weekly' for a row that never mentions it (0011)", () => {
+    // The whole point of the migration's default: every row already in the
+    // deployed database predates the monthly report and must read as weekly
+    // without a backfill.
+    const legacyId = insertDigest(db, { id: "d-legacy" });
+    const row = db
+      .prepare(`SELECT kind FROM digests WHERE id = ?`)
+      .get(legacyId) as { kind: string };
+    expect(row.kind).toBe("weekly");
+  });
+
+  it("rejects a digests row with an explicit NULL kind", () => {
+    const now = Date.now();
+    expect(() =>
+      db
+        .prepare(
+          `INSERT INTO digests (id, run_at, window_days, kind, created_at, updated_at)
+           VALUES ('d-nullkind', @now, 7, NULL, @now, @now)`,
+        )
+        .run({ now }),
+    ).toThrow(/NOT NULL|constraint/i);
+  });
+
+  it("round-trips kind = 'monthly-report' through the drizzle definition", () => {
+    const orm = drizzle(db, { schema: { digests } });
+    const runAt = Date.now();
+    orm
+      .insert(digests)
+      .values({
+        id: "d-report",
+        runAt,
+        windowDays: 30,
+        kind: "monthly-report",
+        status: "ready",
+        title: "A month of databases",
+        createdAt: runAt,
+        updatedAt: runAt,
+      })
+      .run();
+    orm
+      .insert(digests)
+      .values({
+        id: "d-weekly-default",
+        runAt,
+        windowDays: 7,
+        status: "ready",
+        createdAt: runAt,
+        updatedAt: runAt,
+      })
+      .run();
+
+    const rows = orm
+      .select({ id: digests.id, kind: digests.kind })
+      .from(digests)
+      .orderBy(digests.id)
+      .all();
+    expect(rows).toEqual([
+      { id: "d-report", kind: "monthly-report" },
+      // Omitted by the caller: drizzle's schema default has to agree with the
+      // column default, or a report and a digest could disagree about a row.
+      { id: "d-weekly-default", kind: "weekly" },
+    ]);
+  });
+
   it("rejects a digest_items row whose digest_id does not exist", () => {
     expect(() => insertDigestItem(db, "does-not-exist")).toThrow(
       /FOREIGN KEY constraint failed/i,

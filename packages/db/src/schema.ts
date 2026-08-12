@@ -64,6 +64,12 @@ export const digests = sqliteTable(
     id: text("id").primaryKey(),
     runAt: integer("run_at").notNull(),
     windowDays: integer("window_days").notNull(),
+    /**
+     * 'weekly' | 'monthly-report' (migration 0011). Not nullable: rows written
+     * before the monthly report existed are weekly runs, and the column default
+     * says so, so no reader has to translate NULL into a flavour.
+     */
+    kind: text("kind").notNull().default("weekly"),
     status: text("status").notNull().default("pending"),
     title: text("title"),
     intro: text("intro"),

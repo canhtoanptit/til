@@ -5,6 +5,7 @@ import { runDigest, type DigestRunOutcome } from "./digest-run.js";
 import {
   clampMaxItems,
   clampWindowDays,
+  normalizeDigestKind,
   type DigestRunParams,
   type DigestStep,
   type DigestStepConfig,
@@ -37,10 +38,14 @@ export class DigestWorkflow extends WorkflowEntrypoint<Env, DigestRunParams> {
   ): Promise<DigestRunOutcome> {
     const deps = buildDeps(this.env, this.ctx);
     const payload = event.payload as Partial<DigestRunParams> | undefined;
+    // A payload with no `kind` is a run started before P26 — normalize to weekly,
+    // which is what it was.
+    const kind = normalizeDigestKind(payload?.kind);
     const params: DigestRunParams = {
       digestId: payload?.digestId ?? event.instanceId,
-      windowDays: clampWindowDays(payload?.windowDays),
+      windowDays: clampWindowDays(payload?.windowDays, kind),
       maxItems: clampMaxItems(payload?.maxItems),
+      kind,
       now: payload?.now ?? event.timestamp.getTime(),
     };
     return runDigest(deps, params, toDigestStep(step));

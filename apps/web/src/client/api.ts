@@ -96,6 +96,14 @@ export interface CreateEntryResponse {
 
 export type DigestStatus = "pending" | "ready" | "failed";
 
+/**
+ * 'weekly' is the roundup of external candidates; 'monthly-report' is the
+ * retrospective over your own saved entries. Restated here rather than imported,
+ * like every other DTO in this file — the client bundle stays free of worker and
+ * `@til/core` code. Source of truth: `DIGEST_KINDS` in `@til/core`.
+ */
+export type DigestKind = "weekly" | "monthly-report";
+
 export interface DigestEvidenceDTO {
   url: string;
   sourceName: string;
@@ -123,6 +131,7 @@ export interface DigestSummaryDTO {
   id: string;
   runAt: number;
   windowDays: number;
+  kind: DigestKind;
   status: DigestStatus;
   title: string | null;
   intro: string | null;
@@ -141,6 +150,8 @@ export interface DigestListResponse {
 export interface RunDigestInput {
   windowDays?: number;
   maxItems?: number;
+  /** Omitted means 'weekly'; the server validates this strictly. */
+  kind?: DigestKind;
 }
 
 export interface RunDigestResponse {

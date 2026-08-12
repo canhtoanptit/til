@@ -6,8 +6,8 @@ import type {
   Feedback,
   Review,
 } from "@til/db";
-import { isReviewCardState, isReviewGrade } from "@til/core";
-import type { ReviewCardState, ReviewGrade } from "@til/core";
+import { isDigestKind, isReviewCardState, isReviewGrade } from "@til/core";
+import type { DigestKind, ReviewCardState, ReviewGrade } from "@til/core";
 
 export type EntryStatus = "pending" | "ready" | "failed";
 
@@ -119,6 +119,8 @@ export interface DigestSummaryDTO {
   id: string;
   runAt: number;
   windowDays: number;
+  /** 'weekly' | 'monthly-report'. Rows written before 0011 read as 'weekly'. */
+  kind: DigestKind;
   status: DigestStatus;
   title: string | null;
   intro: string | null;
@@ -328,6 +330,9 @@ export function toDigestSummaryDTO(
     id: row.id,
     runAt: row.runAt,
     windowDays: row.windowDays,
+    // The column is `text`, so an unexpected value is possible in principle;
+    // 'weekly' is the safe reading, and it is what the column default says too.
+    kind: isDigestKind(row.kind) ? row.kind : "weekly",
     status: normalizeStatus(row.status),
     title: row.title ?? null,
     intro: row.intro ?? null,

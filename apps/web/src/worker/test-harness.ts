@@ -15,6 +15,7 @@ import type {
 } from "./deps.js";
 import type {
   Candidate,
+  DigestKind,
   Embedder,
   Extractor,
   LLMClient,
@@ -345,6 +346,7 @@ export async function insertDigest(
     id?: string;
     runAt?: number;
     windowDays?: number;
+    kind?: DigestKind;
     status?: "pending" | "ready" | "failed";
     title?: string | null;
     intro?: string | null;
@@ -359,6 +361,7 @@ export async function insertDigest(
     id,
     runAt,
     windowDays: overrides.windowDays ?? 7,
+    kind: overrides.kind ?? "weekly",
     status: overrides.status ?? "ready",
     title: overrides.title ?? "Weekly digest",
     intro: overrides.intro ?? "Intro paragraph.",
