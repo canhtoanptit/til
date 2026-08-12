@@ -10,6 +10,34 @@ export const createEntrySchema = z.object({
   url: z.string().min(1),
 });
 
+/**
+ * The one guard against a note being used as blob storage. Generous next to
+ * MAX_FEEDBACK_COMMENT because a note is where the owner writes their own thinking
+ * about an article, not a one-line reaction.
+ */
+export const MAX_ENTRY_NOTE = 10_000;
+
+/**
+ * A partial update of the owner's marks on an entry. Every field is optional —
+ * only what is sent changes — but an entirely empty body is rejected rather than
+ * answered with a no-op, on the enrollReviewSchema precedent: a request that
+ * cannot mean anything is a client bug worth a 422.
+ *
+ * WHY `note` has no `min(1)`: "" is meaningful here and means "clear it", the
+ * same convention `cfAigToken` already uses above. The route maps it to NULL.
+ */
+export const updateEntrySchema = z
+  .object({
+    favorite: z.boolean().optional(),
+    archived: z.boolean().optional(),
+    note: z.string().max(MAX_ENTRY_NOTE).optional(),
+  })
+  .refine(
+    (v) =>
+      v.favorite !== undefined || v.archived !== undefined || v.note !== undefined,
+    { message: "Provide at least one of favorite, archived or note." },
+  );
+
 export const runDigestSchema = z.object({
   windowDays: z
     .number()
@@ -74,6 +102,7 @@ export const createFeedbackSchema = z.object({
 export type CreateFeedbackBody = z.infer<typeof createFeedbackSchema>;
 
 export type CreateEntryBody = z.infer<typeof createEntrySchema>;
+export type UpdateEntryBody = z.infer<typeof updateEntrySchema>;
 export type CreateFeedBody = z.infer<typeof createFeedSchema>;
 export type UpdateFeedBody = z.infer<typeof updateFeedSchema>;
 export type GradeReviewBody = z.infer<typeof gradeReviewSchema>;

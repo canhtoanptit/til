@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import Database from "better-sqlite3";
 import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/better-sqlite3";
-import { digests, digestItems, feedback, feeds } from "../src/schema.js";
+import { digests, digestItems, entries, feedback, feeds } from "../src/schema.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const migrationsDir = join(__dirname, "..", "migrations");
@@ -609,6 +609,181 @@ describe("feeds schema", () => {
     const byName = new Map(indexes.map((i) => [i.name, i.tbl_name]));
     expect(byName.get("feeds_url_uq")).toBe("feeds");
     expect(byName.get("feeds_enabled_idx")).toBe("feeds");
+  });
+});
+
+describe("library columns (0009)", () => {
+  let db: Database.Database;
+
+  beforeEach(() => {
+    db = new Database(":memory:");
+    db.pragma("foreign_keys = ON");
+    applyMigrations(db);
+  });
+
+  it("adds favorite, archived and note to entries", () => {
+    const cols = db.prepare(`PRAGMA table_info(entries)`).all() as {
+      name: string;
+      type: string;
+      notnull: number;
+      dflt_value: string | null;
+    }[];
+    const byName = new Map(cols.map((c) => [c.name, c]));
+
+    // PRAGMA reports the affinity, upper-cased, whatever the declaration spelled.
+    expect(byName.get("favorite")).toMatchObject({
+      type: "INTEGER",
+      notnull: 1,
+      dflt_value: "0",
+    });
+    expect(byName.get("archived")).toMatchObject({
+      type: "INTEGER",
+      notnull: 1,
+      dflt_value: "0",
+    });
+    expect(byName.get("note")).toMatchObject({ type: "TEXT", notnull: 0 });
+    expect(byName.get("note")?.dflt_value).toBeNull();
+  });
+
+  it("leaves every pre-0009 column in place", () => {
+    // The migration is ADD COLUMN only: it lands on a deployed database, so
+    // nothing that was already there may change shape.
+    const cols = (
+      db.prepare(`PRAGMA table_info(entries)`).all() as { name: string }[]
+    ).map((c) => c.name);
+    expect(cols).toEqual(
+      expect.arrayContaining([
+        "id",
+        "url",
+        "canonical_url",
+        "title",
+        "source_domain",
+        "content_markdown",
+        "summary",
+        "takeaway",
+        "question",
+        "tags",
+        "status",
+        "error",
+        "created_at",
+        "updated_at",
+      ]),
+    );
+  });
+
+  it("gives an already-saved row the defaults, with no backfill statement", () => {
+    // insertEntry names only the pre-0009 columns, exactly like the INSERT the
+    // app shipped before this migration.
+    insertEntry(db, { id: "e-legacy", canonical_url: "https://example.com/legacy" });
+    const row = db
+      .prepare(`SELECT favorite, archived, note FROM entries WHERE id = ?`)
+      .get("e-legacy") as {
+      favorite: number;
+      archived: number;
+      note: string | null;
+    };
+    expect(row).toEqual({ favorite: 0, archived: 0, note: null });
+  });
+
+  it("rejects a NULL flag", () => {
+    const now = Date.now();
+    for (const column of ["favorite", "archived"]) {
+      expect(() =>
+        db
+          .prepare(
+            `INSERT INTO entries (id, url, canonical_url, tags, status, ${column}, created_at, updated_at)
+             VALUES (@id, 'https://example.com/n', 'https://example.com/n', '[]', 'ready', NULL, @now, @now)`,
+          )
+          .run({ id: `e-null-${column}`, now }),
+      ).toThrow(/NOT NULL|constraint/i);
+    }
+  });
+
+  it("keeps entries_fts intact when only the new columns are updated", () => {
+    // The 0001 triggers fire on any UPDATE, but they name their columns, so this
+    // is a delete-then-reinsert of the same terms — a no-op re-index.
+    insertEntry(db, {
+      id: "e-marks",
+      canonical_url: "https://example.com/marks",
+      takeaway: "postgres replication tuning",
+    });
+    const before = db
+      .prepare(`SELECT count(*) AS n FROM entries_fts`)
+      .get() as { n: number };
+
+    db.prepare(
+      `UPDATE entries SET favorite = 1, archived = 1, note = ?, updated_at = ? WHERE id = ?`,
+    ).run("kubernetes clustering guide", Date.now(), "e-marks");
+
+    expect(db.prepare(`SELECT count(*) AS n FROM entries_fts`).get()).toEqual(
+      before,
+    );
+    const hit = db
+      .prepare(
+        `SELECT e.id FROM entries_fts f JOIN entries e ON e.rowid = f.rowid WHERE entries_fts MATCH ?`,
+      )
+      .get("replication") as { id: string } | undefined;
+    expect(hit?.id).toBe("e-marks");
+
+    // A note is private prose, not indexed text — 0001 lists the five columns it
+    // mirrors and `note` is not among them.
+    const leaked = db
+      .prepare(`SELECT rowid FROM entries_fts WHERE entries_fts MATCH ?`)
+      .all("kubernetes");
+    expect(leaked).toHaveLength(0);
+  });
+
+  it("round-trips the drizzle table definition, mapping both flags to booleans", () => {
+    const orm = drizzle(db, { schema: { entries } });
+    const now = Date.now();
+    orm
+      .insert(entries)
+      .values({
+        id: "e-orm",
+        url: "https://orm.example.com/a",
+        canonicalUrl: "https://orm.example.com/a",
+        title: "ORM entry",
+        tags: '["orm"]',
+        favorite: true,
+        archived: false,
+        note: "written by hand",
+        status: "ready",
+        createdAt: now,
+        updatedAt: now,
+      })
+      .run();
+
+    const row = orm
+      .select()
+      .from(entries)
+      .where(eq(entries.id, "e-orm"))
+      .all()
+      .at(0);
+    expect(row).toMatchObject({
+      id: "e-orm",
+      favorite: true,
+      archived: false,
+      note: "written by hand",
+    });
+
+    // The boolean seam works in a predicate too, which is what the feed filters do.
+    insertEntry(db, { id: "e-plain", canonical_url: "https://example.com/plain" });
+    expect(
+      orm
+        .select({ id: entries.id })
+        .from(entries)
+        .where(eq(entries.favorite, true))
+        .all(),
+    ).toEqual([{ id: "e-orm" }]);
+    expect(
+      orm
+        .select({ id: entries.id })
+        .from(entries)
+        .where(eq(entries.archived, false))
+        .all()
+        .map((r) => r.id)
+        .sort(),
+    ).toEqual(["e-orm", "e-plain"]);
   });
 });
 

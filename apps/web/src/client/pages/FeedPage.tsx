@@ -13,14 +13,22 @@ import {
   DuplicateUrlError,
   api,
   type EntryDTO,
+  type EntryFilter,
   type EntryListPage,
 } from "../api";
-import { EntryCard, EntryCardSkeleton } from "../components/EntryCard";
-import { ErrorBanner, friendlyMessage } from "../components/ErrorBanner";
+import { EntryListView } from "../components/EntryListView";
+import { friendlyMessage } from "../components/ErrorBanner";
 import { readAddParam } from "../lib/bookmarklet";
+import { entriesKey } from "../lib/entry-marks";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+
+const FILTERS: { value: EntryFilter; label: string }[] = [
+  { value: "all", label: "All" },
+  { value: "favorites", label: "Favorites" },
+  { value: "archived", label: "Archived" },
+];
 
 export function FeedPage() {
   const navigate = useNavigate();
@@ -32,17 +40,26 @@ export function FeedPage() {
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [addError, setAddError] = useState<unknown>(null);
+  const [filter, setFilter] = useState<EntryFilter>("all");
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedQuery(query.trim()), 250);
     return () => clearTimeout(t);
   }, [query]);
 
-  const listQuery = useInfiniteQuery<EntryListPage, unknown, InfiniteData<EntryListPage>, readonly ["entries"], string | null>({
-    queryKey: ["entries"] as const,
+  const listQuery = useInfiniteQuery<
+    EntryListPage,
+    unknown,
+    InfiniteData<EntryListPage>,
+    ReturnType<typeof entriesKey>,
+    string | null
+  >({
+    // Each chip is its own cursor sequence, so each gets its own cache entry
+    // rather than one key whose pages would interleave two different filters.
+    queryKey: entriesKey({ filter }),
     initialPageParam: null,
     queryFn: ({ pageParam, signal }) =>
-      api.listEntries({ cursor: pageParam, limit: 20, signal }),
+      api.listEntries({ cursor: pageParam, limit: 20, filter, signal }),
     getNextPageParam: (last) => last.nextCursor,
     enabled: debouncedQuery === "",
   });
@@ -76,13 +93,18 @@ export function FeedPage() {
         takeaway: null,
         question: null,
         tags: [],
+        favorite: false,
+        archived: false,
+        note: null,
         status: data.status,
         error: null,
         createdAt: now,
         updatedAt: now,
       };
+      // Always the default view, whichever chip is showing: a link just saved is
+      // neither a favorite nor archived, so "all" is the only list it belongs in.
       qc.setQueryData<{ pages: EntryListPage[]; pageParams: unknown[] } | undefined>(
-        ["entries"],
+        entriesKey({ filter: "all" }),
         (prev) => {
           if (!prev) return prev;
           const [firstPage, ...rest] = prev.pages;
@@ -221,56 +243,87 @@ export function FeedPage() {
         />
       </section>
 
-      <section aria-label={isSearching ? "Search results" : "Feed"}>
-        {showSkeletons ? (
-          <div className="space-y-3">
-            <EntryCardSkeleton />
-            <EntryCardSkeleton />
-            <EntryCardSkeleton />
-          </div>
-        ) : activeQuery.isError ? (
-          <ErrorBanner
-            error={activeQuery.error}
-            onRetry={() => activeQuery.refetch()}
-          />
-        ) : items.length === 0 ? (
-          <EmptyState searching={isSearching} query={debouncedQuery} />
-        ) : (
-          <ul className="space-y-3">
-            {items.map((e) => (
-              <li key={e.id}>
-                <EntryCard
-                  entry={e}
-                  onRetry={(id) => reingestMutation.mutate(id)}
-                  retrying={reingestMutation.isPending && reingestMutation.variables === e.id}
-                />
-              </li>
-            ))}
-          </ul>
-        )}
-        {!isSearching && listQuery.hasNextPage && (
-          <div className="mt-4 flex justify-center">
+      {/* Hidden while searching rather than disabled: search spans the whole
+          library, so a lit-up chip next to those results would be a lie. */}
+      {!isSearching && (
+        <div
+          role="group"
+          aria-label="Filter entries"
+          className="flex flex-wrap gap-2"
+        >
+          {FILTERS.map(({ value, label }) => (
             <Button
+              key={value}
               type="button"
-              variant="outline"
-              onClick={() => listQuery.fetchNextPage()}
-              disabled={listQuery.isFetchingNextPage}
+              size="sm"
+              variant={filter === value ? "default" : "outline"}
+              aria-pressed={filter === value}
+              onClick={() => setFilter(value)}
             >
-              {listQuery.isFetchingNextPage ? "Loading…" : "Load more"}
+              {label}
             </Button>
-          </div>
-        )}
-      </section>
+          ))}
+        </div>
+      )}
+
+      <EntryListView
+        label={isSearching ? "Search results" : "Feed"}
+        items={items}
+        isLoading={showSkeletons}
+        isError={activeQuery.isError}
+        error={activeQuery.error}
+        onRetryQuery={() => void activeQuery.refetch()}
+        empty={
+          <EmptyState
+            searching={isSearching}
+            query={debouncedQuery}
+            filter={filter}
+          />
+        }
+        hasNextPage={!isSearching && listQuery.hasNextPage}
+        isFetchingNextPage={listQuery.isFetchingNextPage}
+        onLoadMore={() => void listQuery.fetchNextPage()}
+        onReingest={(id) => reingestMutation.mutate(id)}
+        reingestingId={
+          reingestMutation.isPending ? (reingestMutation.variables ?? null) : null
+        }
+      />
     </div>
   );
 }
 
-function EmptyState({ searching, query }: { searching: boolean; query: string }) {
+function EmptyState({
+  searching,
+  query,
+  filter,
+}: {
+  searching: boolean;
+  query: string;
+  filter: EntryFilter;
+}) {
   if (searching) {
     return (
       <Card className="gap-0 border-dashed bg-transparent p-8 text-center text-sm text-muted-foreground shadow-none">
         <p>
           No matches for <span className="font-medium">"{query}"</span>.
+        </p>
+      </Card>
+    );
+  }
+  if (filter === "favorites") {
+    return (
+      <Card className="gap-0 border-dashed bg-transparent p-8 text-center text-sm text-muted-foreground shadow-none">
+        <p className="font-medium text-foreground">No favorites yet.</p>
+        <p className="mt-1">Star an entry to keep it close at hand.</p>
+      </Card>
+    );
+  }
+  if (filter === "archived") {
+    return (
+      <Card className="gap-0 border-dashed bg-transparent p-8 text-center text-sm text-muted-foreground shadow-none">
+        <p className="font-medium text-foreground">Nothing archived.</p>
+        <p className="mt-1">
+          Archiving an entry hides it from your feed without deleting it.
         </p>
       </Card>
     );

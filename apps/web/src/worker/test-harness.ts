@@ -462,6 +462,10 @@ export async function insertEntry(
     takeaway?: string;
     question?: string;
     sourceDomain?: string;
+    /** P23 marks. Default to what migration 0009 gives an already-saved row. */
+    favorite?: boolean;
+    archived?: boolean;
+    note?: string | null;
   } = {},
 ) {
   const id = overrides.id ?? crypto.randomUUID();
@@ -476,6 +480,9 @@ export async function insertEntry(
     question: overrides.question ?? "Q",
     sourceDomain: overrides.sourceDomain ?? "example.com",
     tags: JSON.stringify(overrides.tags ?? []),
+    favorite: overrides.favorite ?? false,
+    archived: overrides.archived ?? false,
+    note: overrides.note ?? null,
     status: overrides.status ?? "ready",
     createdAt: now,
     updatedAt: overrides.updatedAt ?? now,

@@ -12,6 +12,11 @@ export interface EntryDTO {
   takeaway: string | null;
   question: string | null;
   tags: string[];
+  /** The owner's own marks, as opposed to everything above, which ingest wrote. */
+  favorite: boolean;
+  archived: boolean;
+  /** null, never "" — an emptied note is cleared server-side. */
+  note: string | null;
   status: EntryStatus;
   error: string | null;
   createdAt: number;
@@ -22,9 +27,36 @@ export interface EntryDetailDTO extends EntryDTO {
   contentMarkdown: string | null;
 }
 
+/**
+ * Which slice of the library to list. "all" is the default view and deliberately
+ * excludes archived entries — that is what archiving is for; "favorites" excludes
+ * them too, and "archived" is the only way to see them.
+ */
+export type EntryFilter = "all" | "favorites" | "archived";
+
+/**
+ * A partial update: omitted fields are left exactly as they are. Send `note: ""`
+ * to clear a note back to null; the server rejects a body with no fields at all.
+ */
+export interface UpdateEntryInput {
+  favorite?: boolean;
+  archived?: boolean;
+  note?: string;
+}
+
 export interface EntryListPage {
   items: EntryDTO[];
   nextCursor: string | null;
+}
+
+export interface TagCountDTO {
+  tag: string;
+  /** How many non-archived entries carry the tag — exactly what /tags/:tag lists. */
+  count: number;
+}
+
+export interface TagListResponse {
+  items: TagCountDTO[];
 }
 
 export interface SearchResults {
@@ -407,15 +439,23 @@ export const api = {
   listEntries(params: {
     cursor?: string | null;
     limit?: number;
+    filter?: EntryFilter;
+    tag?: string;
     signal?: AbortSignal;
   }): Promise<EntryListPage> {
     return request("/api/entries", {
       query: {
         cursor: params.cursor ?? undefined,
         limit: params.limit ?? 20,
+        // "all" is the server default, so it is left off the wire entirely.
+        filter: params.filter === "all" ? undefined : params.filter,
+        tag: params.tag,
       },
       signal: params.signal,
     });
+  },
+  listTags(signal?: AbortSignal): Promise<TagListResponse> {
+    return request("/api/tags", { signal });
   },
   getEntry(id: string, signal?: AbortSignal): Promise<EntryDetailDTO> {
     return request(`/api/entries/${encodeURIComponent(id)}`, { signal });
@@ -431,6 +471,14 @@ export const api = {
   },
   createEntry(url: string): Promise<CreateEntryResponse> {
     return request("/api/entries", { method: "POST", body: { url } });
+  },
+  // Returns the detail shape, so the caller can drop it straight into the
+  // ["entry", id] cache without losing contentMarkdown.
+  updateEntry(id: string, patch: UpdateEntryInput): Promise<EntryDetailDTO> {
+    return request(`/api/entries/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      body: patch,
+    });
   },
   deleteEntry(id: string): Promise<void> {
     return request(`/api/entries/${encodeURIComponent(id)}`, { method: "DELETE" });

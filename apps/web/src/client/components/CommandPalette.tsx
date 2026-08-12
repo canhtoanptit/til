@@ -1,7 +1,14 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
 import { useQuery } from "@tanstack/react-query";
-import { FileTextIcon, LayersIcon, MessagesSquareIcon, SettingsIcon } from "lucide-react";
+import {
+  FileTextIcon,
+  GraduationCapIcon,
+  LayersIcon,
+  MessagesSquareIcon,
+  SettingsIcon,
+  TagsIcon,
+} from "lucide-react";
 import { api } from "../api";
 import { friendlyMessage } from "./ErrorBanner";
 import {
@@ -15,8 +22,12 @@ import {
   CommandShortcut,
 } from "@/components/ui/command";
 
+// Every page in the Shell nav, in the same order, so the palette is never a
+// shorter menu than the header. `/review` had been missing since it shipped.
 const NAV_ITEMS = [
   { to: "/", label: "Go to Feed", icon: LayersIcon },
+  { to: "/tags", label: "Go to Tags", icon: TagsIcon },
+  { to: "/review", label: "Go to Review", icon: GraduationCapIcon },
   { to: "/chat", label: "Go to Chat", icon: MessagesSquareIcon },
   { to: "/digests", label: "Go to Digests", icon: FileTextIcon },
   { to: "/settings", label: "Go to Settings", icon: SettingsIcon },

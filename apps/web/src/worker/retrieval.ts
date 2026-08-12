@@ -334,12 +334,15 @@ function hydrationFilters(deps: Deps, opts: SearchOptions): SQL[] {
  * quotes included — `"rust"` cannot match `"rustlang"`. Chosen over
  * `json_each` because a correlated subquery is exactly where drizzle's
  * unqualified raw-column rendering bit us in M2.
+ *
+ * Exported for the tag-browse routes (P23) so there is exactly one definition of
+ * "this row carries this tag" behind chat search and `GET /api/entries?tag=`.
  */
-function tagPattern(tag: string): string {
+export function tagPattern(tag: string): string {
   return `%"${tag}"%`;
 }
 
-function normalizeTag(raw: string | undefined): string | null {
+export function normalizeTag(raw: string | undefined): string | null {
   if (typeof raw !== "string") return null;
   // Quotes and backslashes cannot appear in a real tag and would break the JSON
   // substring match; LIKE wildcards would widen it.

@@ -21,6 +21,19 @@ export const entries = sqliteTable(
     takeaway: text("takeaway"),
     question: text("question"),
     tags: text("tags").notNull().default("[]"),
+    /**
+     * The owner's own marks on the entry (P23) — everything above this line was
+     * written by the ingest pipeline. Both flags are stored as the integer SQLite
+     * has (0/1) and read as booleans, the `feeds.enabled` precedent, so a route
+     * never has to remember which end of the seam it is on.
+     *
+     * `note` is null until the owner writes one, which is deliberately a
+     * different value from "": PATCH /api/entries/:id maps an empty-string note
+     * back to null, so "no note" has exactly one representation in the column.
+     */
+    favorite: integer("favorite", { mode: "boolean" }).notNull().default(false),
+    archived: integer("archived", { mode: "boolean" }).notNull().default(false),
+    note: text("note"),
     status: text("status").notNull().default("pending"),
     error: text("error"),
     createdAt: integer("created_at").notNull(),

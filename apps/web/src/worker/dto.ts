@@ -23,6 +23,11 @@ export interface EntryDTO {
   takeaway: string | null;
   question: string | null;
   tags: string[];
+  /** Owner-set (P23). Additive: every response that carried an entry before this
+   * existed now also says "not favorited, not archived, no note". */
+  favorite: boolean;
+  archived: boolean;
+  note: string | null;
   status: EntryStatus;
   error: string | null;
   createdAt: number;
@@ -31,6 +36,13 @@ export interface EntryDTO {
 
 export interface EntryDetailDTO extends EntryDTO {
   contentMarkdown: string | null;
+}
+
+/** One row of `GET /api/tags`. `count` deliberately excludes archived entries —
+ * see `tagCountRows` in routes/tags.ts for why. */
+export interface TagCountDTO {
+  tag: string;
+  count: number;
 }
 
 export type FeedbackKind = "up" | "down";
@@ -158,6 +170,9 @@ export function toEntryDTO(row: Entry): EntryDTO {
     takeaway: row.takeaway ?? null,
     question: row.question ?? null,
     tags: parseTags(row.tags),
+    favorite: row.favorite,
+    archived: row.archived,
+    note: row.note ?? null,
     status: normalizeStatus(row.status),
     error: row.error ?? null,
     createdAt: row.createdAt,

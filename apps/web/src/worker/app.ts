@@ -11,6 +11,7 @@ import { createFeedsRouter } from "./routes/feeds.js";
 import { createReviewsRouter } from "./routes/reviews.js";
 import { createSearchRouter } from "./routes/search.js";
 import { createSettingsRouter } from "./routes/settings.js";
+import { createTagsRouter } from "./routes/tags.js";
 
 export function createApp(depsFor: (c: { env: unknown; executionCtx: unknown }) => Deps) {
   const app = new Hono<AppContextEnv>();
@@ -43,6 +44,7 @@ export function createApp(depsFor: (c: { env: unknown; executionCtx: unknown }) 
 
   app.route("/api/entries", createEntriesRouter());
   app.route("/api/search", createSearchRouter());
+  app.route("/api/tags", createTagsRouter());
   app.route("/api/settings", createSettingsRouter());
   app.route("/api/digests", createDigestsRouter());
   app.route("/api/feeds", createFeedsRouter());
