@@ -150,6 +150,49 @@ export interface ChatTicketDTO {
   expiresAt: number;
 }
 
+export type ReviewCardState = "new" | "learning" | "review";
+
+/** 1 Again · 2 Hard · 3 Good · 4 Easy. */
+export type ReviewGrade = 1 | 2 | 3 | 4;
+
+/**
+ * The question side of a card. The answer is deliberately absent — the review page
+ * fetches the entry itself on reveal, so an un-revealed card holds no spoiler.
+ */
+export interface ReviewQueueItemDTO {
+  entryId: string;
+  title: string | null;
+  question: string | null;
+  url: string;
+  sourceDomain: string | null;
+  state: ReviewCardState;
+  dueAt: number | null;
+  intervalDays: number | null;
+  ease: number;
+  lapses: number;
+}
+
+export interface ReviewQueueResponse {
+  items: ReviewQueueItemDTO[];
+  dueCount: number;
+}
+
+export interface ReviewScheduleDTO {
+  entryId: string;
+  state: ReviewCardState;
+  dueAt: number | null;
+  intervalDays: number | null;
+  ease: number;
+  lapses: number;
+  lastGrade: ReviewGrade | null;
+  reviewedAt: number | null;
+}
+
+export interface ReviewEnrollResponse {
+  enrolled: number;
+  skipped: number;
+}
+
 export type LLMProvider = "openai" | "anthropic" | "groq";
 
 export interface SettingsDTO {
@@ -404,6 +447,25 @@ export const api = {
   },
   deleteFeed(id: string): Promise<void> {
     return request(`/api/feeds/${encodeURIComponent(id)}`, { method: "DELETE" });
+  },
+  reviewQueue(
+    params: { limit?: number; signal?: AbortSignal } = {},
+  ): Promise<ReviewQueueResponse> {
+    return request("/api/reviews/queue", {
+      query: { limit: params.limit ?? 10 },
+      signal: params.signal,
+    });
+  },
+  gradeReview(entryId: string, grade: ReviewGrade): Promise<ReviewScheduleDTO> {
+    return request(`/api/reviews/${encodeURIComponent(entryId)}`, {
+      method: "POST",
+      body: { grade },
+    });
+  },
+  enrollReview(
+    input: { entryId: string } | { all: true },
+  ): Promise<ReviewEnrollResponse> {
+    return request("/api/reviews/enroll", { method: "POST", body: input });
   },
   listChats(
     params: { limit?: number; signal?: AbortSignal } = {},

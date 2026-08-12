@@ -40,8 +40,26 @@ export const updateFeedSchema = z.object({
   enabled: z.boolean(),
 });
 
+export const gradeReviewSchema = z.object({
+  grade: z.number().int().min(1).max(4),
+});
+
+// WHY: exactly one of the two shapes — `{entryId}` enrolls one card, `{all: true}`
+// backfills the whole library, and sending both (or neither) is a client bug worth
+// a 422 rather than a silent guess about which one was meant.
+export const enrollReviewSchema = z
+  .object({
+    entryId: z.string().min(1).optional(),
+    all: z.literal(true).optional(),
+  })
+  .refine((v) => (v.entryId === undefined) !== (v.all === undefined), {
+    message: "Provide exactly one of entryId or all: true.",
+  });
+
 export type CreateEntryBody = z.infer<typeof createEntrySchema>;
 export type CreateFeedBody = z.infer<typeof createFeedSchema>;
 export type UpdateFeedBody = z.infer<typeof updateFeedSchema>;
+export type GradeReviewBody = z.infer<typeof gradeReviewSchema>;
+export type EnrollReviewBody = z.infer<typeof enrollReviewSchema>;
 export type SettingsBody = z.infer<typeof settingsSchema>;
 export type RunDigestBody = z.infer<typeof runDigestSchema>;

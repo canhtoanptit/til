@@ -1,4 +1,6 @@
-import type { DigestItem, DigestRun, Entry, Feed } from "@til/db";
+import type { DigestItem, DigestRun, Entry, Feed, Review } from "@til/db";
+import { isReviewCardState, isReviewGrade } from "@til/core";
+import type { ReviewCardState, ReviewGrade } from "@til/core";
 
 export type EntryStatus = "pending" | "ready" | "failed";
 
@@ -142,6 +144,93 @@ export function toFeedDTO(row: Feed): FeedDTO {
     enabled: row.enabled,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
+  };
+}
+
+/**
+ * The question side of a review card. It deliberately carries no `takeaway`,
+ * `summary`, `tags` or `contentMarkdown`: the reveal is fetched from
+ * `GET /api/entries/:id` only once the user has asked for it, so no answer can
+ * ever ride along in the queue payload and get rendered early by accident.
+ */
+export interface ReviewQueueItemDTO {
+  entryId: string;
+  title: string | null;
+  question: string | null;
+  url: string;
+  sourceDomain: string | null;
+  state: ReviewCardState;
+  dueAt: number | null;
+  intervalDays: number | null;
+  ease: number;
+  lapses: number;
+}
+
+export interface ReviewQueueDTO {
+  items: ReviewQueueItemDTO[];
+  /** Every card due at request time, not just the ones inside `limit`. */
+  dueCount: number;
+}
+
+export interface ReviewScheduleDTO {
+  entryId: string;
+  state: ReviewCardState;
+  dueAt: number | null;
+  intervalDays: number | null;
+  ease: number;
+  lapses: number;
+  lastGrade: ReviewGrade | null;
+  reviewedAt: number | null;
+}
+
+export interface ReviewEnrollDTO {
+  enrolled: number;
+  skipped: number;
+}
+
+export function normalizeReviewState(raw: string): ReviewCardState {
+  return isReviewCardState(raw) ? raw : "new";
+}
+
+/** Row shape of the queue join — question-side entry columns only. */
+export interface ReviewQueueRow {
+  entryId: string;
+  state: string;
+  dueAt: number | null;
+  intervalDays: number | null;
+  ease: number;
+  lapses: number;
+  title: string | null;
+  question: string | null;
+  url: string;
+  sourceDomain: string | null;
+}
+
+export function toReviewQueueItemDTO(row: ReviewQueueRow): ReviewQueueItemDTO {
+  return {
+    entryId: row.entryId,
+    title: row.title ?? null,
+    question: row.question ?? null,
+    url: row.url,
+    sourceDomain: row.sourceDomain ?? null,
+    state: normalizeReviewState(row.state),
+    dueAt: row.dueAt ?? null,
+    intervalDays: row.intervalDays ?? null,
+    ease: row.ease,
+    lapses: row.lapses,
+  };
+}
+
+export function toReviewScheduleDTO(row: Review): ReviewScheduleDTO {
+  return {
+    entryId: row.entryId,
+    state: normalizeReviewState(row.state),
+    dueAt: row.dueAt ?? null,
+    intervalDays: row.intervalDays ?? null,
+    ease: row.ease,
+    lapses: row.lapses,
+    lastGrade: isReviewGrade(row.lastGrade) ? row.lastGrade : null,
+    reviewedAt: row.reviewedAt ?? null,
   };
 }
 

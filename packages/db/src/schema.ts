@@ -119,6 +119,29 @@ export const feeds = sqliteTable(
   ],
 );
 
+/**
+ * One spaced-repetition card per entry. `state` is 'new' | 'learning' | 'review';
+ * `dueAt`/`reviewedAt` are epoch ms like every other timestamp here, and
+ * `intervalDays` is null until the card has been graded once. The scheduling math
+ * itself lives in `@til/core` (scheduleReview) — this table only stores its output.
+ */
+export const reviews = sqliteTable(
+  "reviews",
+  {
+    entryId: text("entry_id")
+      .primaryKey()
+      .references(() => entries.id, { onDelete: "cascade" }),
+    state: text("state").notNull().default("new"),
+    dueAt: integer("due_at"),
+    intervalDays: real("interval_days"),
+    ease: real("ease").notNull().default(2.5),
+    lapses: integer("lapses").notNull().default(0),
+    lastGrade: integer("last_grade"),
+    reviewedAt: integer("reviewed_at"),
+  },
+  (t) => [index("reviews_due_at_idx").on(t.dueAt)],
+);
+
 export const entryVectors = sqliteTable("entry_vectors", {
   entryId: text("entry_id")
     .primaryKey()
@@ -144,3 +167,5 @@ export type Chat = typeof chats.$inferSelect;
 export type NewChat = typeof chats.$inferInsert;
 export type Feed = typeof feeds.$inferSelect;
 export type NewFeed = typeof feeds.$inferInsert;
+export type Review = typeof reviews.$inferSelect;
+export type NewReview = typeof reviews.$inferInsert;

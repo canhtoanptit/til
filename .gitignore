@@ -43,3 +43,6 @@ yarn-error.log*
 .idea/
 .DS_Store
 Thumbs.db
+
+# Claude Code agent worktrees (session-local)
+.claude/worktrees/

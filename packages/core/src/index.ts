@@ -61,6 +61,29 @@ export type {
   SanitizeFtsQueryOptions,
 } from "./hybrid.js";
 export {
+  clampEase,
+  clampIntervalDays,
+  DAY_MS,
+  EASE_DEFAULT,
+  EASE_DELTA,
+  EASE_MAX,
+  EASE_MIN,
+  EASY_BONUS,
+  HARD_FACTOR,
+  initialReviewCard,
+  isReviewCardState,
+  isReviewDue,
+  isReviewGrade,
+  ladderPosition,
+  LEARNING_STEPS_DAYS,
+  MAX_INTERVAL_DAYS,
+  MIN_INTERVAL_DAYS,
+  REVIEW_CARD_STATES,
+  REVIEW_GRADES,
+  scheduleReview,
+} from "./review.js";
+export type { ReviewCard, ReviewCardState, ReviewGrade, ReviewSchedule } from "./review.js";
+export {
   createOllamaEmbedder,
   EMBEDDING_DIMENSIONS,
   EMBEDDING_TIMEOUT_MS,

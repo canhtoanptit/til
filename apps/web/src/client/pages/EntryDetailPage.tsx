@@ -93,6 +93,27 @@ export function EntryDetailPage() {
     },
   });
 
+  // Enrolling twice is a server-side no-op, so this button needs no "is it already
+  // enrolled?" query — the response tells us which of the two things happened.
+  const enroll = useMutation({
+    mutationFn: () => api.enrollReview({ entryId: id }),
+    onSuccess: (result) => {
+      if (result.enrolled === 0) {
+        toast.info("Already in your review queue");
+      } else {
+        toast.success("Added to your review queue", {
+          description: "It's due right away.",
+        });
+      }
+      void qc.invalidateQueries({ queryKey: ["reviews"] });
+    },
+    onError: (e) => {
+      toast.error("Could not add this to review", {
+        description: friendlyMessage(e),
+      });
+    },
+  });
+
   const remove = useMutation({
     mutationFn: () => api.deleteEntry(id),
     onSuccess: () => {
@@ -292,6 +313,13 @@ export function EntryDetailPage() {
           disabled={entry.status !== "ready"}
         >
           Ask about this entry
+        </Button>
+        <Button
+          type="button"
+          onClick={() => enroll.mutate()}
+          disabled={enroll.isPending}
+        >
+          {enroll.isPending ? "Adding…" : "Add to review"}
         </Button>
         <Button
           type="button"
