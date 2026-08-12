@@ -78,3 +78,33 @@ export function formatItemCount(n: number): string {
 export function formatScore(score: number): string | null {
   return Number.isFinite(score) ? score.toFixed(2) : null;
 }
+
+/**
+ * The blend weights from C18. Mirrored here rather than imported: the client bundle
+ * is deliberately free of worker and `@til/core` code (see how api.ts restates the
+ * DTOs). Source of truth: `BASE_SCORE_WEIGHT` / `INTEREST_SCORE_WEIGHT` in
+ * `apps/web/src/worker/digest.ts` — change these together or the marker starts
+ * describing a blend the ranking no longer uses.
+ */
+const BASE_SCORE_WEIGHT = 0.6;
+const INTEREST_SCORE_WEIGHT = 0.4;
+
+/**
+ * Whether to mark an item as "matches your reading". The definition: the interest
+ * term contributed strictly more to the blended score than the base term did —
+ * `0.4 * interest > 0.6 * base` — i.e. this item is here more because it resembles
+ * what you save than because the internet was loud about it.
+ *
+ * A null `interestScore` means the run was not personalized, which is never a
+ * match: an unmeasured item must not be marked, least of all one whose base score
+ * happens to be 0.
+ */
+export function matchesYourReading(
+  score: number,
+  interestScore: number | null,
+): boolean {
+  if (interestScore === null || !Number.isFinite(interestScore)) return false;
+  if (!Number.isFinite(score)) return false;
+  const interest = Math.min(1, Math.max(0, interestScore));
+  return INTEREST_SCORE_WEIGHT * interest > BASE_SCORE_WEIGHT * score;
+}

@@ -380,6 +380,8 @@ export async function insertDigestItem(
     sourceName?: string;
     sourceDomain?: string;
     score?: number;
+    /** Left null unless a test asks for it — that is what an unpersonalized run writes. */
+    interestScore?: number | null;
     why?: string | null;
     evidence?: { url: string; sourceName: string; title: string }[];
     createdAt?: number;
@@ -396,6 +398,7 @@ export async function insertDigestItem(
     sourceName: overrides.sourceName ?? "hn",
     sourceDomain: overrides.sourceDomain ?? "example.com",
     score: overrides.score ?? 0.5,
+    interestScore: overrides.interestScore ?? null,
     why: overrides.why ?? "Because it matters.",
     evidence: JSON.stringify(overrides.evidence ?? []),
     createdAt: overrides.createdAt ?? Date.now(),

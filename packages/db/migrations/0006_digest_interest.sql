@@ -1,0 +1,13 @@
+-- The interest half of the personalized digest blend (P21, contract C18).
+--
+-- Nullable on purpose, and the null is load-bearing: NULL means "personalization
+-- did not run for this item" — no embedder configured, no stored entry vectors to
+-- compare against, or the embedder failed and the run degraded to base ranking —
+-- whereas 0.0 means "measured, and nothing in your saved reading resembled it".
+-- The UI can only be honest about the marker if it can tell those apart.
+--
+-- Additive and out of order on purpose: 0007 was already taken by the review
+-- queue when this number was assigned. Wrangler tracks applied migrations by
+-- filename, not by sequence, so an ALTER that only adds a nullable column is safe
+-- to land behind a higher number.
+ALTER TABLE `digest_items` ADD `interest_score` real;

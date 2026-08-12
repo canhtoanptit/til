@@ -1,15 +1,17 @@
 import { describe, expect, it } from "vitest";
 import { digestItems, digests, settings as settingsTable } from "@til/db";
 import { asc, eq } from "drizzle-orm";
-import type { Candidate, SynthesisInput } from "@til/core";
+import type { Candidate, Embedder, SynthesisInput } from "@til/core";
 import { runDigest } from "./digest-run.js";
 import type { DigestRunParams } from "./digest.js";
 import { parseEvidence } from "./dto.js";
 import {
   buildTestApp,
   inlineStep,
+  insertEntry,
   makeCandidate,
   makeStubAdapter,
+  makeStubEmbedder,
   makeStubLLM,
 } from "./test-harness.js";
 import type { Deps } from "./deps.js";
@@ -62,6 +64,46 @@ function lobstersOwn(): Candidate {
     publishedAt: PINNED - DAY,
     popularity: 30,
   });
+}
+
+// Axis 0 = rust, 1 = sqlite; the two fixture clusters land on one axis each, so a
+// saved entry about one of them scores 1 against it and 0 against the other.
+const EMBED_DIMS = 8;
+const TOPICS = [["rust"], ["sqlite"]];
+
+function stubEmbedder(onEmbed?: (texts: string[]) => void): Embedder {
+  return makeStubEmbedder(
+    TOPICS,
+    onEmbed === undefined
+      ? { dimensions: EMBED_DIMS }
+      : { dimensions: EMBED_DIMS, onEmbed },
+  );
+}
+
+/** An entry the owner saved, plus the stored vector personalization reads. */
+async function saveRead(deps: Deps, id: string, text: string): Promise<void> {
+  await insertEntry(deps.db, {
+    id,
+    url: `https://example.com/${id}`,
+    canonicalUrl: `https://example.com/${id}`,
+    title: text,
+    createdAt: NOW,
+  });
+  const store = deps.vectorStore;
+  if (!store) throw new Error("test setup: no vector store");
+  const [values] = await stubEmbedder().embed([text]);
+  if (!values) throw new Error("test setup: stub returned no vector");
+  await store.upsert([
+    {
+      id,
+      values,
+      metadata: {
+        domain: "example.com",
+        createdAt: NOW,
+        embedModel: "stub-embed",
+      },
+    },
+  ]);
 }
 
 async function insertSettings(db: Deps["db"]): Promise<void> {
@@ -354,6 +396,161 @@ describe("runDigest", () => {
     const items = await t.deps.db.select().from(digestItems);
     expect(items).toHaveLength(1);
     expect(await t.deps.db.select().from(digests)).toHaveLength(1);
+  });
+
+  it("stores no interest score when there is no embedder, and runs the same steps as before", async () => {
+    const t = buildTestApp({
+      now: () => NOW,
+      adapters: () => [
+        makeStubAdapter("hn", [hnCandidate()]),
+        makeStubAdapter("lobsters", [lobstersMirror(), lobstersOwn()]),
+      ],
+    });
+    await insertSettings(t.deps.db);
+    const step = inlineStep();
+
+    const outcome = await runDigest(t.deps, params(), step.step);
+
+    expect(outcome.status).toBe("ready");
+    expect(step.names).toEqual([
+      "plan",
+      "fetch-hn",
+      "fetch-lobsters",
+      "rank",
+      "synthesize",
+      "persist",
+    ]);
+    const items = await t.deps.db
+      .select()
+      .from(digestItems)
+      .orderBy(asc(digestItems.rank));
+    // The loud story still wins, and nothing claims to have been measured.
+    expect(items.map((i) => i.url)).toEqual([RUST_URL, SQLITE_URL]);
+    expect(items.map((i) => i.interestScore)).toEqual([null, null]);
+  });
+
+  it("blends the owner's reading into the ranking and persists both halves", async () => {
+    const t = buildTestApp({
+      now: () => NOW,
+      embedder: stubEmbedder(),
+      adapters: () => [
+        makeStubAdapter("hn", [hnCandidate()]),
+        makeStubAdapter("lobsters", [lobstersMirror(), lobstersOwn()]),
+      ],
+    });
+    await insertSettings(t.deps.db);
+    await saveRead(t.deps, "read-1", "sqlite WAL internals");
+    const step = inlineStep();
+
+    const outcome = await runDigest(t.deps, params(), step.step);
+
+    expect(outcome.status).toBe("ready");
+    // Between cluster+score and synthesize, as C18 specifies.
+    expect(step.names).toEqual([
+      "plan",
+      "fetch-hn",
+      "fetch-lobsters",
+      "rank",
+      "personalize",
+      "synthesize",
+      "persist",
+    ]);
+
+    const items = await t.deps.db
+      .select()
+      .from(digestItems)
+      .orderBy(asc(digestItems.rank));
+    // SQLite loses on base score (one source, fewer points) and wins on the blend.
+    expect(items.map((i) => i.url)).toEqual([SQLITE_URL, RUST_URL]);
+    expect(items[0]?.interestScore).toBeCloseTo(1, 12);
+    expect(items[1]?.interestScore).toBeCloseTo(0, 12);
+    // `score` stays the base topical score — the blend is not written over it.
+    expect(items[0]?.score).toBeLessThan(items[1]?.score ?? 0);
+  });
+
+  it("gives the personalize step its own retry budget and timeout", async () => {
+    const t = buildTestApp({
+      now: () => NOW,
+      embedder: stubEmbedder(),
+      adapters: () => [makeStubAdapter("hn", [hnCandidate()])],
+    });
+    await insertSettings(t.deps.db);
+    await saveRead(t.deps, "read-1", "rust ownership");
+    const step = inlineStep();
+
+    await runDigest(t.deps, params(), step.step);
+
+    const index = step.names.indexOf("personalize");
+    expect(index).toBeGreaterThanOrEqual(0);
+    const config = step.configs[index];
+    expect(config?.retries?.limit).toBeGreaterThanOrEqual(1);
+    expect(config?.timeout).toBeDefined();
+  });
+
+  it("skips the embed call when nothing has been saved yet, and ranks as before", async () => {
+    const embedded: string[][] = [];
+    const t = buildTestApp({
+      now: () => NOW,
+      embedder: stubEmbedder((texts) => embedded.push(texts)),
+      adapters: () => [
+        makeStubAdapter("hn", [hnCandidate()]),
+        makeStubAdapter("lobsters", [lobstersMirror(), lobstersOwn()]),
+      ],
+    });
+    await insertSettings(t.deps.db);
+
+    const outcome = await runDigest(t.deps, params(), inlineStep().step);
+
+    expect(outcome.status).toBe("ready");
+    expect(embedded).toEqual([]);
+    const items = await t.deps.db
+      .select()
+      .from(digestItems)
+      .orderBy(asc(digestItems.rank));
+    expect(items.map((i) => i.url)).toEqual([RUST_URL, SQLITE_URL]);
+    expect(items.map((i) => i.interestScore)).toEqual([null, null]);
+  });
+
+  it("degrades to base ranking when the embedder fails mid-run, without failing the digest", async () => {
+    const throwing: Embedder = {
+      model: "stub-embed",
+      dimensions: EMBED_DIMS,
+      embed: async () => {
+        throw new Error("ollama unreachable");
+      },
+    };
+    const t = buildTestApp({
+      now: () => NOW,
+      embedder: throwing,
+      adapters: () => [
+        makeStubAdapter("hn", [hnCandidate()]),
+        makeStubAdapter("lobsters", [lobstersMirror(), lobstersOwn()]),
+      ],
+    });
+    await insertSettings(t.deps.db);
+    await saveRead(t.deps, "read-1", "sqlite WAL internals");
+    const step = inlineStep();
+
+    const outcome = await runDigest(t.deps, params(), step.step);
+
+    expect(outcome).toEqual({
+      digestId: DIGEST_ID,
+      status: "ready",
+      itemCount: 2,
+    });
+    expect(step.names).not.toContain("mark-failed");
+    const run = (
+      await t.deps.db.select().from(digests).where(eq(digests.id, DIGEST_ID))
+    )[0];
+    expect(run?.status).toBe("ready");
+    expect(run?.error).toBeNull();
+
+    const items = await t.deps.db
+      .select()
+      .from(digestItems)
+      .orderBy(asc(digestItems.rank));
+    expect(items.map((i) => i.url)).toEqual([RUST_URL, SQLITE_URL]);
+    expect(items.map((i) => i.interestScore)).toEqual([null, null]);
   });
 
   it("clamps out-of-range params and gives every source step a retry budget", async () => {

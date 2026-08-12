@@ -70,7 +70,13 @@ export interface DigestItemDTO {
   url: string;
   sourceName: string;
   sourceDomain: string;
+  /** The base topical score: popularity, recency and cross-source corroboration. */
   score: number;
+  /**
+   * Similarity to the owner's recent saved reading, 0..1, or null when the run was
+   * not personalized (no embedder, nothing indexed yet, or an embedder failure).
+   */
+  interestScore: number | null;
   why: string | null;
   evidence: DigestEvidenceDTO[];
 }

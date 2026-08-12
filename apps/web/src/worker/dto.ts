@@ -91,7 +91,14 @@ export interface DigestItemDTO {
   url: string;
   sourceName: string;
   sourceDomain: string;
+  /** The base topical score. Personalization is reported separately, below. */
   score: number;
+  /**
+   * How close this item sits to the owner's recent saved reading, 0..1, or null
+   * when personalization did not run for the item (C18). Additive and nullable, so
+   * every digest stored before this existed reads back as "not personalized".
+   */
+  interestScore: number | null;
   why: string | null;
   evidence: DigestEvidenceDTO[];
 }
@@ -322,6 +329,7 @@ export function toDigestItemDTO(row: DigestItem): DigestItemDTO {
     sourceName: row.sourceName,
     sourceDomain: row.sourceDomain,
     score: row.score,
+    interestScore: row.interestScore ?? null,
     why: row.why ?? null,
     evidence: parseEvidence(row.evidence),
   };

@@ -272,6 +272,31 @@ describe("GET /api/digests/:id", () => {
     expect(body.items[1]?.evidence).toEqual([]);
   });
 
+  it("passes the interest score through, and reports null when a run was not personalized", async () => {
+    const t = buildTestApp({ now: () => NOW });
+    const id = await insertDigest(t.deps.db, { id: "d2" });
+    await insertDigestItem(t.deps.db, id, {
+      rank: 1,
+      title: "Matched",
+      score: 0.4,
+      interestScore: 0.82,
+    });
+    await insertDigestItem(t.deps.db, id, { rank: 2, title: "Not measured" });
+
+    const res = await t.request("/api/digests/d2");
+    const body = (await res.json()) as DigestDetailDTO;
+
+    expect(body.items[0]?.interestScore).toBeCloseTo(0.82);
+    // Null, not 0 or absent: the field has to be able to say "not personalized".
+    expect(body.items[1]?.interestScore).toBeNull();
+    expect(
+      Object.prototype.hasOwnProperty.call(
+        body.items[1] ?? {},
+        "interestScore",
+      ),
+    ).toBe(true);
+  });
+
   it("unknown id → 404 not_found", async () => {
     const t = buildTestApp();
     const res = await t.request("/api/digests/nope");

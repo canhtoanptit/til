@@ -20,6 +20,7 @@ import {
   type DigestStepConfig,
   type RankedItem,
 } from "./digest.js";
+import { personalizeRanked } from "./digest-interest.js";
 import { listEnabledFeedUrls } from "./feeds.js";
 import { HttpError } from "./http-error.js";
 import { toLLMSettings } from "./settings.js";
@@ -37,6 +38,29 @@ const FETCH: DigestStepConfig = {
 
 const RANK: DigestStepConfig = {
   retries: { limit: 1, delay: "1 second" },
+};
+
+/**
+ * WHY personalization is its own step rather than part of `rank` (C18):
+ *
+ * 1. Retry shape. `rank` is pure CPU with a CPU-shaped budget (1 retry, no
+ *    timeout). Personalization is network I/O — an embed call plus up to 200 vector
+ *    reads — and needs a timeout and a delayed, backed-off retry, the same shape
+ *    `fetch-*` and `synthesize` have. One step cannot be both.
+ * 2. Not double-billing embeddings. A step's result is memoized durably, so when
+ *    `synthesize` or `persist` fails and the instance retries, this step replays
+ *    from storage and the embed call is not paid for twice. Folded into `rank` it
+ *    would be memoized too — but then a transient embedder fault would re-run
+ *    clustering, and a `synthesize` retry would still be free either way, so the
+ *    separation costs nothing and buys the finer retry granularity.
+ * 3. The frozen-plan property from P19 survives. The interest profile is read
+ *    inside the step and its output is durable, so a run that retries an hour later
+ *    ranks against the reading it started with, not against whatever was saved in
+ *    the meantime — the same guarantee `plan` gives `runAt` and the feed list.
+ */
+const PERSONALIZE: DigestStepConfig = {
+  retries: { limit: 2, delay: "5 seconds", backoff: "exponential" },
+  timeout: "1 minute",
 };
 
 const SYNTHESIZE: DigestStepConfig = {
@@ -156,11 +180,15 @@ export async function runDigest(
       );
     }
 
+    // Ranking and selection use the blend from here on; `ranked` is the fallback
+    // the run keeps when personalization does not apply or degrades.
+    const pool = (await personalize(deps, plan, ranked, step)) ?? ranked;
+
     const synthesis = await step.do("synthesize", SYNTHESIZE, () =>
-      synthesize(deps, plan, ranked),
+      synthesize(deps, plan, pool),
     );
     const persisted = await step.do("persist", PERSIST, () =>
-      persist(deps, plan, ranked, synthesis),
+      persist(deps, plan, pool, synthesis),
     );
     return {
       digestId: plan.digestId,
@@ -287,6 +315,42 @@ function rankCandidates(
   return toRankedItems(scored, synthesisPoolSize(plan.maxItems));
 }
 
+/**
+ * Blends the owner's reading into the ranking, or returns null and leaves the base
+ * ranking exactly as it was.
+ *
+ * Degradation is the whole point of this wrapper. The step is not even created when
+ * there is no embedder or no vector store, so those runs have the step list they
+ * have always had; and when the step does run and fails, its rejection (after the
+ * Workflow has spent its retries) is caught here. A digest is still a digest
+ * without personalization, so this can never be the reason a run fails.
+ */
+async function personalize(
+  deps: Deps,
+  plan: DigestPlan,
+  ranked: readonly RankedItem[],
+  step: DigestStep,
+): Promise<RankedItem[] | null> {
+  if (!deps.embedder || !deps.vectorStore) return null;
+
+  try {
+    const result = await step.do("personalize", PERSONALIZE, () =>
+      personalizeRanked(deps, ranked),
+    );
+    if (result === null) return null;
+    console.log(
+      `[digest ${plan.digestId}] ranked ${result.items.length} item(s) against ${result.profileSize} stored vector(s)`,
+    );
+    return result.items;
+  } catch (err) {
+    console.warn(
+      `[digest ${plan.digestId}] personalization failed (non-fatal, ranking stays topical):`,
+      describeError(err),
+    );
+    return null;
+  }
+}
+
 async function synthesize(
   deps: Deps,
   plan: DigestPlan,
@@ -330,6 +394,8 @@ async function persist(
       sourceName: source.sourceName,
       sourceDomain: source.sourceDomain,
       score: source.score,
+      // Null, not 0, when personalization did not run — see migration 0006.
+      interestScore: source.interestScore ?? null,
       why: why.length > 0 ? why : null,
       evidence: JSON.stringify(source.evidence),
       createdAt,

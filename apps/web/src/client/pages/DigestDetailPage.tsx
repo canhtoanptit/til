@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { SparklesIcon } from "lucide-react";
 import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { toast } from "sonner";
@@ -15,6 +16,7 @@ import {
   formatRunDateTime,
   formatScore,
   formatWindowRange,
+  matchesYourReading,
   sourceLabel,
 } from "../components/digest-format";
 
@@ -201,6 +203,9 @@ export function DigestDetailPage() {
 
 function DigestItem({ item }: { item: DigestItemDTO }) {
   const score = formatScore(item.score);
+  const matched = matchesYourReading(item.score, item.interestScore);
+  const interest =
+    item.interestScore === null ? null : formatScore(item.interestScore);
   return (
     <Card asChild className="gap-0 p-4 transition-shadow hover:shadow-md">
       <article>
@@ -234,6 +239,16 @@ function DigestItem({ item }: { item: DigestItemDTO }) {
                     score {score}
                   </span>
                 </>
+              )}
+              {matched && (
+                <Badge
+                  variant="outline"
+                  className="border-success/40 bg-success/10 font-normal text-success"
+                  title={`This ranked up because it resembles your saved reading${interest === null ? "" : ` (similarity ${interest})`}.`}
+                >
+                  <SparklesIcon aria-hidden="true" />
+                  matches your reading
+                </Badge>
               )}
             </div>
             {item.why && (

@@ -74,6 +74,13 @@ export const digestItems = sqliteTable(
     sourceName: text("source_name").notNull(),
     sourceDomain: text("source_domain").notNull(),
     score: real("score").notNull(),
+    /**
+     * Max cosine similarity between this item and the owner's recent saved
+     * reading (C18). Null means personalization did not run for the item — no
+     * embedder, no stored entry vectors, or an embedder failure that degraded the
+     * run — which is a different statement from 0, "measured, nothing matched".
+     */
+    interestScore: real("interest_score"),
     why: text("why"),
     evidence: text("evidence").notNull().default("[]"),
     createdAt: integer("created_at").notNull(),
