@@ -406,8 +406,14 @@ async function persist(
   await deps.db
     .delete(digestItems)
     .where(eq(digestItems.digestId, plan.digestId));
-  if (rows.length > 0) {
-    await deps.db.insert(digestItems).values(rows);
+  // D1 caps a statement at 100 bound parameters, and every row binds one
+  // parameter per column — a single multi-row insert of the default 10 items
+  // exceeded the cap in production (tests run on better-sqlite3, whose limit
+  // is ~32k, so only real D1 ever failed). Chunk size derives from the actual
+  // column count so adding a column shrinks the chunk instead of reviving the
+  // bug.
+  for (const chunk of chunkForD1Insert(rows)) {
+    await deps.db.insert(digestItems).values(chunk);
   }
   await deps.db
     .update(digests)
@@ -450,4 +456,25 @@ function stepNames(sources: readonly string[]): string[] {
 export function describeError(err: unknown): string {
   if (err instanceof Error) return err.message;
   return String(err);
+}
+
+/** D1's documented ceiling on bound parameters in a single statement. */
+export const D1_MAX_BOUND_PARAMS = 100;
+
+/**
+ * Split rows for a multi-row insert so every statement stays within D1's
+ * bound-parameter cap. Each row binds one parameter per column, and the count
+ * is read off the rows themselves rather than hardcoded, so adding a column
+ * shrinks the chunk instead of silently reintroducing the overflow.
+ */
+export function chunkForD1Insert<T extends object>(rows: T[]): T[][] {
+  const first = rows[0];
+  if (first === undefined) return [];
+  const paramsPerRow = Math.max(1, Object.keys(first).length);
+  const size = Math.max(1, Math.floor(D1_MAX_BOUND_PARAMS / paramsPerRow));
+  const chunks: T[][] = [];
+  for (let i = 0; i < rows.length; i += size) {
+    chunks.push(rows.slice(i, i + size));
+  }
+  return chunks;
 }

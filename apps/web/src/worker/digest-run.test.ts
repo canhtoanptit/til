@@ -2,7 +2,11 @@ import { describe, expect, it } from "vitest";
 import { digestItems, digests, settings as settingsTable } from "@til/db";
 import { asc, eq } from "drizzle-orm";
 import type { Candidate, Embedder, SynthesisInput } from "@til/core";
-import { runDigest } from "./digest-run.js";
+import {
+  chunkForD1Insert,
+  D1_MAX_BOUND_PARAMS,
+  runDigest,
+} from "./digest-run.js";
 import type { DigestRunParams } from "./digest.js";
 import { parseEvidence } from "./dto.js";
 import {
@@ -580,5 +584,69 @@ describe("runDigest", () => {
     for (const config of step.configs) {
       expect(config.retries?.limit).toBeGreaterThanOrEqual(1);
     }
+  });
+});
+
+describe("chunkForD1Insert", () => {
+  // The production failure this pins: 10 digest items × 11 columns = 110 bound
+  // parameters in one INSERT, over D1's cap of 100. better-sqlite3 (these
+  // tests) allows ~32k binds, so only the chunk math can be asserted here —
+  // which is exactly why it is math, not driver behaviour.
+  const digestItemShapedRow = () => ({
+    id: "x",
+    digestId: "d",
+    rank: 1,
+    title: "t",
+    url: "u",
+    sourceName: "s",
+    sourceDomain: "sd",
+    score: 0.5,
+    interestScore: null,
+    why: null,
+    evidence: "[]",
+    createdAt: 0,
+  });
+
+  it("keeps every chunk within the D1 bound-parameter cap", () => {
+    const rows = Array.from({ length: 30 }, digestItemShapedRow);
+    const paramsPerRow = Object.keys(rows[0]!).length;
+    const chunks = chunkForD1Insert(rows);
+    expect(chunks.length).toBeGreaterThan(1);
+    for (const chunk of chunks) {
+      expect(chunk.length * paramsPerRow).toBeLessThanOrEqual(
+        D1_MAX_BOUND_PARAMS,
+      );
+    }
+  });
+
+  it("covers all rows exactly once, in order", () => {
+    const rows = Array.from({ length: 25 }, (_, i) => ({
+      ...digestItemShapedRow(),
+      rank: i + 1,
+    }));
+    const flattened = chunkForD1Insert(rows).flat();
+    expect(flattened.map((r) => r.rank)).toEqual(rows.map((r) => r.rank));
+  });
+
+  it("handles the default 10-item run that failed in production", () => {
+    const rows = Array.from({ length: 10 }, digestItemShapedRow);
+    const paramsPerRow = Object.keys(rows[0]!).length;
+    for (const chunk of chunkForD1Insert(rows)) {
+      expect(chunk.length * paramsPerRow).toBeLessThanOrEqual(
+        D1_MAX_BOUND_PARAMS,
+      );
+    }
+  });
+
+  it("returns no chunks for no rows", () => {
+    expect(chunkForD1Insert([])).toEqual([]);
+  });
+
+  it("never produces an empty chunk even for very wide rows", () => {
+    const wide = Object.fromEntries(
+      Array.from({ length: 150 }, (_, i) => [`c${i}`, i]),
+    );
+    const chunks = chunkForD1Insert([wide, wide]);
+    expect(chunks.map((c) => c.length)).toEqual([1, 1]);
   });
 });
