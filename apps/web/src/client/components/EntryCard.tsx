@@ -1,10 +1,13 @@
 import { Link } from "react-router";
-import type { EntryDTO } from "../api";
+import { FileTextIcon, StarIcon, VideoIcon } from "lucide-react";
+import type { ContentType, EntryDTO } from "../api";
+import { contentTypeBadge } from "../lib/content-type";
 import { Spinner } from "./Spinner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { cn } from "@/lib/utils";
 
 function formatDate(ms: number): string {
   try {
@@ -22,10 +25,15 @@ export function EntryCard({
   entry,
   onRetry,
   retrying,
+  onToggleFavorite,
+  favoritePending,
 }: {
   entry: EntryDTO;
   onRetry?: (id: string) => void;
   retrying?: boolean;
+  /** Omit to render the card without a star — search results and any read-only list. */
+  onToggleFavorite?: (entry: EntryDTO) => void;
+  favoritePending?: boolean;
 }) {
   const title = entry.title?.trim() || entry.canonicalUrl;
   return (
@@ -39,11 +47,19 @@ export function EntryCard({
             {title}
           </Link>
           {entry.status === "pending" && <Spinner label="ingesting" />}
+          {onToggleFavorite && (
+            <FavoriteButton
+              entry={entry}
+              onToggle={onToggleFavorite}
+              pending={favoritePending}
+            />
+          )}
         </div>
-        <div className="mt-1 flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
+        <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
           {entry.sourceDomain && <span>{entry.sourceDomain}</span>}
           {entry.sourceDomain && <span aria-hidden="true">·</span>}
           <span>{formatDate(entry.createdAt)}</span>
+          <ContentTypeBadge contentType={entry.contentType} />
         </div>
         {entry.status === "ready" && entry.takeaway && (
           <p className="mt-3 line-clamp-3 text-sm text-muted-foreground">
@@ -80,13 +96,91 @@ export function EntryCard({
           <ul className="mt-3 flex flex-wrap gap-1">
             {entry.tags.map((t) => (
               <li key={t}>
-                <Badge variant="secondary">{t}</Badge>
+                <TagLink tag={t} />
               </li>
             ))}
           </ul>
         )}
       </article>
     </Card>
+  );
+}
+
+/**
+ * Marks the entries that are not web pages (P25). Renders nothing for an article,
+ * which is the default and the majority — the point of the badge is that it is
+ * unusual. `variant="outline"` deliberately: it is built from the `border`/
+ * `foreground` tokens, so it reads the same subtle way in both themes without a
+ * colour of its own, and never competes with a tag pill.
+ *
+ * Shared by the card and the detail page so the two cannot drift.
+ */
+export function ContentTypeBadge({ contentType }: { contentType: ContentType }) {
+  const badge = contentTypeBadge(contentType);
+  if (!badge) return null;
+  const Icon = contentType === "video" ? VideoIcon : FileTextIcon;
+  return (
+    <>
+      <span aria-hidden="true">·</span>
+      <Badge variant="outline" title={badge.hint} className="font-normal">
+        <Icon aria-hidden="true" />
+        {badge.label}
+      </Badge>
+    </>
+  );
+}
+
+/**
+ * A tag as a way in, not decoration. Shared with the detail page so both spell the
+ * route the same way — `encodeURIComponent` matters because a tag is user-ish data
+ * (an LLM writes it) and reaches the server as a query param.
+ */
+export function TagLink({ tag }: { tag: string }) {
+  return (
+    <Badge asChild variant="secondary">
+      <Link to={`/tags/${encodeURIComponent(tag)}`} title={`Entries tagged ${tag}`}>
+        {tag}
+      </Link>
+    </Badge>
+  );
+}
+
+/**
+ * Toggle, not a command: `aria-pressed` is what tells a screen reader whether the
+ * entry is already a favorite, since the icon fill alone carries that for everyone
+ * else. Sits inside a link-bearing card, so it stops propagation-free by being a
+ * sibling of the title link rather than nested inside it.
+ */
+export function FavoriteButton({
+  entry,
+  onToggle,
+  pending = false,
+  size = "icon-sm",
+}: {
+  entry: EntryDTO;
+  onToggle: (entry: EntryDTO) => void;
+  pending?: boolean;
+  size?: "icon-sm" | "icon";
+}) {
+  const label = entry.favorite ? "Remove from favorites" : "Add to favorites";
+  return (
+    <Button
+      type="button"
+      variant="ghost"
+      size={size}
+      aria-pressed={entry.favorite}
+      aria-label={label}
+      title={label}
+      disabled={pending}
+      onClick={() => onToggle(entry)}
+    >
+      <StarIcon
+        aria-hidden="true"
+        className={cn(
+          entry.favorite ? "fill-warning text-warning" : "text-muted-foreground",
+        )}
+      />
+    </Button>
   );
 }
 

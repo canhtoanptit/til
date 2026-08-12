@@ -5,6 +5,7 @@ import { api, type LLMProvider, type SettingsInput } from "../api";
 import { BookmarkletCard } from "../components/BookmarkletCard";
 import { DigestSourcesCard } from "../components/DigestSourcesCard";
 import { ErrorBanner, friendlyMessage } from "../components/ErrorBanner";
+import { ExportBackupCard } from "../components/ExportBackupCard";
 import { Spinner } from "../components/Spinner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -369,6 +370,7 @@ function SettingsExtras() {
   return (
     <>
       <DigestSourcesCard />
+      <ExportBackupCard />
       <BookmarkletCard />
     </>
   );

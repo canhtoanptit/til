@@ -1,6 +1,20 @@
+import {
+  fallbackExportFilename,
+  filenameFromDisposition,
+  type ExportFormat,
+} from "./export-file";
+
 const TOKEN_KEY = "til:token";
 
 export type EntryStatus = "pending" | "ready" | "failed";
+
+/**
+ * What kind of thing an entry points at. Restated here rather than imported from
+ * `@til/core` for the same reason the DTOs are — the browser bundle stays free of
+ * worker and core code, and the server normalizes anything it does not recognise
+ * to "article" before it reaches this type.
+ */
+export type ContentType = "article" | "pdf" | "video";
 
 export interface EntryDTO {
   id: string;
@@ -12,6 +26,14 @@ export interface EntryDTO {
   takeaway: string | null;
   question: string | null;
   tags: string[];
+  /** "article" for everything saved before content types existed, and for anything
+   * the server does not recognise. */
+  contentType: ContentType;
+  /** The owner's own marks, as opposed to everything above, which ingest wrote. */
+  favorite: boolean;
+  archived: boolean;
+  /** null, never "" — an emptied note is cleared server-side. */
+  note: string | null;
   status: EntryStatus;
   error: string | null;
   createdAt: number;
@@ -22,9 +44,36 @@ export interface EntryDetailDTO extends EntryDTO {
   contentMarkdown: string | null;
 }
 
+/**
+ * Which slice of the library to list. "all" is the default view and deliberately
+ * excludes archived entries — that is what archiving is for; "favorites" excludes
+ * them too, and "archived" is the only way to see them.
+ */
+export type EntryFilter = "all" | "favorites" | "archived";
+
+/**
+ * A partial update: omitted fields are left exactly as they are. Send `note: ""`
+ * to clear a note back to null; the server rejects a body with no fields at all.
+ */
+export interface UpdateEntryInput {
+  favorite?: boolean;
+  archived?: boolean;
+  note?: string;
+}
+
 export interface EntryListPage {
   items: EntryDTO[];
   nextCursor: string | null;
+}
+
+export interface TagCountDTO {
+  tag: string;
+  /** How many non-archived entries carry the tag — exactly what /tags/:tag lists. */
+  count: number;
+}
+
+export interface TagListResponse {
+  items: TagCountDTO[];
 }
 
 export interface SearchResults {
@@ -54,9 +103,20 @@ export interface RelatedEntriesResponse {
 export interface CreateEntryResponse {
   id: string;
   status: EntryStatus;
+  /** The URL-phase guess (P25), so the optimistic pending card can already carry
+   * the right badge. Ingest may still refine it. Additive. */
+  contentType: ContentType;
 }
 
 export type DigestStatus = "pending" | "ready" | "failed";
+
+/**
+ * 'weekly' is the roundup of external candidates; 'monthly-report' is the
+ * retrospective over your own saved entries. Restated here rather than imported,
+ * like every other DTO in this file — the client bundle stays free of worker and
+ * `@til/core` code. Source of truth: `DIGEST_KINDS` in `@til/core`.
+ */
+export type DigestKind = "weekly" | "monthly-report";
 
 export interface DigestEvidenceDTO {
   url: string;
@@ -85,6 +145,7 @@ export interface DigestSummaryDTO {
   id: string;
   runAt: number;
   windowDays: number;
+  kind: DigestKind;
   status: DigestStatus;
   title: string | null;
   intro: string | null;
@@ -103,6 +164,8 @@ export interface DigestListResponse {
 export interface RunDigestInput {
   windowDays?: number;
   maxItems?: number;
+  /** Omitted means 'weekly'; the server validates this strictly. */
+  kind?: DigestKind;
 }
 
 export interface RunDigestResponse {
@@ -400,6 +463,57 @@ async function request<T>(path: string, opts: RequestOpts = {}): Promise<T> {
   return (await res.json()) as T;
 }
 
+export interface DownloadedFile {
+  blob: Blob;
+  /** The server's `Content-Disposition` name, or a locally dated fallback. */
+  filename: string;
+}
+
+/**
+ * A file download that goes through the same auth and 401 handling as every other
+ * call. Deliberately NOT `request`: that helper ends in `res.json()`, and this body
+ * is an attachment — sometimes markdown, always something to hand to the browser's
+ * downloader rather than to parse.
+ *
+ * The whole body is read into a Blob here. That is the price of authenticating with
+ * a header instead of putting the app token in a URL (see `saveBlob`), and it is
+ * paid on the side that can afford it: the worker still streams, so its memory
+ * ceiling does not move with the size of the library.
+ */
+async function download(
+  path: string,
+  opts: { fallbackFilename: string; signal?: AbortSignal },
+): Promise<DownloadedFile> {
+  const url = new URL(BASE + path, window.location.origin);
+  const headers: Record<string, string> = {};
+  const token = getToken();
+  if (token) headers.Authorization = `Bearer ${token}`;
+
+  let res: Response;
+  try {
+    res = await fetch(url.toString(), { headers, signal: opts.signal });
+  } catch (e) {
+    throw new ApiError(
+      "network_error",
+      e instanceof Error ? e.message : "network error",
+      0,
+    );
+  }
+  if (res.status === 401) {
+    clearToken();
+    throw new ApiError("unauthorized", "unauthorized", 401);
+  }
+  if (!res.ok) {
+    throw await toApiError(res);
+  }
+  return {
+    blob: await res.blob(),
+    filename:
+      filenameFromDisposition(res.headers.get("content-disposition")) ??
+      opts.fallbackFilename,
+  };
+}
+
 export const api = {
   health(): Promise<{ ok: boolean }> {
     return request("/api/health", { skipAuth: true });
@@ -407,15 +521,23 @@ export const api = {
   listEntries(params: {
     cursor?: string | null;
     limit?: number;
+    filter?: EntryFilter;
+    tag?: string;
     signal?: AbortSignal;
   }): Promise<EntryListPage> {
     return request("/api/entries", {
       query: {
         cursor: params.cursor ?? undefined,
         limit: params.limit ?? 20,
+        // "all" is the server default, so it is left off the wire entirely.
+        filter: params.filter === "all" ? undefined : params.filter,
+        tag: params.tag,
       },
       signal: params.signal,
     });
+  },
+  listTags(signal?: AbortSignal): Promise<TagListResponse> {
+    return request("/api/tags", { signal });
   },
   getEntry(id: string, signal?: AbortSignal): Promise<EntryDetailDTO> {
     return request(`/api/entries/${encodeURIComponent(id)}`, { signal });
@@ -431,6 +553,14 @@ export const api = {
   },
   createEntry(url: string): Promise<CreateEntryResponse> {
     return request("/api/entries", { method: "POST", body: { url } });
+  },
+  // Returns the detail shape, so the caller can drop it straight into the
+  // ["entry", id] cache without losing contentMarkdown.
+  updateEntry(id: string, patch: UpdateEntryInput): Promise<EntryDetailDTO> {
+    return request(`/api/entries/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      body: patch,
+    });
   },
   deleteEntry(id: string): Promise<void> {
     return request(`/api/entries/${encodeURIComponent(id)}`, { method: "DELETE" });
@@ -529,5 +659,16 @@ export const api = {
   },
   testSettings(): Promise<TestConnectionResult> {
     return request("/api/settings/test", { method: "POST" });
+  },
+  exportBackup(
+    format: ExportFormat,
+    signal?: AbortSignal,
+  ): Promise<DownloadedFile> {
+    const path =
+      format === "markdown" ? "/api/export?format=markdown" : "/api/export";
+    return download(path, {
+      fallbackFilename: fallbackExportFilename(format, Date.now()),
+      signal,
+    });
   },
 };

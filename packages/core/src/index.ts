@@ -2,22 +2,33 @@ export type {
   Candidate,
   Digest,
   DigestItemDraft,
+  DigestKind,
   DigestSynthesis,
   Embedder,
   EvidenceCluster,
+  ExtractedDocument,
   Extractor,
   FetchCandidatesOptions,
   LLMClient,
   LLMSettings,
+  ReportContext,
   ScoredCluster,
   SourceAdapter,
   StackMode,
   SynthesisInput,
+  SynthesisOptions,
   VectorMatch,
   VectorRecord,
   VectorStore,
 } from "./types.js";
-export { MAX_SYNTHESIS_PROMPT_CHARS, parseSynthesis } from "./prompt.js";
+export { DIGEST_KINDS, isDigestKind } from "./types.js";
+export {
+  MAX_SYNTHESIS_PROMPT_CHARS,
+  parseSynthesis,
+  REPORT_SYSTEM_PROMPT,
+  SYNTHESIS_SYSTEM_PROMPT,
+  synthesisSystemPrompt,
+} from "./prompt.js";
 export {
   DigestError,
   EmbeddingError,
@@ -26,6 +37,19 @@ export {
   UnsafeUrlError,
 } from "./errors.js";
 export { assertSafeUrl, gatewayBaseURL, normalizeUrl } from "./url.js";
+export {
+  CONTENT_TYPES,
+  DEFAULT_CONTENT_TYPE,
+  detectContentTypeFromUrl,
+  isContentType,
+  isPdfMediaType,
+  isYoutubeHost,
+  normalizeContentType,
+  refineContentType,
+  youtubeVideoId,
+  youtubeWatchUrl,
+} from "./content-type.js";
+export type { ContentType } from "./content-type.js";
 export { createLLMClient } from "./factory.js";
 export { DirectLLMClient } from "./direct-client.js";
 export { AISDKClient } from "./ai-sdk-client.js";

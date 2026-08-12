@@ -69,11 +69,18 @@ describe("GET /api/search", () => {
     });
     const res = await t.request("/api/search?q=rust");
     const body = (await res.json()) as { items: Record<string, unknown>[] };
+    // Still an exact set: `archived`, `favorite` and `note` joined the DTO in P23,
+    // `contentType` in P25, and search must keep returning the same shape as the
+    // feed. Kept exact rather than a superset check — that is the point of it.
     expect(Object.keys(body.items[0] ?? {}).sort()).toEqual([
+      "archived",
       "canonicalUrl",
+      "contentType",
       "createdAt",
       "error",
+      "favorite",
       "id",
+      "note",
       "question",
       "sourceDomain",
       "status",

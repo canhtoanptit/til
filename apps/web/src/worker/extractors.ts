@@ -8,7 +8,7 @@ import type TurndownService from "turndown";
 // that has no DOMParser. No types are published for the subpath.
 // @ts-expect-error -- untyped subpath; the shape is TurndownService
 import TurndownImpl from "turndown/lib/turndown.browser.es.js";
-import type { Extractor } from "@til/core";
+import type { ExtractedDocument, Extractor } from "@til/core";
 import { ExtractionError } from "@til/core";
 
 interface MarkdownDocumentInput {
@@ -16,11 +16,30 @@ interface MarkdownDocumentInput {
   blob: Blob;
 }
 
+/**
+ * `ConversionResponse` from @cloudflare/workers-types, restated loosely on purpose
+ * — every field optional, because this is a response from a service we do not
+ * version and the failure mode we want is a readable ExtractionError, not a
+ * TypeError on a field that moved.
+ *
+ * Verified 2026-08-12 against the installed @cloudflare/workers-types
+ * (5.20260801.1) and the Workers AI markdown-conversion docs (binding reference
+ * page, last updated 2026-07-13):
+ *  - a single document in returns a single object, an array returns an array;
+ *  - `format` is "markdown" on success, "text" with the newer `output.format`
+ *    option, and "error" for a per-file failure;
+ *  - a failed conversion does NOT throw — it comes back in-band as
+ *    `{ format: "error", error }` with no `data`, which is why `convert` checks
+ *    both;
+ *  - the field is `mimeType`, camelCase. The docs' binding page spells it
+ *    `mimetype`; the types, the REST response example and the launch changelog all
+ *    say `mimeType`, so the docs page is the typo. We read neither.
+ */
 interface ConversionResult {
   id?: string;
   name?: string;
   format?: "markdown" | "text" | "error";
-  mimetype?: string;
+  mimeType?: string;
   tokens?: number;
   data?: string;
   error?: string;
@@ -57,12 +76,57 @@ export class WorkersAIExtractor implements Extractor {
     this.ai = ai;
   }
 
-  async toMarkdown(
-    html: string,
-    url: string,
-  ): Promise<{ markdown: string; title?: string }> {
-    const name = filenameFromUrl(url);
+  async toMarkdown(html: string, url: string): Promise<ExtractedDocument> {
+    const name = filenameFromUrl(url, "html");
     const blob = new Blob([html], { type: "text/html" });
+    const markdown = await this.convert(name, blob);
+    return { markdown, title: extractTitleFromHtml(html) };
+  }
+
+  /**
+   * PDF → markdown, the reason PDFs are a cloud-stack-only feature (P25). The
+   * binding is handed the bytes as a `Blob`, exactly like the HTML path — the only
+   * things that change are the mime type and the `.pdf` filename.
+   *
+   * Verified 2026-08-12 against the Workers AI markdown-conversion docs:
+   *  - the conversion is structural, not visual. Metadata, then each page in
+   *    sequence, then the PDF's `StructTree` if it has one and the raw page text if
+   *    it does not. There is no OCR and no vision model in the PDF path, so a
+   *    scanned PDF has nothing to extract — hence the explicit empty-result message
+   *    below rather than the generic one.
+   *  - PDF conversion bills no neurons (only the *image* path runs models).
+   *  - no input size limit is documented. That is "undocumented", not "unlimited",
+   *    which is another reason to keep fetch-page's 5 MB cap in front of it.
+   *  - per-format options exist but must be nested — `{ conversionOptions: { pdf:
+   *    {...} } }`, not the options bare. We pass none: the defaults include the
+   *    document metadata, which is useful context for a digest.
+   */
+  async documentToMarkdown(
+    bytes: Uint8Array,
+    url: string,
+    mimeType: string,
+  ): Promise<ExtractedDocument> {
+    if (bytes.byteLength === 0) {
+      throw new ExtractionError("The PDF response was empty.");
+    }
+    const name = filenameFromUrl(url, "pdf");
+    const blob = new Blob([bytes], { type: mimeType });
+    let markdown: string;
+    try {
+      markdown = await this.convert(name, blob);
+    } catch (err) {
+      if (err instanceof ExtractionError && /markdown was empty/i.test(err.message)) {
+        throw new ExtractionError(
+          "This PDF has no extractable text — a scanned PDF is a picture of a page, and PDF conversion does not run OCR.",
+        );
+      }
+      throw err;
+    }
+    const title = firstHeading(markdown);
+    return title === undefined ? { markdown } : { markdown, title };
+  }
+
+  private async convert(name: string, blob: Blob): Promise<string> {
     let raw: ConversionResult | ConversionResult[];
     try {
       raw = await this.ai.toMarkdown({ name, blob });
@@ -73,16 +137,26 @@ export class WorkersAIExtractor implements Extractor {
     }
     const result = firstResult(raw);
     if (result.format === "error" || typeof result.data !== "string") {
-      throw new ExtractionError(
-        result.error ?? "toMarkdown returned no data.",
-      );
+      throw new ExtractionError(result.error ?? "toMarkdown returned no data.");
     }
     const markdown = result.data.trim();
     if (markdown.length === 0) {
       throw new ExtractionError("Extracted markdown was empty.");
     }
-    return { markdown, title: extractTitleFromHtml(html) };
+    return markdown;
   }
+}
+
+/**
+ * A PDF has no `<title>`, so the first markdown heading is the closest thing to
+ * one. Only a hint for the digest prompt — the stored title is whatever the LLM
+ * writes — so guessing wrong is cheap and guessing nothing is fine.
+ */
+function firstHeading(markdown: string): string | undefined {
+  const match = /^#{1,3}[ \t]+(.+)$/m.exec(markdown);
+  const heading = match?.[1]?.replace(/\s+/g, " ").trim();
+  if (heading === undefined || heading.length === 0) return undefined;
+  return heading.length > 200 ? undefined : heading;
 }
 
 const ENTITY_MAP: Record<string, string> = {
@@ -94,7 +168,12 @@ const ENTITY_MAP: Record<string, string> = {
   nbsp: " ",
 };
 
-function decodeEntities(input: string): string {
+/**
+ * The handful of entities that show up in the text we lift out of markup with a
+ * regex rather than a parser — page `<title>` here, and YouTube's caption XML in
+ * youtube.ts, which is why this is exported rather than private.
+ */
+export function decodeEntities(input: string): string {
   return input.replace(/&(#\d+|#x[0-9a-fA-F]+|[a-zA-Z]+);/g, (_, ref: string) => {
     if (ref.startsWith("#x") || ref.startsWith("#X")) {
       const code = parseInt(ref.slice(2), 16);
@@ -245,13 +324,24 @@ function firstNonEmpty(
   return undefined;
 }
 
-function filenameFromUrl(url: string): string {
+/**
+ * The `name` the conversion is submitted under. The extension is not cosmetic —
+ * it is part of how the service decides which converter to run — so it is passed
+ * in rather than assumed, and a PDF's own filename is preferred when the URL has
+ * one worth keeping.
+ */
+function filenameFromUrl(url: string, extension: "html" | "pdf"): string {
   try {
     const u = new URL(url);
+    if (extension === "pdf") {
+      const last = u.pathname.split("/").filter(Boolean).pop() ?? "";
+      const safe = decodeURI(last).replace(/[^a-z0-9._-]/gi, "_");
+      if (/\.pdf$/i.test(safe) && safe.length <= 128) return safe;
+    }
     const host = u.hostname.replace(/[^a-z0-9.-]/gi, "_") || "page";
-    return `${host}.html`;
+    return `${host}.${extension}`;
   } catch {
-    return "page.html";
+    return `page.${extension}`;
   }
 }
 

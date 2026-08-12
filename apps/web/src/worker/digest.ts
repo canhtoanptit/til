@@ -1,7 +1,9 @@
 import {
   defaultAdapters,
+  isDigestKind,
   normalizeUrl,
   type Candidate,
+  type DigestKind,
   type ScoredCluster,
   type SourceAdapter,
   type SynthesisInput,
@@ -14,6 +16,46 @@ export const MIN_WINDOW_DAYS = 1;
 export const MAX_WINDOW_DAYS = 30;
 export const MIN_MAX_ITEMS = 1;
 export const MAX_MAX_ITEMS = 25;
+
+/**
+ * The monthly report's default window. 30 rather than a calendar month because
+ * `windowDays` is the only window this table and the ranking understand, and
+ * MAX_WINDOW_DAYS is 30 anyway — "the past month" and "the last 30 days" are the
+ * same statement here, and the latter needs no month-length arithmetic.
+ */
+export const MONTHLY_REPORT_WINDOW_DAYS = 30;
+
+/**
+ * Cron expressions from `wrangler.jsonc` `triggers.crons`. The scheduled handler
+ * routes on `controller.cron`, which Cloudflare documents as the way to tell
+ * multiple schedules apart, and it compares the string verbatim — so these are
+ * the single definition of both sides of that comparison and must stay
+ * character-for-character identical to wrangler.jsonc, spacing included.
+ */
+export const WEEKLY_CRON = "0 8 * * 1";
+export const MONTHLY_REPORT_CRON = "0 9 1 * *";
+
+/**
+ * Which flavour a firing cron asks for. An unrecognized expression falls back to
+ * the weekly digest rather than throwing: a cron that fires and produces the
+ * wrong-but-useful run beats a cron that fires and silently does nothing, and the
+ * only way to get here is a wrangler.jsonc edit that forgot this file.
+ */
+export function digestKindForCron(cron: string): DigestKind {
+  return cron.trim() === MONTHLY_REPORT_CRON ? "monthly-report" : "weekly";
+}
+
+/** Falls back to 'weekly' for anything unrecognized, including undefined. */
+export function normalizeDigestKind(raw: unknown): DigestKind {
+  return isDigestKind(raw) ? raw : "weekly";
+}
+
+/** The window a flavour uses when the caller did not name one. */
+export function defaultWindowDays(kind: DigestKind): number {
+  return kind === "monthly-report"
+    ? MONTHLY_REPORT_WINDOW_DAYS
+    : DEFAULT_WINDOW_DAYS;
+}
 
 // Per-adapter, not global: every source is polled for this many candidates and the
 // pool is clustered afterwards.
@@ -49,6 +91,15 @@ export type DigestRunParams = {
   digestId: string;
   windowDays: number;
   maxItems: number;
+  /**
+   * Which run this is. Carried in the Workflow payload rather than handled by a
+   * second Workflow class: the payload already carries everything a run needs to
+   * be replayable, so one more field keeps one binding, one instance-id↔row
+   * mapping and one set of step retry budgets. Optional so a payload written
+   * before 0011 (an instance mid-flight across the deploy) still replays as the
+   * weekly run it started as.
+   */
+  kind?: DigestKind;
   // Set by the trigger so every step (and the digests row) shares one instant.
   now?: number;
 };
@@ -135,8 +186,11 @@ export function createDefaultAdapters(
   });
 }
 
-export function clampWindowDays(raw: number | undefined): number {
-  return clampInt(raw, DEFAULT_WINDOW_DAYS, MIN_WINDOW_DAYS, MAX_WINDOW_DAYS);
+export function clampWindowDays(
+  raw: number | undefined,
+  kind: DigestKind = "weekly",
+): number {
+  return clampInt(raw, defaultWindowDays(kind), MIN_WINDOW_DAYS, MAX_WINDOW_DAYS);
 }
 
 export function clampMaxItems(raw: number | undefined): number {

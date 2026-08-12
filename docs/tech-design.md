@@ -158,6 +158,19 @@ All routes require `Authorization: Bearer <APP_TOKEN>` except `GET /api/health` 
 | PUT    | `/api/settings`             | update BYOK config — full replace; `apiKey` omittable only if provider/account/gateway unchanged                          |
 | POST   | `/api/settings/test`        | `LLMClient.ping()` — validate key/gateway                                                                                 |
 | GET    | `/api/health`               | liveness (no auth)                                                                                                        |
+| GET    | `/api/export`               | streamed full backup as JSON; `?format=markdown` for a single readable `.md` bundle (see below)                            |
+
+### 8.1 What an export deliberately leaves out
+
+`GET /api/export` is the owner's escape hatch under [ADR-0007](./adr/0007-single-user-local-first.md)'s "one copy is zero copies". It streams (keyset-batched per table) rather than buffering, because `content_markdown` holds whole articles and a Worker has ~128 MB.
+
+Three tables are **not** in it, and every exported file repeats the reasons inside itself:
+
+- **`settings`** — the row holds the provider API key in cleartext. An export lands in a downloads folder and gets synced and mailed around; a backup that is also a copy of a secret is a liability, not a safety net. Re-enter the key after a restore.
+- **`entry_vectors`** — recomputable via `POST /api/entries/reembed`, and at ~1024 floats per entry it would dominate the file size.
+- **`chats`** — only a cross-Durable-Object index; the transcripts live in each chat DO's own storage, which D1 cannot read, so exporting the index would promise conversations the file does not contain.
+
+The markdown variant is one document, not an archive: a zip would mean a new runtime dependency the Workers runtime does not provide. It is also deliberately lossy — entries and digests only — so the JSON stays the single restore format.
 
 ## 9. Ingest pipeline
 

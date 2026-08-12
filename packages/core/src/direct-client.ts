@@ -10,10 +10,10 @@ import {
   parseDigest,
   parseSynthesis,
   SYNTHESIS_JSON_SCHEMA,
-  SYNTHESIS_SYSTEM_PROMPT,
   SYNTHESIS_TOOL_DESCRIPTION,
   SYNTHESIS_TOOL_NAME,
   synthesisJsonModeSystemPrompt,
+  synthesisSystemPrompt,
 } from "./prompt.js";
 import type {
   Digest,
@@ -21,6 +21,7 @@ import type {
   LLMClient,
   LLMSettings,
   SynthesisInput,
+  SynthesisOptions,
 } from "./types.js";
 import { gatewayBaseURL } from "./url.js";
 
@@ -53,16 +54,35 @@ export class DirectLLMClient implements LLMClient {
 
   async synthesizeDigest(
     inputs: SynthesisInput[],
-    opts: { windowDays: number; maxItems: number },
+    opts: SynthesisOptions,
   ): Promise<DigestSynthesis> {
     const user = buildSynthesisUserMessage(inputs, opts);
+    // The flavour only ever changes the system prompt and the user message; the
+    // response schema, the tool name and the validation are shared, so the three
+    // provider dialects below take `system` as a parameter rather than branching
+    // on kind themselves.
     if (this.settings.provider === "openai") {
-      return this.synthesizeOpenAI(user, inputs, opts.maxItems);
+      return this.synthesizeOpenAI(
+        synthesisSystemPrompt(opts.kind),
+        user,
+        inputs,
+        opts.maxItems,
+      );
     }
     if (this.settings.provider === "groq") {
-      return this.synthesizeGroq(user, inputs, opts.maxItems);
+      return this.synthesizeGroq(
+        synthesisJsonModeSystemPrompt(opts.kind),
+        user,
+        inputs,
+        opts.maxItems,
+      );
     }
-    return this.synthesizeAnthropic(user, inputs, opts.maxItems);
+    return this.synthesizeAnthropic(
+      synthesisSystemPrompt(opts.kind),
+      user,
+      inputs,
+      opts.maxItems,
+    );
   }
 
   async ping(): Promise<{ ok: boolean; detail?: string }> {
@@ -220,6 +240,7 @@ export class DirectLLMClient implements LLMClient {
   }
 
   private async synthesizeOpenAI(
+    system: string,
     user: string,
     inputs: readonly SynthesisInput[],
     maxItems: number,
@@ -231,7 +252,7 @@ export class DirectLLMClient implements LLMClient {
       body: JSON.stringify({
         model: this.settings.model,
         messages: [
-          { role: "system", content: SYNTHESIS_SYSTEM_PROMPT },
+          { role: "system", content: system },
           { role: "user", content: user },
         ],
         response_format: {
@@ -266,6 +287,7 @@ export class DirectLLMClient implements LLMClient {
   }
 
   private async synthesizeGroq(
+    system: string,
     user: string,
     inputs: readonly SynthesisInput[],
     maxItems: number,
@@ -277,7 +299,7 @@ export class DirectLLMClient implements LLMClient {
       body: JSON.stringify({
         model: this.settings.model,
         messages: [
-          { role: "system", content: synthesisJsonModeSystemPrompt() },
+          { role: "system", content: system },
           { role: "user", content: user },
         ],
         response_format: { type: "json_object" },
@@ -305,6 +327,7 @@ export class DirectLLMClient implements LLMClient {
   }
 
   private async synthesizeAnthropic(
+    system: string,
     user: string,
     inputs: readonly SynthesisInput[],
     maxItems: number,
@@ -316,7 +339,7 @@ export class DirectLLMClient implements LLMClient {
       body: JSON.stringify({
         model: this.settings.model,
         max_tokens: ANTHROPIC_SYNTHESIS_MAX_TOKENS,
-        system: SYNTHESIS_SYSTEM_PROMPT,
+        system,
         messages: [{ role: "user", content: user }],
         tools: [
           {

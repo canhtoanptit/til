@@ -3,8 +3,9 @@ import { SparklesIcon } from "lucide-react";
 import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { toast } from "sonner";
-import { ApiError, api, type DigestItemDTO } from "../api";
+import { ApiError, api, type DigestItemDTO, type DigestKind } from "../api";
 import { ConfirmDialog } from "../components/ConfirmDialog";
+import { DigestKindBadge } from "../components/DigestKindBadge";
 import { ErrorBanner, friendlyMessage } from "../components/ErrorBanner";
 import { Spinner } from "../components/Spinner";
 import { Badge } from "@/components/ui/badge";
@@ -38,19 +39,29 @@ export function DigestDetailPage() {
     },
   });
 
+  // "Run again" has to mean *this kind* again: without the kind, re-running a
+  // monthly report would quietly start a weekly digest instead.
+  const rerunKind: DigestKind = query.data?.kind ?? "weekly";
+  const isReport = rerunKind === "monthly-report";
+
   const rerun = useMutation({
-    mutationFn: () => api.runDigest(),
+    mutationFn: () => api.runDigest({ kind: rerunKind }),
     onSuccess: (data) => {
-      toast.success("Digest run started", {
-        description: "Gathering and ranking candidates — this takes a minute or two.",
+      toast.success(isReport ? "Report run started" : "Digest run started", {
+        description: isReport
+          ? "Reading back over the month — this takes a minute or two."
+          : "Gathering and ranking candidates — this takes a minute or two.",
       });
       void qc.invalidateQueries({ queryKey: ["digests"] });
       void navigate(`/digests/${encodeURIComponent(data.id)}`);
     },
     onError: (e) => {
-      toast.error("Could not start a digest run", {
-        description: friendlyMessage(e),
-      });
+      toast.error(
+        isReport
+          ? "Could not start a report run"
+          : "Could not start a digest run",
+        { description: friendlyMessage(e) },
+      );
     },
   });
 
@@ -104,7 +115,8 @@ export function DigestDetailPage() {
 
       <header className="space-y-2">
         <h1 className="text-2xl font-semibold">{digestHeading(digest)}</h1>
-        <div className="flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+          <DigestKindBadge kind={digest.kind} />
           <span>{formatRunDateTime(digest.runAt)}</span>
           <span aria-hidden="true">·</span>
           <span>last {digest.windowDays} days{range ? ` (${range})` : ""}</span>
@@ -124,7 +136,9 @@ export function DigestDetailPage() {
           role="alert"
           className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"
         >
-          <p className="font-medium">This digest run failed.</p>
+          <p className="font-medium">
+            {isReport ? "This report run failed." : "This digest run failed."}
+          </p>
           {digest.error && <p className="mt-1 italic">{digest.error}</p>}
           <Button
             type="button"
@@ -141,7 +155,13 @@ export function DigestDetailPage() {
 
       {digest.status === "pending" && (
         <Card role="status" className="gap-0 p-3">
-          <Spinner label="Gathering candidates and writing the digest — this page updates itself…" />
+          <Spinner
+            label={
+              digest.kind === "monthly-report"
+                ? "Reading back over the month and writing the report — this page updates itself…"
+                : "Gathering candidates and writing the digest — this page updates itself…"
+            }
+          />
         </Card>
       )}
 
@@ -159,7 +179,7 @@ export function DigestDetailPage() {
           <ol className="mt-3 space-y-3">
             {digest.items.map((item) => (
               <li key={`${item.rank}-${item.url}`}>
-                <DigestItem item={item} />
+                <DigestItem item={item} kind={digest.kind} />
               </li>
             ))}
           </ol>
@@ -168,7 +188,11 @@ export function DigestDetailPage() {
 
       {digest.status === "ready" && digest.items.length === 0 && (
         <Card className="gap-0 border-dashed bg-transparent p-6 text-center text-sm text-muted-foreground shadow-none">
-          <p>This run finished without finding anything worth including.</p>
+          <p>
+            {digest.kind === "monthly-report"
+              ? "This report finished without singling out any of the month's saves."
+              : "This run finished without finding anything worth including."}
+          </p>
         </Card>
       )}
 
@@ -201,9 +225,19 @@ export function DigestDetailPage() {
   );
 }
 
-function DigestItem({ item }: { item: DigestItemDTO }) {
-  const score = formatScore(item.score);
-  const matched = matchesYourReading(item.score, item.interestScore);
+function DigestItem({
+  item,
+  kind,
+}: {
+  item: DigestItemDTO;
+  kind: DigestKind;
+}) {
+  // A monthly report has no ranking, so its rows carry score 0 and no interest
+  // score. Showing "score 0.00" on every highlighted save would be noise that
+  // reads as a measurement.
+  const ranked = kind !== "monthly-report";
+  const score = ranked ? formatScore(item.score) : null;
+  const matched = ranked && matchesYourReading(item.score, item.interestScore);
   const interest =
     item.interestScore === null ? null : formatScore(item.interestScore);
   return (

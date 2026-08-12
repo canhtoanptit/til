@@ -6,8 +6,18 @@ import type {
   Feedback,
   Review,
 } from "@til/db";
-import { isReviewCardState, isReviewGrade } from "@til/core";
-import type { ReviewCardState, ReviewGrade } from "@til/core";
+import {
+  isDigestKind,
+  isReviewCardState,
+  isReviewGrade,
+  normalizeContentType,
+} from "@til/core";
+import type {
+  ContentType,
+  DigestKind,
+  ReviewCardState,
+  ReviewGrade,
+} from "@til/core";
 
 export type EntryStatus = "pending" | "ready" | "failed";
 
@@ -23,6 +33,14 @@ export interface EntryDTO {
   takeaway: string | null;
   question: string | null;
   tags: string[];
+  /** What kind of thing this points at (P25). Additive: every response that carried
+   * an entry before this existed now also says "article", which is what it was. */
+  contentType: ContentType;
+  /** Owner-set (P23). Additive: every response that carried an entry before this
+   * existed now also says "not favorited, not archived, no note". */
+  favorite: boolean;
+  archived: boolean;
+  note: string | null;
   status: EntryStatus;
   error: string | null;
   createdAt: number;
@@ -31,6 +49,13 @@ export interface EntryDTO {
 
 export interface EntryDetailDTO extends EntryDTO {
   contentMarkdown: string | null;
+}
+
+/** One row of `GET /api/tags`. `count` deliberately excludes archived entries —
+ * see `tagCountRows` in routes/tags.ts for why. */
+export interface TagCountDTO {
+  tag: string;
+  count: number;
 }
 
 export type FeedbackKind = "up" | "down";
@@ -107,6 +132,8 @@ export interface DigestSummaryDTO {
   id: string;
   runAt: number;
   windowDays: number;
+  /** 'weekly' | 'monthly-report'. Rows written before 0011 read as 'weekly'. */
+  kind: DigestKind;
   status: DigestStatus;
   title: string | null;
   intro: string | null;
@@ -158,6 +185,10 @@ export function toEntryDTO(row: Entry): EntryDTO {
     takeaway: row.takeaway ?? null,
     question: row.question ?? null,
     tags: parseTags(row.tags),
+    contentType: normalizeContentType(row.contentType),
+    favorite: row.favorite,
+    archived: row.archived,
+    note: row.note ?? null,
     status: normalizeStatus(row.status),
     error: row.error ?? null,
     createdAt: row.createdAt,
@@ -313,6 +344,9 @@ export function toDigestSummaryDTO(
     id: row.id,
     runAt: row.runAt,
     windowDays: row.windowDays,
+    // The column is `text`, so an unexpected value is possible in principle;
+    // 'weekly' is the safe reading, and it is what the column default says too.
+    kind: isDigestKind(row.kind) ? row.kind : "weekly",
     status: normalizeStatus(row.status),
     title: row.title ?? null,
     intro: row.intro ?? null,

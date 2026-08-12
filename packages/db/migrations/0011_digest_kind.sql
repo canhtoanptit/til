@@ -1,0 +1,17 @@
+-- What flavour of run a `digests` row is (P26): 'weekly' | 'monthly-report'.
+--
+-- 'weekly' is the RSS/HN/Lobsters/arXiv roundup the table was built for.
+-- 'monthly-report' is a retrospective over the owner's own saved entries for the
+-- past month — same row shape, same digest_items, entirely different input.
+--
+-- NOT NULL with a default rather than nullable, and the default is load-bearing:
+-- every row that already exists in the deployed database predates the report and
+-- is a weekly run, so the default is the correct historical answer rather than a
+-- placeholder. That also means readers never have to handle NULL, and the DTO's
+-- `kind` can be a closed union instead of an optional.
+--
+-- Additive and out of order on purpose: 0009 and 0010 were assigned to sibling
+-- phases landing alongside this one. Wrangler tracks applied migrations by
+-- filename, not by sequence, so an ALTER that only adds a defaulted column is
+-- safe to land behind a higher number (same reasoning as 0006).
+ALTER TABLE `digests` ADD `kind` text DEFAULT 'weekly' NOT NULL;

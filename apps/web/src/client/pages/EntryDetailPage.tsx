@@ -2,14 +2,22 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useId, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { toast } from "sonner";
-import { ChevronDownIcon } from "lucide-react";
-import { ApiError, api, type RelatedEntryDTO } from "../api";
+import { ArchiveIcon, ArchiveRestoreIcon, ChevronDownIcon } from "lucide-react";
+import { ApiError, api, type EntryDetailDTO, type RelatedEntryDTO } from "../api";
 import { ConfirmDialog } from "../components/ConfirmDialog";
+import {
+  ContentTypeBadge,
+  FavoriteButton,
+  TagLink,
+} from "../components/EntryCard";
 import { ErrorBanner, friendlyMessage } from "../components/ErrorBanner";
 import { Spinner } from "../components/Spinner";
+import { archiveVars, favoriteVars } from "../lib/entry-marks";
+import { useEntryPatch } from "../lib/use-entry-patch";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Collapsible,
   CollapsibleContent,
@@ -25,6 +33,75 @@ function formatDate(ms: number): string {
   } catch {
     return "";
   }
+}
+
+/**
+ * The owner's own words about an entry, next to the LLM's. Deliberately a plain
+ * textarea and an explicit save rather than an autosaving editor: a note is written
+ * in one sitting, and a debounce would mean guessing when a half-formed thought is
+ * worth a round-trip. Emptying the box and saving clears the note.
+ *
+ * The draft is local state seeded once on mount, so a background refetch of the
+ * entry cannot overwrite text mid-sentence.
+ */
+function NoteEditor({ entry }: { entry: EntryDetailDTO }) {
+  const noteId = useId();
+  const saved = entry.note ?? "";
+  const [draft, setDraft] = useState(saved);
+  const patch = useEntryPatch();
+  const dirty = draft !== saved;
+
+  return (
+    <section aria-label="Your note" className="border-t pt-4">
+      <label
+        htmlFor={noteId}
+        className="text-xs font-semibold uppercase tracking-wide text-muted-foreground"
+      >
+        Your note
+      </label>
+      <Textarea
+        id={noteId}
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        placeholder="What you want to remember about this, in your own words…"
+        className="mt-2 min-h-24"
+        disabled={patch.isPending}
+      />
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        <Button
+          type="button"
+          size="sm"
+          disabled={!dirty || patch.isPending}
+          onClick={() =>
+            patch.mutate({
+              id: entry.id,
+              patch: { note: draft },
+              success: draft.trim().length === 0 ? "Note cleared" : "Note saved",
+              failure: "Could not save that note",
+            })
+          }
+        >
+          {patch.isPending ? "Saving…" : "Save note"}
+        </Button>
+        {dirty && (
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            disabled={patch.isPending}
+            onClick={() => setDraft(saved)}
+          >
+            Discard changes
+          </Button>
+        )}
+        <p className="text-xs text-muted-foreground">
+          {saved.length === 0
+            ? "Notes stay out of search and the chat agent — they are yours alone."
+            : "Empty the box and save to remove the note."}
+        </p>
+      </div>
+    </section>
+  );
 }
 
 function RelatedRow({ item }: { item: RelatedEntryDTO }) {
@@ -114,6 +191,9 @@ export function EntryDetailPage() {
     },
   });
 
+  // Favorite, archive and note all go through the one PATCH mutation.
+  const patch = useEntryPatch();
+
   const remove = useMutation({
     mutationFn: () => api.deleteEntry(id),
     onSuccess: () => {
@@ -164,20 +244,29 @@ export function EntryDetailPage() {
       </div>
 
       <header className="space-y-2">
-        <h1 className="text-2xl font-semibold">
-          <a
-            href={entry.url}
-            target="_blank"
-            rel="noreferrer noopener"
-            className="hover:underline"
-          >
-            {title}
-          </a>
-        </h1>
-        <div className="flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
+        <div className="flex items-start justify-between gap-3">
+          <h1 className="text-2xl font-semibold">
+            <a
+              href={entry.url}
+              target="_blank"
+              rel="noreferrer noopener"
+              className="hover:underline"
+            >
+              {title}
+            </a>
+          </h1>
+          <FavoriteButton
+            entry={entry}
+            size="icon"
+            onToggle={(e) => patch.mutate(favoriteVars(e.id, !e.favorite))}
+            pending={patch.isPending}
+          />
+        </div>
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
           {entry.sourceDomain && <span>{entry.sourceDomain}</span>}
           {entry.sourceDomain && <span aria-hidden="true">·</span>}
           <span>{formatDate(entry.createdAt)}</span>
+          <ContentTypeBadge contentType={entry.contentType} />
           {entry.status === "pending" && (
             <>
               <span aria-hidden="true">·</span>
@@ -185,6 +274,12 @@ export function EntryDetailPage() {
             </>
           )}
         </div>
+        {entry.archived && (
+          <Badge variant="outline" className="gap-1">
+            <ArchiveIcon aria-hidden="true" />
+            Archived
+          </Badge>
+        )}
       </header>
 
       {entry.status === "failed" && (
@@ -248,13 +343,18 @@ export function EntryDetailPage() {
             <ul className="flex flex-wrap gap-1">
               {entry.tags.map((t) => (
                 <li key={t}>
-                  <Badge variant="secondary">{t}</Badge>
+                  <TagLink tag={t} />
                 </li>
               ))}
             </ul>
           )}
         </>
       )}
+
+      {/* Keyed on the id so navigating between entries re-seeds the draft from the
+          entry actually on screen, instead of carrying the previous one's text. */}
+      <NoteEditor key={entry.id} entry={entry} />
+
 
       {entry.contentMarkdown && (
         <Collapsible asChild>
@@ -321,6 +421,20 @@ export function EntryDetailPage() {
           title="Turn this entry into a flashcard — Review quizzes you on it at growing intervals so it sticks."
         >
           {enroll.isPending ? "Adding…" : "Add to review"}
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => patch.mutate(archiveVars(entry.id, !entry.archived))}
+          disabled={patch.isPending}
+          title={
+            entry.archived
+              ? "Put this back in your feed."
+              : "Hide this from your feed without deleting it. You can still find it under the Archived filter."
+          }
+        >
+          {entry.archived ? <ArchiveRestoreIcon /> : <ArchiveIcon />}
+          {entry.archived ? "Unarchive" : "Archive"}
         </Button>
         <Button
           type="button"

@@ -1,0 +1,27 @@
+-- Content types (P25): what kind of thing an entry points at —
+-- 'article' | 'pdf' | 'video'.
+--
+-- Purely ADD COLUMN, because this migration lands on a deployed database.
+-- `DEFAULT 'article' NOT NULL` is what makes it additive with no backfill: every
+-- entry saved before this column existed was a web article, and reads back as
+-- one. It is also why the app can keep INSERTing without naming the column.
+--
+-- No CHECK constraint, deliberately. SQLite cannot add one to an existing table
+-- with ALTER TABLE (it would need the 12-step table rebuild, which is not a thing
+-- to do to a live D1 database for a three-value enum), and a future kind — audio,
+-- a talk, a paper with its own pipeline — would then need that rebuild too. The
+-- vocabulary is enforced on the way in by `detectContentTypeFromUrl` and on the
+-- way out by `normalizeContentType`, which reads anything unrecognised as
+-- 'article' — the same shape as `status` and `feedback.kind`.
+--
+-- No index. Content type is a near-constant column (almost every row is
+-- 'article'), so an index on it is a page of pointers SQLite would ignore; the
+-- feed's `WHERE archived = 0 ORDER BY created_at DESC` is still served by
+-- `entries_created_at_idx` from 0000, and nothing filters by content type.
+--
+-- The entries_fts triggers from 0001 name their columns explicitly
+-- (title, summary, takeaway, tags, content_markdown) rather than using `*`, so
+-- this column is invisible to the index: an UPDATE that only touches it still
+-- fires `entries_au`, which deletes and re-inserts the same terms — a no-op
+-- re-index, asserted in packages/db/test/migrations.test.ts.
+ALTER TABLE `entries` ADD `content_type` text DEFAULT 'article' NOT NULL;

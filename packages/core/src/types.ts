@@ -15,13 +15,76 @@ export interface LLMSettings {
   cfAigToken?: string;
 }
 
+/**
+ * What flavour of run a digest is. 'weekly' is the roundup of external
+ * candidates; 'monthly-report' is a retrospective over the owner's own saved
+ * entries. Mirrored by `digests.kind` (migration 0011). Declared as a tuple so a
+ * zod enum and a JSON-schema enum can both be built from it — same shape as
+ * `CHAT_STATS_KINDS`.
+ */
+export const DIGEST_KINDS = ["weekly", "monthly-report"] as const;
+
+export type DigestKind = (typeof DIGEST_KINDS)[number];
+
+export function isDigestKind(value: unknown): value is DigestKind {
+  return (
+    typeof value === "string" &&
+    (DIGEST_KINDS as readonly string[]).includes(value)
+  );
+}
+
+/**
+ * One thing the model may select and write about. Both flavours of synthesis
+ * share this shape so there is one `synthesizeDigest` seam and one set of
+ * provider plumbing behind it; the fields that only one flavour can fill are
+ * optional and documented per-flavour.
+ */
 export interface SynthesisInput {
   canonicalUrl: string;
   title: string;
+  /**
+   * Weekly: the source adapters that surfaced this link. Monthly report: the one
+   * domain the owner saved it from — a saved entry has exactly one origin.
+   */
   sources: string[];
+  /** Weekly: when it was published. Monthly report: when the owner saved it. */
   publishedAt: number;
-  score: number;
+  /**
+   * The score the pool was ordered by. Absent on the monthly report, which has no
+   * ranking at all: the owner's saves are ordered by recency and choosing the
+   * notable ones is the model's whole job there. Absent is rendered as "n/a"
+   * rather than 0, so a missing score can never read as "scored zero".
+   */
+  score?: number;
+  /** Weekly: the candidate's snippet. Monthly report: the entry's takeaway. */
   snippet?: string;
+  /** Monthly report only: the tags the owner's entry carries. */
+  tags?: string[];
+}
+
+/**
+ * The month's aggregates, passed alongside the entries so the retrospective can
+ * open with real numbers instead of inferring them from the list it was shown
+ * (which is capped for length and would undercount).
+ */
+export interface ReportContext {
+  saved: number;
+  ready: number;
+  pending: number;
+  failed: number;
+  topDomains: { domain: string; count: number }[];
+  topTags: { tag: string; count: number }[];
+  /** Review cards graded inside the window; 0 when the owner reviewed nothing. */
+  reviewsGraded: number;
+}
+
+export interface SynthesisOptions {
+  windowDays: number;
+  maxItems: number;
+  /** Which prompt flavour to use. Omitted means "weekly", the original behaviour. */
+  kind?: DigestKind;
+  /** Required in practice for 'monthly-report'; ignored for 'weekly'. */
+  report?: ReportContext;
 }
 
 export interface DigestItemDraft {
@@ -43,16 +106,34 @@ export interface LLMClient {
   ): Promise<Digest>;
   synthesizeDigest(
     inputs: SynthesisInput[],
-    opts: { windowDays: number; maxItems: number },
+    opts: SynthesisOptions,
   ): Promise<DigestSynthesis>;
   ping(): Promise<{ ok: boolean; detail?: string }>;
 }
 
+export interface ExtractedDocument {
+  markdown: string;
+  title?: string;
+}
+
 export interface Extractor {
-  toMarkdown(
-    html: string,
+  toMarkdown(html: string, url: string): Promise<ExtractedDocument>;
+  /**
+   * Converts a binary document — today only PDF — to markdown.
+   *
+   * Optional on purpose (P25): it is a *capability*, not a requirement. Only the
+   * cloud stack's `WorkersAIExtractor` has one, because only `env.AI.toMarkdown`
+   * can read a PDF; `ReadabilityExtractor` runs inside the isolate with no PDF
+   * parser and no way to get one without a new runtime dependency. Ingest reads
+   * the absence of this method as "this stack cannot do PDFs" and fails the entry
+   * with that sentence, rather than branching on a stack-mode string it would then
+   * have to keep in sync with `resolveStack`.
+   */
+  documentToMarkdown?(
+    bytes: Uint8Array,
     url: string,
-  ): Promise<{ markdown: string; title?: string }>;
+    mimeType: string,
+  ): Promise<ExtractedDocument>;
 }
 
 export interface Candidate {

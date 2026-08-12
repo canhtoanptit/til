@@ -9,6 +9,8 @@ import { EntryDetailPage } from "./pages/EntryDetailPage";
 import { ChatListPage } from "./pages/ChatListPage";
 import { ChatPage } from "./pages/ChatPage";
 import { ReviewPage } from "./pages/ReviewPage";
+import { TagsPage } from "./pages/TagsPage";
+import { TagFeedPage } from "./pages/TagFeedPage";
 import { DigestListPage } from "./pages/DigestListPage";
 import { DigestDetailPage } from "./pages/DigestDetailPage";
 import { SettingsPage } from "./pages/SettingsPage";
@@ -37,6 +39,8 @@ export function App() {
       <Route element={<Shell />}>
         <Route path="/" element={<FeedPage />} />
         <Route path="/entries/:id" element={<EntryDetailPage />} />
+        <Route path="/tags" element={<TagsPage />} />
+        <Route path="/tags/:tag" element={<TagFeedPage />} />
         <Route path="/chat" element={<ChatListPage />} />
         <Route path="/chat/:id" element={<ChatPage />} />
         <Route path="/review" element={<ReviewPage />} />

@@ -6,7 +6,7 @@ import type { AppContextEnv } from "../deps.js";
 import { startDigestRun } from "../digest-run.js";
 import { toDigestDetailDTO, toDigestSummaryDTO } from "../dto.js";
 import { HttpError } from "../http-error.js";
-import { runDigestSchema } from "../schemas.js";
+import { runDigestSchema, type RunDigestBody } from "../schemas.js";
 
 const DEFAULT_LIMIT = 20;
 const MAX_LIMIT = 100;
@@ -61,6 +61,7 @@ export function createDigestsRouter() {
         id: digests.id,
         runAt: digests.runAt,
         windowDays: digests.windowDays,
+        kind: digests.kind,
         status: digests.status,
         title: digests.title,
         intro: digests.intro,
@@ -124,9 +125,7 @@ export function createDigestsRouter() {
 
 // WHY: `POST /api/digests/run` is meaningful with no body at all (cron defaults),
 // so an empty payload has to parse as `{}` instead of failing validation.
-async function readRunBody(
-  request: Request,
-): Promise<{ windowDays?: number; maxItems?: number }> {
+async function readRunBody(request: Request): Promise<RunDigestBody> {
   let raw = "";
   try {
     raw = await request.text();
@@ -154,7 +153,7 @@ async function readRunBody(
       throw new HttpError(
         422,
         "validation_error",
-        "Invalid request body: windowDays must be 1-30 and maxItems 1-25.",
+        "Invalid request body: windowDays must be 1-30, maxItems 1-25, and kind one of 'weekly' or 'monthly-report'.",
       );
     }
     throw err;

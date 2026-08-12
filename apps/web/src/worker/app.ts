@@ -6,11 +6,13 @@ import type { AppContextEnv, Deps } from "./deps.js";
 import { createChatRouter } from "./routes/chat.js";
 import { createDigestsRouter } from "./routes/digests.js";
 import { createEntriesRouter } from "./routes/entries.js";
+import { createExportRouter } from "./routes/export.js";
 import { createFeedbackRouter } from "./routes/feedback.js";
 import { createFeedsRouter } from "./routes/feeds.js";
 import { createReviewsRouter } from "./routes/reviews.js";
 import { createSearchRouter } from "./routes/search.js";
 import { createSettingsRouter } from "./routes/settings.js";
+import { createTagsRouter } from "./routes/tags.js";
 
 export function createApp(depsFor: (c: { env: unknown; executionCtx: unknown }) => Deps) {
   const app = new Hono<AppContextEnv>();
@@ -43,12 +45,14 @@ export function createApp(depsFor: (c: { env: unknown; executionCtx: unknown }) 
 
   app.route("/api/entries", createEntriesRouter());
   app.route("/api/search", createSearchRouter());
+  app.route("/api/tags", createTagsRouter());
   app.route("/api/settings", createSettingsRouter());
   app.route("/api/digests", createDigestsRouter());
   app.route("/api/feeds", createFeedsRouter());
   app.route("/api/reviews", createReviewsRouter());
   app.route("/api/feedback", createFeedbackRouter());
   app.route("/api/chat", createChatRouter());
+  app.route("/api/export", createExportRouter());
 
   app.onError((err, c) => {
     if (err instanceof HttpError) {

@@ -1,5 +1,6 @@
 import { Link } from "react-router";
 import type { DigestSummaryDTO } from "../api";
+import { DigestKindBadge } from "./DigestKindBadge";
 import { Spinner } from "./Spinner";
 import { digestHeading, formatItemCount, formatRunDate } from "./digest-format";
 import { Card } from "@/components/ui/card";
@@ -18,7 +19,8 @@ export function DigestCard({ digest }: { digest: DigestSummaryDTO }) {
           </Link>
           {digest.status === "pending" && <Spinner label="running" />}
         </div>
-        <div className="mt-1 flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
+        <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+          <DigestKindBadge kind={digest.kind} />
           <span>{formatRunDate(digest.runAt)}</span>
           <span aria-hidden="true">·</span>
           <span>{formatItemCount(digest.itemCount)}</span>

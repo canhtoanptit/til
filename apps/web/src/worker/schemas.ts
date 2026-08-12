@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { DIGEST_KINDS } from "@til/core";
 import {
   MAX_MAX_ITEMS,
   MAX_WINDOW_DAYS,
@@ -10,6 +11,34 @@ export const createEntrySchema = z.object({
   url: z.string().min(1),
 });
 
+/**
+ * The one guard against a note being used as blob storage. Generous next to
+ * MAX_FEEDBACK_COMMENT because a note is where the owner writes their own thinking
+ * about an article, not a one-line reaction.
+ */
+export const MAX_ENTRY_NOTE = 10_000;
+
+/**
+ * A partial update of the owner's marks on an entry. Every field is optional —
+ * only what is sent changes — but an entirely empty body is rejected rather than
+ * answered with a no-op, on the enrollReviewSchema precedent: a request that
+ * cannot mean anything is a client bug worth a 422.
+ *
+ * WHY `note` has no `min(1)`: "" is meaningful here and means "clear it", the
+ * same convention `cfAigToken` already uses above. The route maps it to NULL.
+ */
+export const updateEntrySchema = z
+  .object({
+    favorite: z.boolean().optional(),
+    archived: z.boolean().optional(),
+    note: z.string().max(MAX_ENTRY_NOTE).optional(),
+  })
+  .refine(
+    (v) =>
+      v.favorite !== undefined || v.archived !== undefined || v.note !== undefined,
+    { message: "Provide at least one of favorite, archived or note." },
+  );
+
 export const runDigestSchema = z.object({
   windowDays: z
     .number()
@@ -18,6 +47,11 @@ export const runDigestSchema = z.object({
     .max(MAX_WINDOW_DAYS)
     .optional(),
   maxItems: z.number().int().min(MIN_MAX_ITEMS).max(MAX_MAX_ITEMS).optional(),
+  // WHY strict rather than clamped-to-weekly: `kind` decides what the run reads
+  // and which prompt it uses, so silently correcting a typo would hand back a
+  // digest to someone who asked for a report. Omitted still means weekly, which is
+  // what every caller before P26 meant.
+  kind: z.enum(DIGEST_KINDS).optional(),
 });
 
 export const settingsSchema = z.object({
@@ -74,6 +108,7 @@ export const createFeedbackSchema = z.object({
 export type CreateFeedbackBody = z.infer<typeof createFeedbackSchema>;
 
 export type CreateEntryBody = z.infer<typeof createEntrySchema>;
+export type UpdateEntryBody = z.infer<typeof updateEntrySchema>;
 export type CreateFeedBody = z.infer<typeof createFeedSchema>;
 export type UpdateFeedBody = z.infer<typeof updateFeedSchema>;
 export type GradeReviewBody = z.infer<typeof gradeReviewSchema>;

@@ -47,8 +47,17 @@
     },
   ],
   "triggers": {
-    // M2: weekly "interesting things" digest, Monday 08:00 UTC.
-    "crons": ["0 8 * * 1"],
+    // Both schedules land in the same `scheduled` handler, which routes on
+    // `controller.cron` — the verbatim expression that fired. The strings are
+    // compared character-for-character against WEEKLY_CRON / MONTHLY_REPORT_CRON
+    // in src/worker/digest.ts, so edit these two places together, spacing included.
+    "crons": [
+      // M2: weekly "interesting things" digest, Monday 08:00 UTC.
+      "0 8 * * 1",
+      // P26: monthly reading report over your own saves, 1st at 09:00 UTC. An hour
+      // after the weekly slot so the two never contend when the 1st is a Monday.
+      "0 9 1 * *",
+    ],
   },
   "vars": {
     // ADR-0010: the deployed default. There is no Ollama at the edge, so a

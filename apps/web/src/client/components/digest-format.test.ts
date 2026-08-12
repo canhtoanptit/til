@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
+  digestHeading,
+  digestKindLabel,
   formatItemCount,
   formatScore,
   matchesYourReading,
   sourceLabel,
 } from "./digest-format";
+import type { DigestSummaryDTO } from "../api";
 
 describe("matchesYourReading", () => {
   it("marks an item when the interest term outweighed the base term", () => {
@@ -51,6 +54,56 @@ describe("sourceLabel", () => {
     expect(sourceLabel("rss:jvns.ca")).toBe("RSS · jvns.ca");
     expect(sourceLabel("rss:")).toBe("RSS");
     expect(sourceLabel("mystery")).toBe("mystery");
+  });
+
+  it("names the monthly report's own source", () => {
+    // REPORT_ITEM_SOURCE_NAME in the worker; a report item has no aggregator.
+    expect(sourceLabel("saved")).toBe("Saved");
+  });
+});
+
+describe("digestKindLabel", () => {
+  it("names both flavours", () => {
+    expect(digestKindLabel("weekly")).toBe("Weekly digest");
+    expect(digestKindLabel("monthly-report")).toBe("Monthly report");
+  });
+});
+
+describe("digestHeading", () => {
+  function summary(
+    overrides: Partial<DigestSummaryDTO> = {},
+  ): DigestSummaryDTO {
+    return {
+      id: "d1",
+      runAt: Date.UTC(2026, 6, 31),
+      windowDays: 7,
+      kind: "weekly",
+      status: "ready",
+      title: null,
+      intro: null,
+      itemCount: 0,
+      error: null,
+      ...overrides,
+    };
+  }
+
+  it("prefers the title the model wrote", () => {
+    expect(digestHeading(summary({ title: "  A month of databases  " }))).toBe(
+      "A month of databases",
+    );
+  });
+
+  it("falls back to the kind and the window, not a generic 'Digest'", () => {
+    expect(digestHeading(summary())).toContain("Weekly digest · ");
+    expect(
+      digestHeading(summary({ kind: "monthly-report", windowDays: 30 })),
+    ).toContain("Monthly report · ");
+  });
+
+  it("still names the kind when the window cannot be formatted", () => {
+    expect(
+      digestHeading(summary({ kind: "monthly-report", runAt: Number.NaN })),
+    ).toBe("Monthly report");
   });
 });
 

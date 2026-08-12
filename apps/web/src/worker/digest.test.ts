@@ -1,13 +1,25 @@
+import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
   BASE_SCORE_WEIGHT,
+  DEFAULT_WINDOW_DAYS,
   INTEREST_SCORE_WEIGHT,
   MAX_INTEREST_VECTORS,
+  MAX_WINDOW_DAYS,
+  MIN_WINDOW_DAYS,
+  MONTHLY_REPORT_CRON,
+  MONTHLY_REPORT_WINDOW_DAYS,
+  WEEKLY_CRON,
   blendRankedItems,
   blendScore,
   clampInterest,
+  clampWindowDays,
+  digestKindForCron,
   interestDominates,
   interestTextFor,
+  normalizeDigestKind,
   rankingScore,
   toSynthesisInputs,
   type RankedItem,
@@ -169,5 +181,63 @@ describe("toSynthesisInputs", () => {
     ]);
     expect(inputs[0]?.score).toBe(0.64);
     expect(inputs[1]?.score).toBe(0.9);
+  });
+});
+
+describe("cron routing (P26)", () => {
+  it("maps each configured cron expression to the run it should start", () => {
+    expect(digestKindForCron(WEEKLY_CRON)).toBe("weekly");
+    expect(digestKindForCron(MONTHLY_REPORT_CRON)).toBe("monthly-report");
+  });
+
+  it("falls back to the weekly digest for an expression nobody claimed", () => {
+    // A cron added to wrangler.jsonc without a matching constant here still does
+    // something useful rather than throwing inside the scheduled handler.
+    expect(digestKindForCron("*/5 * * * *")).toBe("weekly");
+    expect(digestKindForCron("")).toBe("weekly");
+  });
+
+  it("keeps the cron constants character-identical to wrangler.jsonc", () => {
+    // Cloudflare compares controller.cron verbatim, so a stray double space in
+    // either file would silently stop the monthly report from ever firing. This is
+    // the only place the two spellings are checked against each other.
+    const config = readFileSync(
+      resolve(dirname(fileURLToPath(import.meta.url)), "../../wrangler.jsonc"),
+      "utf8",
+    );
+    const crons = [
+      ...config.matchAll(/"((?:[-\d*/,]+ ){4}[-\d*/,]+)"/g),
+    ].map((match) => match[1]);
+    expect(crons).toEqual([WEEKLY_CRON, MONTHLY_REPORT_CRON]);
+  });
+});
+
+describe("normalizeDigestKind", () => {
+  it("accepts the two known kinds and nothing else", () => {
+    expect(normalizeDigestKind("weekly")).toBe("weekly");
+    expect(normalizeDigestKind("monthly-report")).toBe("monthly-report");
+  });
+
+  it("reads anything unrecognized — including a pre-P26 payload — as weekly", () => {
+    expect(normalizeDigestKind(undefined)).toBe("weekly");
+    expect(normalizeDigestKind(null)).toBe("weekly");
+    expect(normalizeDigestKind("monthly")).toBe("weekly");
+    expect(normalizeDigestKind(7)).toBe("weekly");
+  });
+});
+
+describe("clampWindowDays by kind", () => {
+  it("defaults to 7 days for a weekly run and 30 for a monthly report", () => {
+    expect(clampWindowDays(undefined)).toBe(DEFAULT_WINDOW_DAYS);
+    expect(clampWindowDays(undefined, "weekly")).toBe(DEFAULT_WINDOW_DAYS);
+    expect(clampWindowDays(undefined, "monthly-report")).toBe(
+      MONTHLY_REPORT_WINDOW_DAYS,
+    );
+  });
+
+  it("still clamps an explicit window the same way for both kinds", () => {
+    expect(clampWindowDays(3, "monthly-report")).toBe(3);
+    expect(clampWindowDays(999, "monthly-report")).toBe(MAX_WINDOW_DAYS);
+    expect(clampWindowDays(0, "monthly-report")).toBe(MIN_WINDOW_DAYS);
   });
 });
