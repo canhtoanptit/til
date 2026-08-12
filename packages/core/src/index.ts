@@ -6,6 +6,7 @@ export type {
   DigestSynthesis,
   Embedder,
   EvidenceCluster,
+  ExtractedDocument,
   Extractor,
   FetchCandidatesOptions,
   LLMClient,
@@ -36,6 +37,19 @@ export {
   UnsafeUrlError,
 } from "./errors.js";
 export { assertSafeUrl, gatewayBaseURL, normalizeUrl } from "./url.js";
+export {
+  CONTENT_TYPES,
+  DEFAULT_CONTENT_TYPE,
+  detectContentTypeFromUrl,
+  isContentType,
+  isPdfMediaType,
+  isYoutubeHost,
+  normalizeContentType,
+  refineContentType,
+  youtubeVideoId,
+  youtubeWatchUrl,
+} from "./content-type.js";
+export type { ContentType } from "./content-type.js";
 export { createLLMClient } from "./factory.js";
 export { DirectLLMClient } from "./direct-client.js";
 export { AISDKClient } from "./ai-sdk-client.js";

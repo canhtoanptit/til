@@ -2,7 +2,12 @@ import { Hono } from "hono";
 import { and, desc, eq, like, lt, or, sql, type SQL } from "drizzle-orm";
 import { zValidator } from "@hono/zod-validator";
 import { entries } from "@til/db";
-import { UnsafeUrlError, assertSafeUrl, normalizeUrl } from "@til/core";
+import {
+  UnsafeUrlError,
+  assertSafeUrl,
+  detectContentTypeFromUrl,
+  normalizeUrl,
+} from "@til/core";
 import type { AppContextEnv } from "../deps.js";
 import { HttpError } from "../http-error.js";
 import { createEntrySchema, updateEntrySchema } from "../schemas.js";
@@ -109,12 +114,17 @@ export function createEntriesRouter() {
 
       const id = crypto.randomUUID();
       const now = deps.now();
+      const contentType = detectContentTypeFromUrl(normalized.url);
       await deps.db.insert(entries).values({
         id,
         url: normalized.url,
         canonicalUrl: normalized.canonicalUrl,
         sourceDomain: normalized.sourceDomain,
         tags: "[]",
+        // The URL-phase guess, stored now so a pending video or PDF is badged the
+        // moment it appears in the feed. Ingest overwrites it with what the fetch
+        // turned out to be — see `refineContentType`.
+        contentType,
         status: "pending",
         createdAt: now,
         updatedAt: now,
@@ -122,7 +132,9 @@ export function createEntriesRouter() {
 
       deps.waitUntil(ingestEntry(deps, id));
 
-      return c.json({ id, status: "pending" as const }, 201);
+      // `contentType` rides along so the client's optimistic pending card carries
+      // the badge immediately, without a second round-trip. Additive.
+      return c.json({ id, status: "pending" as const, contentType }, 201);
     },
   );
 

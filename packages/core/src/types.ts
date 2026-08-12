@@ -111,11 +111,29 @@ export interface LLMClient {
   ping(): Promise<{ ok: boolean; detail?: string }>;
 }
 
+export interface ExtractedDocument {
+  markdown: string;
+  title?: string;
+}
+
 export interface Extractor {
-  toMarkdown(
-    html: string,
+  toMarkdown(html: string, url: string): Promise<ExtractedDocument>;
+  /**
+   * Converts a binary document — today only PDF — to markdown.
+   *
+   * Optional on purpose (P25): it is a *capability*, not a requirement. Only the
+   * cloud stack's `WorkersAIExtractor` has one, because only `env.AI.toMarkdown`
+   * can read a PDF; `ReadabilityExtractor` runs inside the isolate with no PDF
+   * parser and no way to get one without a new runtime dependency. Ingest reads
+   * the absence of this method as "this stack cannot do PDFs" and fails the entry
+   * with that sentence, rather than branching on a stack-mode string it would then
+   * have to keep in sync with `resolveStack`.
+   */
+  documentToMarkdown?(
+    bytes: Uint8Array,
     url: string,
-  ): Promise<{ markdown: string; title?: string }>;
+    mimeType: string,
+  ): Promise<ExtractedDocument>;
 }
 
 export interface Candidate {

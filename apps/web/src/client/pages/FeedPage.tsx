@@ -93,6 +93,7 @@ export function FeedPage() {
         takeaway: null,
         question: null,
         tags: [],
+        contentType: data.contentType,
         favorite: false,
         archived: false,
         note: null,

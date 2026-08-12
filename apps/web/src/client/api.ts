@@ -8,6 +8,14 @@ const TOKEN_KEY = "til:token";
 
 export type EntryStatus = "pending" | "ready" | "failed";
 
+/**
+ * What kind of thing an entry points at. Restated here rather than imported from
+ * `@til/core` for the same reason the DTOs are — the browser bundle stays free of
+ * worker and core code, and the server normalizes anything it does not recognise
+ * to "article" before it reaches this type.
+ */
+export type ContentType = "article" | "pdf" | "video";
+
 export interface EntryDTO {
   id: string;
   url: string;
@@ -18,6 +26,9 @@ export interface EntryDTO {
   takeaway: string | null;
   question: string | null;
   tags: string[];
+  /** "article" for everything saved before content types existed, and for anything
+   * the server does not recognise. */
+  contentType: ContentType;
   /** The owner's own marks, as opposed to everything above, which ingest wrote. */
   favorite: boolean;
   archived: boolean;
@@ -92,6 +103,9 @@ export interface RelatedEntriesResponse {
 export interface CreateEntryResponse {
   id: string;
   status: EntryStatus;
+  /** The URL-phase guess (P25), so the optimistic pending card can already carry
+   * the right badge. Ingest may still refine it. Additive. */
+  contentType: ContentType;
 }
 
 export type DigestStatus = "pending" | "ready" | "failed";

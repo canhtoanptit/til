@@ -851,6 +851,166 @@ describe("library columns (0009)", () => {
   });
 });
 
+describe("content type column (0010)", () => {
+  let db: Database.Database;
+
+  beforeEach(() => {
+    db = new Database(":memory:");
+    db.pragma("foreign_keys = ON");
+    applyMigrations(db);
+  });
+
+  it("adds content_type to entries as a NOT NULL text defaulting to 'article'", () => {
+    const cols = db.prepare(`PRAGMA table_info(entries)`).all() as {
+      name: string;
+      type: string;
+      notnull: number;
+      dflt_value: string | null;
+    }[];
+    const col = new Map(cols.map((c) => [c.name, c])).get("content_type");
+    expect(col).toMatchObject({ type: "TEXT", notnull: 1, dflt_value: "'article'" });
+  });
+
+  it("leaves every pre-0010 column in place", () => {
+    // ADD COLUMN only: it lands on a deployed database, so nothing already there
+    // may change shape — including the three columns 0009 added.
+    const cols = (
+      db.prepare(`PRAGMA table_info(entries)`).all() as { name: string }[]
+    ).map((c) => c.name);
+    expect(cols).toEqual(
+      expect.arrayContaining([
+        "id",
+        "url",
+        "canonical_url",
+        "title",
+        "source_domain",
+        "content_markdown",
+        "summary",
+        "takeaway",
+        "question",
+        "tags",
+        "favorite",
+        "archived",
+        "note",
+        "status",
+        "error",
+        "created_at",
+        "updated_at",
+      ]),
+    );
+  });
+
+  it("reads an already-saved row as an article, with no backfill statement", () => {
+    // insertEntry names only the pre-0009 columns, exactly like the INSERT the app
+    // shipped before either migration — a legacy row is an article.
+    insertEntry(db, { id: "e-legacy-ct", canonical_url: "https://example.com/legacy-ct" });
+    const row = db
+      .prepare(`SELECT content_type FROM entries WHERE id = ?`)
+      .get("e-legacy-ct") as { content_type: string };
+    expect(row).toEqual({ content_type: "article" });
+  });
+
+  it("rejects a NULL content_type", () => {
+    const now = Date.now();
+    expect(() =>
+      db
+        .prepare(
+          `INSERT INTO entries (id, url, canonical_url, tags, status, content_type, created_at, updated_at)
+           VALUES (@id, 'https://example.com/n', 'https://example.com/n', '[]', 'ready', NULL, @now, @now)`,
+        )
+        .run({ id: "e-null-ct", now }),
+    ).toThrow(/NOT NULL|constraint/i);
+  });
+
+  it("has no CHECK constraint — the vocabulary is enforced in code, not SQL", () => {
+    // Asserted so the reason is written down: SQLite cannot ALTER TABLE ADD a
+    // CHECK, so an unknown value has to be survivable. `normalizeContentType`
+    // reads anything it does not know as 'article'.
+    const now = Date.now();
+    expect(() =>
+      db
+        .prepare(
+          `INSERT INTO entries (id, url, canonical_url, tags, status, content_type, created_at, updated_at)
+           VALUES (@id, 'https://example.com/odd', 'https://example.com/odd', '[]', 'ready', 'audio', @now, @now)`,
+        )
+        .run({ id: "e-odd-ct", now }),
+    ).not.toThrow();
+  });
+
+  it("keeps entries_fts intact when only content_type is updated", () => {
+    // The 0001 triggers fire on any UPDATE, but they name their columns, so this
+    // is a delete-then-reinsert of the same terms — a no-op re-index. It matters
+    // because ingest overwrites content_type on every run.
+    insertEntry(db, {
+      id: "e-ct-fts",
+      canonical_url: "https://example.com/ct-fts",
+      takeaway: "postgres replication tuning",
+    });
+    const before = db
+      .prepare(`SELECT count(*) AS n FROM entries_fts`)
+      .get() as { n: number };
+
+    db.prepare(
+      `UPDATE entries SET content_type = 'pdf', updated_at = ? WHERE id = ?`,
+    ).run(Date.now(), "e-ct-fts");
+
+    expect(db.prepare(`SELECT count(*) AS n FROM entries_fts`).get()).toEqual(
+      before,
+    );
+    const hit = db
+      .prepare(
+        `SELECT e.id FROM entries_fts f JOIN entries e ON e.rowid = f.rowid WHERE entries_fts MATCH ?`,
+      )
+      .get("replication") as { id: string } | undefined;
+    expect(hit?.id).toBe("e-ct-fts");
+
+    // The kind of a document is not searchable text — 0001 lists the five columns
+    // it mirrors and `content_type` is not among them.
+    expect(
+      db.prepare(`SELECT rowid FROM entries_fts WHERE entries_fts MATCH ?`).all("pdf"),
+    ).toHaveLength(0);
+  });
+
+  it("round-trips the drizzle table definition", () => {
+    const orm = drizzle(db, { schema: { entries } });
+    const now = Date.now();
+    orm
+      .insert(entries)
+      .values({
+        id: "e-orm-ct",
+        url: "https://orm.example.com/v",
+        canonicalUrl: "https://orm.example.com/v",
+        title: "A talk",
+        tags: '["talk"]',
+        contentType: "video",
+        status: "ready",
+        createdAt: now,
+        updatedAt: now,
+      })
+      .run();
+    expect(
+      orm.select().from(entries).where(eq(entries.id, "e-orm-ct")).all().at(0),
+    ).toMatchObject({ id: "e-orm-ct", contentType: "video" });
+
+    // Omitting it in the ORM path gets the column default, like a legacy row.
+    orm
+      .insert(entries)
+      .values({
+        id: "e-orm-default",
+        url: "https://orm.example.com/a",
+        canonicalUrl: "https://orm.example.com/a",
+        tags: "[]",
+        status: "ready",
+        createdAt: now,
+        updatedAt: now,
+      })
+      .run();
+    expect(
+      orm.select().from(entries).where(eq(entries.id, "e-orm-default")).all().at(0),
+    ).toMatchObject({ contentType: "article" });
+  });
+});
+
 describe("feedback schema", () => {
   let db: Database.Database;
 

@@ -15,6 +15,7 @@ import type {
 } from "./deps.js";
 import type {
   Candidate,
+  ContentType,
   DigestKind,
   Embedder,
   Extractor,
@@ -465,6 +466,8 @@ export async function insertEntry(
     takeaway?: string;
     question?: string;
     sourceDomain?: string;
+    /** P25. Defaults to what migration 0010 gives an already-saved row. */
+    contentType?: ContentType;
     /** P23 marks. Default to what migration 0009 gives an already-saved row. */
     favorite?: boolean;
     archived?: boolean;
@@ -483,6 +486,7 @@ export async function insertEntry(
     question: overrides.question ?? "Q",
     sourceDomain: overrides.sourceDomain ?? "example.com",
     tags: JSON.stringify(overrides.tags ?? []),
+    contentType: overrides.contentType ?? "article",
     favorite: overrides.favorite ?? false,
     archived: overrides.archived ?? false,
     note: overrides.note ?? null,

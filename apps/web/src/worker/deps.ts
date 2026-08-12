@@ -9,9 +9,10 @@ import type {
 } from "@til/core";
 import type { ChatMessageDTO } from "./chat-dto.js";
 import type { AdaptersFactory, DigestWorkflowBinding } from "./digest.js";
+import type { FetchedPage } from "./fetch-page.js";
 
 export interface FetchPageFn {
-  (url: string, fetchImpl?: typeof fetch): Promise<{ html: string; finalUrl: string }>;
+  (url: string, fetchImpl?: typeof fetch): Promise<FetchedPage>;
 }
 
 /**

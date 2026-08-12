@@ -5,7 +5,11 @@ import { toast } from "sonner";
 import { ArchiveIcon, ArchiveRestoreIcon, ChevronDownIcon } from "lucide-react";
 import { ApiError, api, type EntryDetailDTO, type RelatedEntryDTO } from "../api";
 import { ConfirmDialog } from "../components/ConfirmDialog";
-import { FavoriteButton, TagLink } from "../components/EntryCard";
+import {
+  ContentTypeBadge,
+  FavoriteButton,
+  TagLink,
+} from "../components/EntryCard";
 import { ErrorBanner, friendlyMessage } from "../components/ErrorBanner";
 import { Spinner } from "../components/Spinner";
 import { archiveVars, favoriteVars } from "../lib/entry-marks";
@@ -258,10 +262,11 @@ export function EntryDetailPage() {
             pending={patch.isPending}
           />
         </div>
-        <div className="flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
           {entry.sourceDomain && <span>{entry.sourceDomain}</span>}
           {entry.sourceDomain && <span aria-hidden="true">·</span>}
           <span>{formatDate(entry.createdAt)}</span>
+          <ContentTypeBadge contentType={entry.contentType} />
           {entry.status === "pending" && (
             <>
               <span aria-hidden="true">·</span>

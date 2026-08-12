@@ -22,6 +22,18 @@ export const entries = sqliteTable(
     question: text("question"),
     tags: text("tags").notNull().default("[]"),
     /**
+     * What kind of thing the entry points at (P25) — 'article' | 'pdf' | 'video',
+     * typed as `ContentType` at the DTO seam rather than here, because the column
+     * carries no CHECK constraint (see migration 0010) and so cannot promise the
+     * vocabulary. 'article' is the default, which is what every row written before
+     * this column existed means, and what any unrecognised value is read as.
+     *
+     * Written twice per entry on purpose: `POST /api/entries` stores the URL-phase
+     * guess so the UI can badge a pending video immediately, and ingest overwrites
+     * it with what the fetch actually turned out to be.
+     */
+    contentType: text("content_type").notNull().default("article"),
+    /**
      * The owner's own marks on the entry (P23) — everything above this line was
      * written by the ingest pipeline. Both flags are stored as the integer SQLite
      * has (0/1) and read as booleans, the `feeds.enabled` precedent, so a route

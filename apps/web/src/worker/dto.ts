@@ -6,8 +6,18 @@ import type {
   Feedback,
   Review,
 } from "@til/db";
-import { isDigestKind, isReviewCardState, isReviewGrade } from "@til/core";
-import type { DigestKind, ReviewCardState, ReviewGrade } from "@til/core";
+import {
+  isDigestKind,
+  isReviewCardState,
+  isReviewGrade,
+  normalizeContentType,
+} from "@til/core";
+import type {
+  ContentType,
+  DigestKind,
+  ReviewCardState,
+  ReviewGrade,
+} from "@til/core";
 
 export type EntryStatus = "pending" | "ready" | "failed";
 
@@ -23,6 +33,9 @@ export interface EntryDTO {
   takeaway: string | null;
   question: string | null;
   tags: string[];
+  /** What kind of thing this points at (P25). Additive: every response that carried
+   * an entry before this existed now also says "article", which is what it was. */
+  contentType: ContentType;
   /** Owner-set (P23). Additive: every response that carried an entry before this
    * existed now also says "not favorited, not archived, no note". */
   favorite: boolean;
@@ -172,6 +185,7 @@ export function toEntryDTO(row: Entry): EntryDTO {
     takeaway: row.takeaway ?? null,
     question: row.question ?? null,
     tags: parseTags(row.tags),
+    contentType: normalizeContentType(row.contentType),
     favorite: row.favorite,
     archived: row.archived,
     note: row.note ?? null,

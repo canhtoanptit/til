@@ -1,6 +1,7 @@
 import { Link } from "react-router";
-import { StarIcon } from "lucide-react";
-import type { EntryDTO } from "../api";
+import { FileTextIcon, StarIcon, VideoIcon } from "lucide-react";
+import type { ContentType, EntryDTO } from "../api";
+import { contentTypeBadge } from "../lib/content-type";
 import { Spinner } from "./Spinner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -54,10 +55,11 @@ export function EntryCard({
             />
           )}
         </div>
-        <div className="mt-1 flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
+        <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
           {entry.sourceDomain && <span>{entry.sourceDomain}</span>}
           {entry.sourceDomain && <span aria-hidden="true">·</span>}
           <span>{formatDate(entry.createdAt)}</span>
+          <ContentTypeBadge contentType={entry.contentType} />
         </div>
         {entry.status === "ready" && entry.takeaway && (
           <p className="mt-3 line-clamp-3 text-sm text-muted-foreground">
@@ -101,6 +103,30 @@ export function EntryCard({
         )}
       </article>
     </Card>
+  );
+}
+
+/**
+ * Marks the entries that are not web pages (P25). Renders nothing for an article,
+ * which is the default and the majority — the point of the badge is that it is
+ * unusual. `variant="outline"` deliberately: it is built from the `border`/
+ * `foreground` tokens, so it reads the same subtle way in both themes without a
+ * colour of its own, and never competes with a tag pill.
+ *
+ * Shared by the card and the detail page so the two cannot drift.
+ */
+export function ContentTypeBadge({ contentType }: { contentType: ContentType }) {
+  const badge = contentTypeBadge(contentType);
+  if (!badge) return null;
+  const Icon = contentType === "video" ? VideoIcon : FileTextIcon;
+  return (
+    <>
+      <span aria-hidden="true">·</span>
+      <Badge variant="outline" title={badge.hint} className="font-normal">
+        <Icon aria-hidden="true" />
+        {badge.label}
+      </Badge>
+    </>
   );
 }
 
