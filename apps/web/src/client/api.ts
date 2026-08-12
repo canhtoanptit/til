@@ -193,6 +193,28 @@ export interface ReviewEnrollResponse {
   skipped: number;
 }
 
+export type FeedbackKind = "up" | "down";
+
+/** Every reference is optional: a vote may be about a chat turn, an entry, or
+ * neither. `kind` is the only thing the server requires. */
+export interface FeedbackInput {
+  kind: FeedbackKind;
+  conversationId?: string;
+  messageId?: string;
+  entryId?: string;
+  comment?: string;
+}
+
+export interface FeedbackDTO {
+  id: string;
+  conversationId: string | null;
+  messageId: string | null;
+  entryId: string | null;
+  kind: FeedbackKind;
+  comment: string | null;
+  createdAt: number;
+}
+
 export type LLMProvider = "openai" | "anthropic" | "groq";
 
 export interface SettingsDTO {
@@ -466,6 +488,9 @@ export const api = {
     input: { entryId: string } | { all: true },
   ): Promise<ReviewEnrollResponse> {
     return request("/api/reviews/enroll", { method: "POST", body: input });
+  },
+  submitFeedback(input: FeedbackInput): Promise<FeedbackDTO> {
+    return request("/api/feedback", { method: "POST", body: input });
   },
   listChats(
     params: { limit?: number; signal?: AbortSignal } = {},

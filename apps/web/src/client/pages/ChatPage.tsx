@@ -12,9 +12,19 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAgent } from "agents/react";
 import { useAgentChat } from "@cloudflare/ai-chat/react";
 import { toast } from "sonner";
-import { api, getToken } from "../api";
+import { api, getToken, type FeedbackKind } from "../api";
 import { ChatErrorBoundary } from "../components/ChatErrorBoundary";
 import { ChatMessageView } from "../components/ChatMessageView";
+import {
+  NO_VOTES,
+  canVoteOnTurn,
+  pendingVote,
+  recordedVote,
+  voteActionFor,
+  voteFailed,
+  voteStarted,
+  voteSucceeded,
+} from "../components/chat-feedback";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { ErrorBanner, friendlyMessage } from "../components/ErrorBanner";
 import { Spinner } from "../components/Spinner";
@@ -164,6 +174,7 @@ function Conversation({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const seeded = useRef(false);
+  const [votes, setVotes] = useState(NO_VOTES);
 
   // WHY swallow instead of reject: `useAgent` resolves this with React `use()`,
   // so a rejection would throw during render. `request` has already cleared the
@@ -237,6 +248,32 @@ function Conversation({
     textareaRef.current?.focus();
   }, [seedDraft, messages.length]);
 
+  // WHY the thumb only lights up in onSuccess: a pressed thumb is a claim that
+  // the signal is stored, so an optimistic one would lie whenever the POST fails.
+  // The toast fires on failure only — a toast per vote would be noise.
+  const vote = useMutation({
+    mutationFn: (v: { messageId: string; kind: FeedbackKind }) =>
+      api.submitFeedback({
+        conversationId,
+        messageId: v.messageId,
+        kind: v.kind,
+      }),
+    onSuccess: (_dto, v) =>
+      setVotes((state) => voteSucceeded(state, v.messageId, v.kind)),
+    onError: (err, v) => {
+      setVotes((state) => voteFailed(state, v.messageId));
+      toast.error("Could not record that feedback", {
+        description: friendlyMessage(err),
+      });
+    },
+  });
+
+  function castVote(messageId: string, kind: FeedbackKind) {
+    if (voteActionFor(votes, messageId, kind) !== "submit") return;
+    setVotes((state) => voteStarted(state, messageId, kind));
+    vote.mutate({ messageId, kind });
+  }
+
   function send() {
     const text = draft.trim();
     if (text.length === 0 || busy) return;
@@ -300,9 +337,28 @@ function Conversation({
         {messages.length === 0 && !busy ? (
           <Primer disabled={blocked} onPick={fillDraft} />
         ) : (
-          messages.map((message) => (
-            <ChatMessageView key={message.id} message={message} />
-          ))
+          messages.map((message, index) => {
+            const votable = canVoteOnTurn({
+              role: message.role,
+              isLast: index === messages.length - 1,
+              busy,
+            });
+            return (
+              <ChatMessageView
+                key={message.id}
+                message={message}
+                feedback={
+                  votable
+                    ? {
+                        recorded: recordedVote(votes, message.id),
+                        pending: pendingVote(votes, message.id),
+                        onVote: (kind) => castVote(message.id, kind),
+                      }
+                    : undefined
+                }
+              />
+            );
+          })
         )}
         {status === "submitted" && !isStreaming && (
           <Spinner label="Reading your entries…" />

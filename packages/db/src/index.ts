@@ -5,6 +5,7 @@ import * as schema from "./schema.js";
 export {
   chats,
   entries,
+  feedback,
   feeds,
   settings,
   digests,
@@ -18,6 +19,8 @@ export type {
   Entry,
   Feed,
   NewFeed,
+  Feedback,
+  NewFeedback,
   NewEntry,
   Settings,
   NewSettings,

@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import Database from "better-sqlite3";
 import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/better-sqlite3";
-import { digests, digestItems, feeds } from "../src/schema.js";
+import { digests, digestItems, feedback, feeds } from "../src/schema.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const migrationsDir = join(__dirname, "..", "migrations");
@@ -609,5 +609,172 @@ describe("feeds schema", () => {
     const byName = new Map(indexes.map((i) => [i.name, i.tbl_name]));
     expect(byName.get("feeds_url_uq")).toBe("feeds");
     expect(byName.get("feeds_enabled_idx")).toBe("feeds");
+  });
+});
+
+describe("feedback schema", () => {
+  let db: Database.Database;
+
+  beforeEach(() => {
+    db = new Database(":memory:");
+    db.pragma("foreign_keys = ON");
+    applyMigrations(db);
+  });
+
+  function insertFeedback(
+    overrides: Partial<{
+      id: string;
+      conversation_id: string | null;
+      message_id: string | null;
+      entry_id: string | null;
+      kind: string;
+      comment: string | null;
+      created_at: number;
+    }> = {},
+  ): string {
+    const row = {
+      id: overrides.id ?? crypto.randomUUID(),
+      conversation_id: overrides.conversation_id ?? null,
+      message_id: overrides.message_id ?? null,
+      entry_id: overrides.entry_id ?? null,
+      kind: overrides.kind ?? "up",
+      comment: overrides.comment ?? null,
+      created_at: overrides.created_at ?? Date.now(),
+    };
+    db.prepare(
+      `INSERT INTO feedback (id, conversation_id, message_id, entry_id, kind, comment, created_at)
+       VALUES (@id, @conversation_id, @message_id, @entry_id, @kind, @comment, @created_at)`,
+    ).run(row);
+    return row.id;
+  }
+
+  it("creates the table and its created_at index", () => {
+    const tables = (
+      db
+        .prepare("SELECT name FROM sqlite_master WHERE type='table'")
+        .all() as { name: string }[]
+    ).map((t) => t.name);
+    expect(tables).toContain("feedback");
+
+    const indexes = db
+      .prepare("SELECT name, tbl_name FROM sqlite_master WHERE type='index'")
+      .all() as { name: string; tbl_name: string }[];
+    expect(new Map(indexes.map((i) => [i.name, i.tbl_name])).get("feedback_created_at_idx")).toBe(
+      "feedback",
+    );
+  });
+
+  it("requires only id, kind and created_at", () => {
+    db.prepare(
+      `INSERT INTO feedback (id, kind, created_at) VALUES ('f-min', 'down', 1700)`,
+    ).run();
+    const row = db
+      .prepare(`SELECT * FROM feedback WHERE id = ?`)
+      .get("f-min") as Record<string, unknown>;
+    expect(row).toEqual({
+      id: "f-min",
+      conversation_id: null,
+      message_id: null,
+      entry_id: null,
+      kind: "down",
+      comment: null,
+      created_at: 1700,
+    });
+  });
+
+  it("rejects a row with no kind", () => {
+    expect(() =>
+      db
+        .prepare(`INSERT INTO feedback (id, created_at) VALUES ('f-nokind', 1700)`)
+        .run(),
+    ).toThrow(/NOT NULL|constraint/i);
+  });
+
+  it("keeps a vote after the entry it was about is deleted", () => {
+    // The no-foreign-key decision. A cascade here would erase exactly the
+    // history this table exists to accumulate, and a restricting FK would make
+    // DELETE /api/entries/:id fail once any feedback existed.
+    insertEntry(db, { id: "e-voted", canonical_url: "https://example.com/voted" });
+    insertFeedback({ id: "f-entry", entry_id: "e-voted", kind: "down" });
+
+    expect(() =>
+      db.prepare(`DELETE FROM entries WHERE id = ?`).run("e-voted"),
+    ).not.toThrow();
+
+    const row = db
+      .prepare(`SELECT entry_id FROM feedback WHERE id = ?`)
+      .get("f-entry") as { entry_id: string | null };
+    // Still pointing at the deleted id: the subject of the signal is preserved.
+    expect(row.entry_id).toBe("e-voted");
+  });
+
+  it("accepts an entry_id that never existed (chat/DO ids are unresolvable too)", () => {
+    expect(() => insertFeedback({ entry_id: "no-such-entry" })).not.toThrow();
+    expect(() =>
+      insertFeedback({ conversation_id: "conv-x", message_id: "msg-x" }),
+    ).not.toThrow();
+  });
+
+  it("stores repeat votes on one message as separate rows, newest-first by created_at", () => {
+    insertFeedback({ id: "f-1", message_id: "m", kind: "up", created_at: 1_000 });
+    insertFeedback({ id: "f-2", message_id: "m", kind: "down", created_at: 2_000 });
+
+    const rows = db
+      .prepare(
+        `SELECT id, kind FROM feedback WHERE message_id = ? ORDER BY created_at DESC`,
+      )
+      .all("m") as { id: string; kind: string }[];
+    expect(rows).toEqual([
+      { id: "f-2", kind: "down" },
+      { id: "f-1", kind: "up" },
+    ]);
+  });
+
+  it("round-trips the drizzle table definition against the migrated schema", () => {
+    const orm = drizzle(db, { schema: { feedback } });
+    orm
+      .insert(feedback)
+      .values({
+        id: "f-orm",
+        conversationId: "conv-orm",
+        messageId: "msg-orm",
+        kind: "up",
+        comment: "Exactly the answer I wanted.",
+        createdAt: 1_700_000_000_000,
+      })
+      .run();
+
+    const row = orm
+      .select()
+      .from(feedback)
+      .where(eq(feedback.id, "f-orm"))
+      .all()
+      .at(0);
+    expect(row).toEqual({
+      id: "f-orm",
+      conversationId: "conv-orm",
+      messageId: "msg-orm",
+      entryId: null,
+      kind: "up",
+      comment: "Exactly the answer I wanted.",
+      createdAt: 1_700_000_000_000,
+    });
+  });
+
+  it("leaves the entries index untouched — feedback text is never searchable", () => {
+    insertEntry(db, {
+      id: "e-fts-feedback",
+      canonical_url: "https://example.com/fts-feedback",
+      takeaway: "vitest snapshot hygiene",
+    });
+    insertFeedback({ comment: "kubernetes clustering guide" });
+
+    const leaked = db
+      .prepare(`SELECT rowid FROM entries_fts WHERE entries_fts MATCH ?`)
+      .all("kubernetes");
+    expect(leaked).toHaveLength(0);
+    expect(
+      db.prepare(`SELECT count(*) AS n FROM entries_fts`).get(),
+    ).toMatchObject({ n: 1 });
   });
 });

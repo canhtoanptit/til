@@ -1,4 +1,11 @@
-import type { DigestItem, DigestRun, Entry, Feed, Review } from "@til/db";
+import type {
+  DigestItem,
+  DigestRun,
+  Entry,
+  Feed,
+  Feedback,
+  Review,
+} from "@til/db";
 import { isReviewCardState, isReviewGrade } from "@til/core";
 import type { ReviewCardState, ReviewGrade } from "@til/core";
 
@@ -24,6 +31,38 @@ export interface EntryDTO {
 
 export interface EntryDetailDTO extends EntryDTO {
   contentMarkdown: string | null;
+}
+
+export type FeedbackKind = "up" | "down";
+
+/** One row of the append-only feedback log, exactly as it was stored. */
+export interface FeedbackDTO {
+  id: string;
+  conversationId: string | null;
+  messageId: string | null;
+  entryId: string | null;
+  kind: FeedbackKind;
+  comment: string | null;
+  createdAt: number;
+}
+
+/** The column has no CHECK constraint, so a value that is neither 'up' nor
+ * 'down' can only come from a hand-written row; read it as the safer 'down'
+ * rather than inventing a positive signal. */
+export function normalizeFeedbackKind(raw: string): FeedbackKind {
+  return raw === "up" ? "up" : "down";
+}
+
+export function toFeedbackDTO(row: Feedback): FeedbackDTO {
+  return {
+    id: row.id,
+    conversationId: row.conversationId ?? null,
+    messageId: row.messageId ?? null,
+    entryId: row.entryId ?? null,
+    kind: normalizeFeedbackKind(row.kind),
+    comment: row.comment ?? null,
+    createdAt: row.createdAt,
+  };
 }
 
 export interface RelatedEntryDTO {

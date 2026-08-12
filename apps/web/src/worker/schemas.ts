@@ -56,6 +56,23 @@ export const enrollReviewSchema = z
     message: "Provide exactly one of entryId or all: true.",
   });
 
+// WHY so permissive: this is an append-only signal log, so the only thing worth
+// rejecting is a body that would make a row meaningless. `kind` is the one
+// required field; every reference is optional because a vote may be about a chat
+// turn, an entry, or neither. The comment cap is the single guard against the
+// log being used as blob storage — it is not a validation of content.
+export const MAX_FEEDBACK_COMMENT = 2000;
+
+export const createFeedbackSchema = z.object({
+  kind: z.enum(["up", "down"]),
+  conversationId: z.string().min(1).optional(),
+  messageId: z.string().min(1).optional(),
+  entryId: z.string().min(1).optional(),
+  comment: z.string().min(1).max(MAX_FEEDBACK_COMMENT).optional(),
+});
+
+export type CreateFeedbackBody = z.infer<typeof createFeedbackSchema>;
+
 export type CreateEntryBody = z.infer<typeof createEntrySchema>;
 export type CreateFeedBody = z.infer<typeof createFeedSchema>;
 export type UpdateFeedBody = z.infer<typeof updateFeedSchema>;
