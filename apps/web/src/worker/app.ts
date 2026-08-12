@@ -6,6 +6,7 @@ import type { AppContextEnv, Deps } from "./deps.js";
 import { createChatRouter } from "./routes/chat.js";
 import { createDigestsRouter } from "./routes/digests.js";
 import { createEntriesRouter } from "./routes/entries.js";
+import { createExportRouter } from "./routes/export.js";
 import { createFeedbackRouter } from "./routes/feedback.js";
 import { createFeedsRouter } from "./routes/feeds.js";
 import { createReviewsRouter } from "./routes/reviews.js";
@@ -51,6 +52,7 @@ export function createApp(depsFor: (c: { env: unknown; executionCtx: unknown }) 
   app.route("/api/reviews", createReviewsRouter());
   app.route("/api/feedback", createFeedbackRouter());
   app.route("/api/chat", createChatRouter());
+  app.route("/api/export", createExportRouter());
 
   app.onError((err, c) => {
     if (err instanceof HttpError) {

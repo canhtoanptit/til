@@ -1,3 +1,9 @@
+import {
+  fallbackExportFilename,
+  filenameFromDisposition,
+  type ExportFormat,
+} from "./export-file";
+
 const TOKEN_KEY = "til:token";
 
 export type EntryStatus = "pending" | "ready" | "failed";
@@ -432,6 +438,57 @@ async function request<T>(path: string, opts: RequestOpts = {}): Promise<T> {
   return (await res.json()) as T;
 }
 
+export interface DownloadedFile {
+  blob: Blob;
+  /** The server's `Content-Disposition` name, or a locally dated fallback. */
+  filename: string;
+}
+
+/**
+ * A file download that goes through the same auth and 401 handling as every other
+ * call. Deliberately NOT `request`: that helper ends in `res.json()`, and this body
+ * is an attachment — sometimes markdown, always something to hand to the browser's
+ * downloader rather than to parse.
+ *
+ * The whole body is read into a Blob here. That is the price of authenticating with
+ * a header instead of putting the app token in a URL (see `saveBlob`), and it is
+ * paid on the side that can afford it: the worker still streams, so its memory
+ * ceiling does not move with the size of the library.
+ */
+async function download(
+  path: string,
+  opts: { fallbackFilename: string; signal?: AbortSignal },
+): Promise<DownloadedFile> {
+  const url = new URL(BASE + path, window.location.origin);
+  const headers: Record<string, string> = {};
+  const token = getToken();
+  if (token) headers.Authorization = `Bearer ${token}`;
+
+  let res: Response;
+  try {
+    res = await fetch(url.toString(), { headers, signal: opts.signal });
+  } catch (e) {
+    throw new ApiError(
+      "network_error",
+      e instanceof Error ? e.message : "network error",
+      0,
+    );
+  }
+  if (res.status === 401) {
+    clearToken();
+    throw new ApiError("unauthorized", "unauthorized", 401);
+  }
+  if (!res.ok) {
+    throw await toApiError(res);
+  }
+  return {
+    blob: await res.blob(),
+    filename:
+      filenameFromDisposition(res.headers.get("content-disposition")) ??
+      opts.fallbackFilename,
+  };
+}
+
 export const api = {
   health(): Promise<{ ok: boolean }> {
     return request("/api/health", { skipAuth: true });
@@ -577,5 +634,16 @@ export const api = {
   },
   testSettings(): Promise<TestConnectionResult> {
     return request("/api/settings/test", { method: "POST" });
+  },
+  exportBackup(
+    format: ExportFormat,
+    signal?: AbortSignal,
+  ): Promise<DownloadedFile> {
+    const path =
+      format === "markdown" ? "/api/export?format=markdown" : "/api/export";
+    return download(path, {
+      fallbackFilename: fallbackExportFilename(format, Date.now()),
+      signal,
+    });
   },
 };
