@@ -5,15 +5,22 @@ import * as schema from "./schema.js";
 export {
   chats,
   entries,
+  feedback,
+  feeds,
   settings,
   digests,
   digestItems,
   entryVectors,
+  reviews,
 } from "./schema.js";
 export type {
   Chat,
   NewChat,
   Entry,
+  Feed,
+  NewFeed,
+  Feedback,
+  NewFeedback,
   NewEntry,
   Settings,
   NewSettings,
@@ -23,6 +30,8 @@ export type {
   NewDigestItem,
   EntryVector,
   NewEntryVector,
+  Review,
+  NewReview,
 } from "./schema.js";
 
 export function createDb(d1: D1Database) {

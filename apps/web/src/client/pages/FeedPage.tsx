@@ -5,8 +5,8 @@ import {
   useQueryClient,
   type InfiniteData,
 } from "@tanstack/react-query";
-import { useEffect, useMemo, useState, type FormEvent } from "react";
-import { useNavigate } from "react-router";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useNavigate, useSearchParams } from "react-router";
 import { toast } from "sonner";
 import {
   ApiError,
@@ -17,6 +17,7 @@ import {
 } from "../api";
 import { EntryCard, EntryCardSkeleton } from "../components/EntryCard";
 import { ErrorBanner, friendlyMessage } from "../components/ErrorBanner";
+import { readAddParam } from "../lib/bookmarklet";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -24,6 +25,9 @@ import { Input } from "@/components/ui/input";
 export function FeedPage() {
   const navigate = useNavigate();
   const qc = useQueryClient();
+  const [searchParams, setSearchParams] = useSearchParams();
+  // The `?add=` value already captured this mount, so a re-render cannot double-post.
+  const consumedAdd = useRef<string | null>(null);
   const [url, setUrl] = useState("");
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
@@ -51,7 +55,10 @@ export function FeedPage() {
 
   const createMutation = useMutation({
     mutationFn: (u: string) => api.createEntry(u),
-    onSuccess: (data) => {
+    // WHY `variables` and not the `url` state: the bookmarklet path submits a url
+    // straight from `?add=`, so the state may not have been committed yet — and
+    // reading it here would put the wrong link on the optimistic card.
+    onSuccess: (data, submitted) => {
       setUrl("");
       setAddError(null);
       toast.success("Link saved", {
@@ -61,10 +68,10 @@ export function FeedPage() {
       const now = Date.now();
       const optimistic: EntryDTO = {
         id: data.id,
-        url: url.trim(),
-        canonicalUrl: url.trim(),
+        url: submitted,
+        canonicalUrl: submitted,
         title: null,
-        sourceDomain: safeHost(url.trim()),
+        sourceDomain: safeHost(submitted),
         summary: null,
         takeaway: null,
         question: null,
@@ -117,6 +124,33 @@ export function FeedPage() {
       toast.error("Reingest failed", { description: friendlyMessage(e) });
     },
   });
+
+  // The bookmarklet lands here as `/?add={url}` (C16). The token gate already
+  // fronts the app, so arriving with the param is enough to capture the link.
+  useEffect(() => {
+    const add = readAddParam(searchParams.toString());
+    if (add === null) return;
+    if (consumedAdd.current === add.url) return;
+    consumedAdd.current = add.url;
+
+    // Strip the param before the request settles, so a reload — or the back
+    // button — cannot re-ingest the same link.
+    const next = new URLSearchParams(searchParams);
+    next.delete("add");
+    void setSearchParams(next, { replace: true });
+
+    setUrl(add.url);
+    if (!add.autoSubmit) {
+      toast.info("Check this link before saving", {
+        description: "It does not look like an http(s) URL.",
+      });
+      return;
+    }
+    setAddError(null);
+    createMutation.mutate(add.url);
+    // Intentionally keyed on searchParams alone: `createMutation` is a fresh
+    // object every render, and the ref above is what makes this fire once.
+  }, [searchParams]);
 
   function onAddSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();

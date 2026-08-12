@@ -6,9 +6,10 @@ import { UnsafeUrlError, assertSafeUrl, normalizeUrl } from "@til/core";
 import type { AppContextEnv } from "../deps.js";
 import { HttpError } from "../http-error.js";
 import { createEntrySchema } from "../schemas.js";
-import { toEntryDTO, toEntryDetailDTO } from "../dto.js";
+import { toEntryDTO, toEntryDetailDTO, toRelatedEntryDTO } from "../dto.js";
 import { ingestEntry } from "../ingest.js";
 import { reembedEntries } from "../indexing.js";
+import { relatedEntryRows } from "../retrieval.js";
 
 const STALE_PENDING_MS = 10 * 60 * 1000;
 const DEFAULT_LIMIT = 20;
@@ -167,6 +168,31 @@ export function createEntriesRouter() {
       throw new HttpError(404, "not_found", "Entry not found.");
     }
     return c.json(toEntryDetailDTO(row));
+  });
+
+  router.get("/:id/related", async (c) => {
+    const deps = c.get("deps");
+    const id = c.req.param("id");
+    const rows = await deps.db
+      .select({ id: entries.id })
+      .from(entries)
+      .where(eq(entries.id, id))
+      .limit(1);
+    if (!rows[0]) {
+      throw new HttpError(404, "not_found", "Entry not found.");
+    }
+    const url = new URL(c.req.url);
+    const limitRaw = url.searchParams.get("limit");
+    const related = await relatedEntryRows(deps, {
+      id,
+      ...(limitRaw === null ? {} : { limit: Number(limitRaw) }),
+    });
+    return c.json({
+      available: related.available,
+      items: related.items.map(({ row, score }) =>
+        toRelatedEntryDTO(row, score),
+      ),
+    });
   });
 
   router.delete("/:id", async (c) => {

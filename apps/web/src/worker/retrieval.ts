@@ -21,6 +21,8 @@ import { parseTags } from "./dto.js";
 export const CANDIDATE_POOL_MULTIPLIER = HYBRID_DEFAULTS.poolMultiplier;
 export const MAX_STATS_ROWS = 52;
 export const MAX_TOP_ROWS = 25;
+export const RELATED_DEFAULT_LIMIT = 5;
+export const RELATED_MAX_LIMIT = 20;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -70,10 +72,77 @@ export interface ScoredEntry {
   score: number;
 }
 
+/**
+ * `available: false` is "this entry has no neighbours to compute" — no vector
+ * store configured, or the entry itself is unindexed — as opposed to
+ * `available: true` with an empty `items`, which means the vector exists and the
+ * corpus simply holds nothing else. Both render as nothing; the flag is what
+ * lets a caller tell "not indexed" from "nothing similar" without a second call.
+ */
+export interface RelatedResult {
+  available: boolean;
+  items: ScoredEntry[];
+}
+
 export function clampTopK(raw: number | undefined): number {
   if (raw === undefined || !Number.isFinite(raw))
     return CHAT_SEARCH_DEFAULT_TOP_K;
   return Math.min(CHAT_SEARCH_MAX_TOP_K, Math.max(1, Math.trunc(raw)));
+}
+
+export function clampRelatedLimit(raw: number | undefined): number {
+  if (raw === undefined || !Number.isFinite(raw)) return RELATED_DEFAULT_LIMIT;
+  return Math.min(RELATED_MAX_LIMIT, Math.max(1, Math.trunc(raw)));
+}
+
+/**
+ * Nearest neighbours of one entry, using the vector already stored for it — so
+ * this costs no embedding call and works even when the embedder is offline.
+ *
+ * Never throws: a Vectorize hiccup reports `available: false` rather than
+ * failing the detail page, matching how the semantic search leg degrades.
+ */
+export async function relatedEntryRows(
+  deps: Deps,
+  opts: { id: string; limit?: number },
+): Promise<RelatedResult> {
+  const limit = clampRelatedLimit(opts.limit);
+  const { vectorStore } = deps;
+  if (!vectorStore) return { available: false, items: [] };
+
+  let matches;
+  try {
+    const values = await vectorStore.getVector(opts.id);
+    if (values === null) return { available: false, items: [] };
+    // +1: the entry is its own nearest neighbour and gets dropped below.
+    matches = await vectorStore.query(values, { topK: limit + 1 });
+  } catch (err) {
+    console.warn(
+      `[related ${opts.id}] vector lookup failed (non-fatal):`,
+      err instanceof Error ? err.message : String(err),
+    );
+    return { available: false, items: [] };
+  }
+
+  const neighbours = matches.filter((match) => match.id !== opts.id);
+  const ids = neighbours.map((match) => match.id);
+  if (ids.length === 0) return { available: true, items: [] };
+
+  const rows = await deps.db
+    .select()
+    .from(entries)
+    .where(inArray(entries.id, ids));
+  const byId = new Map(rows.map((row) => [row.id, row]));
+
+  const items: ScoredEntry[] = [];
+  for (const match of neighbours) {
+    if (items.length >= limit) break;
+    // A match with no row is a vector orphaned in Vectorize, which has no FKs.
+    const row = byId.get(match.id);
+    if (row === undefined) continue;
+    items.push({ row, score: match.score });
+  }
+  return { available: true, items };
 }
 
 /**

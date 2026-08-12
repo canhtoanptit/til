@@ -8,6 +8,7 @@ import { FeedPage } from "./pages/FeedPage";
 import { EntryDetailPage } from "./pages/EntryDetailPage";
 import { ChatListPage } from "./pages/ChatListPage";
 import { ChatPage } from "./pages/ChatPage";
+import { ReviewPage } from "./pages/ReviewPage";
 import { DigestListPage } from "./pages/DigestListPage";
 import { DigestDetailPage } from "./pages/DigestDetailPage";
 import { SettingsPage } from "./pages/SettingsPage";
@@ -38,6 +39,7 @@ export function App() {
         <Route path="/entries/:id" element={<EntryDetailPage />} />
         <Route path="/chat" element={<ChatListPage />} />
         <Route path="/chat/:id" element={<ChatPage />} />
+        <Route path="/review" element={<ReviewPage />} />
         <Route path="/digests" element={<DigestListPage />} />
         <Route path="/digests/:id" element={<DigestDetailPage />} />
         <Route path="/settings" element={<SettingsPage />} />

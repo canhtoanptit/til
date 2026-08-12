@@ -31,6 +31,26 @@ export interface SearchResults {
   items: EntryDTO[];
 }
 
+export interface RelatedEntryDTO {
+  id: string;
+  title: string | null;
+  sourceDomain: string | null;
+  takeaway: string | null;
+  score: number;
+}
+
+/**
+ * `available: false` means there is nothing to compute related entries from —
+ * no vector index, or this entry was never embedded — as opposed to
+ * `available: true` with an empty `items`, which means it simply has no
+ * neighbours yet. The UI hides the section for both; the flag is what tells the
+ * two apart without asking again.
+ */
+export interface RelatedEntriesResponse {
+  available: boolean;
+  items: RelatedEntryDTO[];
+}
+
 export interface CreateEntryResponse {
   id: string;
   status: EntryStatus;
@@ -50,7 +70,13 @@ export interface DigestItemDTO {
   url: string;
   sourceName: string;
   sourceDomain: string;
+  /** The base topical score: popularity, recency and cross-source corroboration. */
   score: number;
+  /**
+   * Similarity to the owner's recent saved reading, 0..1, or null when the run was
+   * not personalized (no embedder, nothing indexed yet, or an embedder failure).
+   */
+  interestScore: number | null;
   why: string | null;
   evidence: DigestEvidenceDTO[];
 }
@@ -81,6 +107,19 @@ export interface RunDigestInput {
 
 export interface RunDigestResponse {
   id: string;
+}
+
+export interface FeedDTO {
+  id: string;
+  url: string;
+  title: string | null;
+  enabled: boolean;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface FeedListResponse {
+  items: FeedDTO[];
 }
 
 export interface ChatToolCallDTO {
@@ -115,6 +154,71 @@ export interface ChatMessagesResponse {
 export interface ChatTicketDTO {
   ticket: string;
   expiresAt: number;
+}
+
+export type ReviewCardState = "new" | "learning" | "review";
+
+/** 1 Again · 2 Hard · 3 Good · 4 Easy. */
+export type ReviewGrade = 1 | 2 | 3 | 4;
+
+/**
+ * The question side of a card. The answer is deliberately absent — the review page
+ * fetches the entry itself on reveal, so an un-revealed card holds no spoiler.
+ */
+export interface ReviewQueueItemDTO {
+  entryId: string;
+  title: string | null;
+  question: string | null;
+  url: string;
+  sourceDomain: string | null;
+  state: ReviewCardState;
+  dueAt: number | null;
+  intervalDays: number | null;
+  ease: number;
+  lapses: number;
+}
+
+export interface ReviewQueueResponse {
+  items: ReviewQueueItemDTO[];
+  dueCount: number;
+}
+
+export interface ReviewScheduleDTO {
+  entryId: string;
+  state: ReviewCardState;
+  dueAt: number | null;
+  intervalDays: number | null;
+  ease: number;
+  lapses: number;
+  lastGrade: ReviewGrade | null;
+  reviewedAt: number | null;
+}
+
+export interface ReviewEnrollResponse {
+  enrolled: number;
+  skipped: number;
+}
+
+export type FeedbackKind = "up" | "down";
+
+/** Every reference is optional: a vote may be about a chat turn, an entry, or
+ * neither. `kind` is the only thing the server requires. */
+export interface FeedbackInput {
+  kind: FeedbackKind;
+  conversationId?: string;
+  messageId?: string;
+  entryId?: string;
+  comment?: string;
+}
+
+export interface FeedbackDTO {
+  id: string;
+  conversationId: string | null;
+  messageId: string | null;
+  entryId: string | null;
+  kind: FeedbackKind;
+  comment: string | null;
+  createdAt: number;
 }
 
 export type LLMProvider = "openai" | "anthropic" | "groq";
@@ -316,6 +420,15 @@ export const api = {
   getEntry(id: string, signal?: AbortSignal): Promise<EntryDetailDTO> {
     return request(`/api/entries/${encodeURIComponent(id)}`, { signal });
   },
+  getRelatedEntries(
+    id: string,
+    params: { limit?: number; signal?: AbortSignal } = {},
+  ): Promise<RelatedEntriesResponse> {
+    return request(`/api/entries/${encodeURIComponent(id)}/related`, {
+      query: { limit: params.limit ?? 5 },
+      signal: params.signal,
+    });
+  },
   createEntry(url: string): Promise<CreateEntryResponse> {
     return request("/api/entries", { method: "POST", body: { url } });
   },
@@ -347,6 +460,43 @@ export const api = {
   },
   deleteDigest(id: string): Promise<void> {
     return request(`/api/digests/${encodeURIComponent(id)}`, { method: "DELETE" });
+  },
+  listFeeds(signal?: AbortSignal): Promise<FeedListResponse> {
+    return request("/api/feeds", { signal });
+  },
+  createFeed(url: string): Promise<FeedDTO> {
+    return request("/api/feeds", { method: "POST", body: { url } });
+  },
+  setFeedEnabled(id: string, enabled: boolean): Promise<FeedDTO> {
+    return request(`/api/feeds/${encodeURIComponent(id)}`, {
+      method: "PUT",
+      body: { enabled },
+    });
+  },
+  deleteFeed(id: string): Promise<void> {
+    return request(`/api/feeds/${encodeURIComponent(id)}`, { method: "DELETE" });
+  },
+  reviewQueue(
+    params: { limit?: number; signal?: AbortSignal } = {},
+  ): Promise<ReviewQueueResponse> {
+    return request("/api/reviews/queue", {
+      query: { limit: params.limit ?? 10 },
+      signal: params.signal,
+    });
+  },
+  gradeReview(entryId: string, grade: ReviewGrade): Promise<ReviewScheduleDTO> {
+    return request(`/api/reviews/${encodeURIComponent(entryId)}`, {
+      method: "POST",
+      body: { grade },
+    });
+  },
+  enrollReview(
+    input: { entryId: string } | { all: true },
+  ): Promise<ReviewEnrollResponse> {
+    return request("/api/reviews/enroll", { method: "POST", body: input });
+  },
+  submitFeedback(input: FeedbackInput): Promise<FeedbackDTO> {
+    return request("/api/feedback", { method: "POST", body: input });
   },
   listChats(
     params: { limit?: number; signal?: AbortSignal } = {},

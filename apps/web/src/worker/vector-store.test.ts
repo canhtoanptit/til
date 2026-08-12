@@ -134,6 +134,50 @@ describe("D1VectorStore", () => {
     expect(rows.map((r) => r.entryId)).toEqual(["b"]);
   });
 
+  it("getVector round-trips the stored vector for one id", async () => {
+    const stored = unit([1, 2, 3, 4]);
+    await store.upsert([record("a", [1, 2, 3, 4]), record("b", [0, 1, 0, 0])]);
+    const values = await store.getVector("a");
+    expect(values).toHaveLength(DIMS);
+    values?.forEach((value, i) => expect(value).toBeCloseTo(stored[i] ?? 0, 10));
+  });
+
+  it("getVector returns null for an id with no vector, and for the empty id", async () => {
+    await store.upsert([record("a", [1, 0, 0, 0])]);
+    await expect(store.getVector("b")).resolves.toBeNull();
+    await expect(store.getVector("nope")).resolves.toBeNull();
+    await expect(store.getVector("")).resolves.toBeNull();
+  });
+
+  it("getVector refuses an off-dimension row rather than returning it", async () => {
+    // WHY it must be null: the only use for the result is VectorStore.query,
+    // which throws on a vector of the wrong width.
+    await db.insert(entryVectors).values({
+      entryId: "a",
+      embedModel: "nomic-embed-text",
+      dims: 3,
+      values: JSON.stringify([1, 0, 0]),
+      createdAt: 1,
+    });
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    await expect(store.getVector("a")).resolves.toBeNull();
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining("3 dimensions, index expects 4"),
+    );
+    warn.mockRestore();
+  });
+
+  it("getVector returns null when the stored JSON is not a numeric vector", async () => {
+    await db.insert(entryVectors).values({
+      entryId: "a",
+      embedModel: "stub-embed",
+      dims: DIMS,
+      values: "not json",
+      createdAt: 1,
+    });
+    await expect(store.getVector("a")).resolves.toBeNull();
+  });
+
   it("returns nothing for an empty index or a non-positive topK", async () => {
     await expect(store.query(unit([1, 0, 0, 0]), { topK: 3 })).resolves.toEqual(
       [],
@@ -146,14 +190,21 @@ describe("D1VectorStore", () => {
 });
 
 describe("VectorizeStore", () => {
-  function stubIndex() {
+  // Shaped after @cloudflare/workers-types 5.20260801.1: getByIds resolves to
+  // VectorizeVector[] holding only the ids that exist, and `values` is typed
+  // `VectorFloatArray | number[]` — so the store must accept a typed array.
+  function stubIndex(
+    stored: { id: string; values: number[] | Float32Array }[] = [],
+  ) {
     const upserts: { id: string; values: number[]; metadata?: unknown }[] = [];
     const queries: { values: number[]; opts?: unknown }[] = [];
     const deletes: string[][] = [];
+    const gets: string[][] = [];
     return {
       upserts,
       queries,
       deletes,
+      gets,
       index: {
         upsert: async (vectors: typeof upserts) => {
           upserts.push(...vectors);
@@ -167,6 +218,10 @@ describe("VectorizeStore", () => {
               { id: "b", score: 0.42 },
             ],
           };
+        },
+        getByIds: async (ids: string[]) => {
+          gets.push(ids);
+          return stored.filter((vector) => ids.includes(vector.id));
         },
         deleteByIds: async (ids: string[]) => {
           deletes.push(ids);
@@ -228,6 +283,7 @@ describe("VectorizeStore", () => {
       {
         upsert: async () => ({}),
         query: async () => ({}),
+        getByIds: async () => [],
         deleteByIds: async () => ({}),
       },
       DIMS,
@@ -235,6 +291,64 @@ describe("VectorizeStore", () => {
     await expect(store.query(unit([1, 0, 0, 0]), { topK: 3 })).resolves.toEqual(
       [],
     );
+  });
+
+  it("getVector fetches one id through getByIds", async () => {
+    const stub = stubIndex([{ id: "a", values: [1, 0, 0, 0] }]);
+    const store = new VectorizeStore(stub.index, DIMS);
+    await expect(store.getVector("a")).resolves.toEqual([1, 0, 0, 0]);
+    expect(stub.gets).toEqual([["a"]]);
+  });
+
+  it("getVector converts the typed array the runtime may return", async () => {
+    const stub = stubIndex([
+      { id: "a", values: new Float32Array([0, 1, 0, 0]) },
+    ]);
+    const store = new VectorizeStore(stub.index, DIMS);
+    const values = await store.getVector("a");
+    expect(Array.isArray(values)).toBe(true);
+    expect(values).toEqual([0, 1, 0, 0]);
+  });
+
+  it("getVector matches on id rather than position", async () => {
+    // A miss is an omitted element, not a null hole, so `stored[0]` would be the
+    // wrong vector whenever the index returns anything at all.
+    const stub = stubIndex([
+      { id: "a", values: [1, 0, 0, 0] },
+      { id: "b", values: [0, 0, 1, 0] },
+    ]);
+    const store = new VectorizeStore(stub.index, DIMS);
+    await expect(store.getVector("b")).resolves.toEqual([0, 0, 1, 0]);
+  });
+
+  it("getVector returns null for a missing id, an empty id and absent values", async () => {
+    const stub = stubIndex([{ id: "a", values: [1, 0, 0, 0] }]);
+    const store = new VectorizeStore(stub.index, DIMS);
+    await expect(store.getVector("zz")).resolves.toBeNull();
+    await expect(store.getVector("")).resolves.toBeNull();
+    expect(stub.gets).toEqual([["zz"]]);
+
+    const valueless = new VectorizeStore(
+      {
+        upsert: async () => ({}),
+        query: async () => ({ matches: [] }),
+        getByIds: async () => [{ id: "a" }],
+        deleteByIds: async () => ({}),
+      },
+      DIMS,
+    );
+    await expect(valueless.getVector("a")).resolves.toBeNull();
+  });
+
+  it("getVector refuses an off-dimension vector", async () => {
+    const stub = stubIndex([{ id: "a", values: [1, 0, 0] }]);
+    const store = new VectorizeStore(stub.index, DIMS);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    await expect(store.getVector("a")).resolves.toBeNull();
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining("3 dimensions, index expects 4"),
+    );
+    warn.mockRestore();
   });
 });
 
@@ -245,11 +359,22 @@ describe("isVectorizeIndexLike", () => {
     expect(isVectorizeIndexLike({ upsert: () => {} })).toBe(false);
   });
 
+  it("rejects a binding without getByIds — getVector needs it", () => {
+    expect(
+      isVectorizeIndexLike({
+        upsert: () => {},
+        query: () => {},
+        deleteByIds: () => {},
+      }),
+    ).toBe(false);
+  });
+
   it("accepts a full binding", () => {
     expect(
       isVectorizeIndexLike({
         upsert: () => {},
         query: () => {},
+        getByIds: () => {},
         deleteByIds: () => {},
       }),
     ).toBe(true);

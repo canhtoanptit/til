@@ -20,6 +20,7 @@ const CLOUD_BINDINGS = {
   VECTORIZE: {
     upsert: async () => {},
     query: async () => ({ matches: [] }),
+    getByIds: async () => [],
     deleteByIds: async () => {},
   },
 };

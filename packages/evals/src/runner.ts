@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import Database from "better-sqlite3";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
-import { inArray } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import * as schema from "@til/db";
 import { entries, entryVectors } from "@til/db";
 import { cosineSimilarity, embeddingTextFor } from "@til/core";
@@ -225,6 +225,19 @@ export class SqliteVectorStore implements VectorStore {
     }
     scored.sort((a, b) => b.score - a.score || (a.id < b.id ? -1 : 1));
     return scored.slice(0, opts.topK);
+  }
+
+  async getVector(id: string): Promise<number[] | null> {
+    const rows = this.db
+      .select({ dims: entryVectors.dims, values: entryVectors.values })
+      .from(entryVectors)
+      .where(eq(entryVectors.entryId, id))
+      .limit(1)
+      .all();
+    const row = rows[0];
+    if (!row || row.dims !== this.dimensions) return null;
+    const values = JSON.parse(row.values) as number[];
+    return values.length === this.dimensions ? values : null;
   }
 
   async deleteByIds(ids: string[]): Promise<void> {

@@ -246,6 +246,7 @@ describe("DELETE /api/entries/:id", () => {
       vectorStore: {
         upsert: async () => {},
         query: async () => [],
+        getVector: async () => null,
         deleteByIds: async (ids) => {
           calls.push(ids);
         },

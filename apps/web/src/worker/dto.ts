@@ -1,4 +1,13 @@
-import type { DigestItem, DigestRun, Entry } from "@til/db";
+import type {
+  DigestItem,
+  DigestRun,
+  Entry,
+  Feed,
+  Feedback,
+  Review,
+} from "@til/db";
+import { isReviewCardState, isReviewGrade } from "@til/core";
+import type { ReviewCardState, ReviewGrade } from "@til/core";
 
 export type EntryStatus = "pending" | "ready" | "failed";
 
@@ -24,6 +33,52 @@ export interface EntryDetailDTO extends EntryDTO {
   contentMarkdown: string | null;
 }
 
+export type FeedbackKind = "up" | "down";
+
+/** One row of the append-only feedback log, exactly as it was stored. */
+export interface FeedbackDTO {
+  id: string;
+  conversationId: string | null;
+  messageId: string | null;
+  entryId: string | null;
+  kind: FeedbackKind;
+  comment: string | null;
+  createdAt: number;
+}
+
+/** The column has no CHECK constraint, so a value that is neither 'up' nor
+ * 'down' can only come from a hand-written row; read it as the safer 'down'
+ * rather than inventing a positive signal. */
+export function normalizeFeedbackKind(raw: string): FeedbackKind {
+  return raw === "up" ? "up" : "down";
+}
+
+export function toFeedbackDTO(row: Feedback): FeedbackDTO {
+  return {
+    id: row.id,
+    conversationId: row.conversationId ?? null,
+    messageId: row.messageId ?? null,
+    entryId: row.entryId ?? null,
+    kind: normalizeFeedbackKind(row.kind),
+    comment: row.comment ?? null,
+    createdAt: row.createdAt,
+  };
+}
+
+export interface RelatedEntryDTO {
+  id: string;
+  title: string | null;
+  sourceDomain: string | null;
+  takeaway: string | null;
+  score: number;
+}
+
+/** See `RelatedResult` in retrieval.ts for what `available: false` means. */
+export interface RelatedEntriesDTO {
+  available: boolean;
+  items: RelatedEntryDTO[];
+}
+
 export interface DigestEvidenceDTO {
   url: string;
   sourceName: string;
@@ -36,7 +91,14 @@ export interface DigestItemDTO {
   url: string;
   sourceName: string;
   sourceDomain: string;
+  /** The base topical score. Personalization is reported separately, below. */
   score: number;
+  /**
+   * How close this item sits to the owner's recent saved reading, 0..1, or null
+   * when personalization did not run for the item (C18). Additive and nullable, so
+   * every digest stored before this existed reads back as "not personalized".
+   */
+  interestScore: number | null;
   why: string | null;
   evidence: DigestEvidenceDTO[];
 }
@@ -54,6 +116,15 @@ export interface DigestSummaryDTO {
 
 export interface DigestDetailDTO extends DigestSummaryDTO {
   items: DigestItemDTO[];
+}
+
+export interface FeedDTO {
+  id: string;
+  url: string;
+  title: string | null;
+  enabled: boolean;
+  createdAt: number;
+  updatedAt: number;
 }
 
 /** Single definition of how the JSON `tags` column is read — retrieval and the
@@ -98,6 +169,114 @@ export function toEntryDetailDTO(row: Entry): EntryDetailDTO {
   return {
     ...toEntryDTO(row),
     contentMarkdown: row.contentMarkdown ?? null,
+  };
+}
+
+export function toRelatedEntryDTO(row: Entry, score: number): RelatedEntryDTO {
+  return {
+    id: row.id,
+    title: row.title ?? null,
+    sourceDomain: row.sourceDomain ?? null,
+    takeaway: row.takeaway ?? null,
+    score,
+  };
+}
+
+export function toFeedDTO(row: Feed): FeedDTO {
+  return {
+    id: row.id,
+    url: row.url,
+    title: row.title ?? null,
+    enabled: row.enabled,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  };
+}
+
+/**
+ * The question side of a review card. It deliberately carries no `takeaway`,
+ * `summary`, `tags` or `contentMarkdown`: the reveal is fetched from
+ * `GET /api/entries/:id` only once the user has asked for it, so no answer can
+ * ever ride along in the queue payload and get rendered early by accident.
+ */
+export interface ReviewQueueItemDTO {
+  entryId: string;
+  title: string | null;
+  question: string | null;
+  url: string;
+  sourceDomain: string | null;
+  state: ReviewCardState;
+  dueAt: number | null;
+  intervalDays: number | null;
+  ease: number;
+  lapses: number;
+}
+
+export interface ReviewQueueDTO {
+  items: ReviewQueueItemDTO[];
+  /** Every card due at request time, not just the ones inside `limit`. */
+  dueCount: number;
+}
+
+export interface ReviewScheduleDTO {
+  entryId: string;
+  state: ReviewCardState;
+  dueAt: number | null;
+  intervalDays: number | null;
+  ease: number;
+  lapses: number;
+  lastGrade: ReviewGrade | null;
+  reviewedAt: number | null;
+}
+
+export interface ReviewEnrollDTO {
+  enrolled: number;
+  skipped: number;
+}
+
+export function normalizeReviewState(raw: string): ReviewCardState {
+  return isReviewCardState(raw) ? raw : "new";
+}
+
+/** Row shape of the queue join — question-side entry columns only. */
+export interface ReviewQueueRow {
+  entryId: string;
+  state: string;
+  dueAt: number | null;
+  intervalDays: number | null;
+  ease: number;
+  lapses: number;
+  title: string | null;
+  question: string | null;
+  url: string;
+  sourceDomain: string | null;
+}
+
+export function toReviewQueueItemDTO(row: ReviewQueueRow): ReviewQueueItemDTO {
+  return {
+    entryId: row.entryId,
+    title: row.title ?? null,
+    question: row.question ?? null,
+    url: row.url,
+    sourceDomain: row.sourceDomain ?? null,
+    state: normalizeReviewState(row.state),
+    dueAt: row.dueAt ?? null,
+    intervalDays: row.intervalDays ?? null,
+    ease: row.ease,
+    lapses: row.lapses,
+  };
+}
+
+export function toReviewScheduleDTO(row: Review): ReviewScheduleDTO {
+  return {
+    entryId: row.entryId,
+    state: normalizeReviewState(row.state),
+    dueAt: row.dueAt ?? null,
+    intervalDays: row.intervalDays ?? null,
+    ease: row.ease,
+    lapses: row.lapses,
+    lastGrade: isReviewGrade(row.lastGrade) ? row.lastGrade : null,
+    reviewedAt: row.reviewedAt ?? null,
   };
 }
 
@@ -150,6 +329,7 @@ export function toDigestItemDTO(row: DigestItem): DigestItemDTO {
     sourceName: row.sourceName,
     sourceDomain: row.sourceDomain,
     score: row.score,
+    interestScore: row.interestScore ?? null,
     why: row.why ?? null,
     evidence: parseEvidence(row.evidence),
   };

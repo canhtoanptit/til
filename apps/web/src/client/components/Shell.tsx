@@ -1,9 +1,12 @@
 import { NavLink, Outlet } from "react-router";
+import { useQuery } from "@tanstack/react-query";
 import { LogOutIcon, MonitorIcon, MoonIcon, SearchIcon, SunIcon } from "lucide-react";
-import { clearToken } from "../api";
+import { api, clearToken } from "../api";
 import { HealthDot } from "./HealthDot";
 import { CommandPalette, useCommandPalette } from "./CommandPalette";
 import { useTheme, type Theme } from "./theme-provider";
+import { REVIEW_DUE_KEY } from "../pages/ReviewPage";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -16,6 +19,7 @@ import { cn } from "@/lib/utils";
 
 const NAV = [
   { to: "/", label: "Feed", end: true },
+  { to: "/review", label: "Review", end: false },
   { to: "/chat", label: "Chat", end: false },
   { to: "/digests", label: "Digests", end: false },
   { to: "/settings", label: "Settings", end: false },
@@ -44,6 +48,7 @@ export function Shell() {
                     )}
                   >
                     {label}
+                    {to === "/review" && <DueBadge />}
                   </span>
                 )}
               </NavLink>
@@ -81,6 +86,33 @@ export function Shell() {
       </footer>
       <CommandPalette open={palette.open} onOpenChange={palette.setOpen} />
     </div>
+  );
+}
+
+/**
+ * How many cards are waiting. Asks for a single card (`limit=1`) purely for the
+ * `dueCount` that rides along with it, so the badge costs one indexed count rather
+ * than a second endpoint. Grading invalidates the shared `["reviews"]` prefix,
+ * which is what refreshes this.
+ */
+function DueBadge() {
+  const { data } = useQuery({
+    queryKey: REVIEW_DUE_KEY,
+    queryFn: ({ signal }) => api.reviewQueue({ limit: 1, signal }),
+    refetchInterval: 5 * 60_000,
+    staleTime: 60_000,
+    retry: false,
+  });
+  const count = data?.dueCount ?? 0;
+  if (count === 0) return null;
+  return (
+    <Badge
+      variant="secondary"
+      className="ml-1.5 px-1.5 py-0 text-[0.6875rem]"
+      aria-label={`${count} cards due`}
+    >
+      {count > 99 ? "99+" : count}
+    </Badge>
   );
 }
 

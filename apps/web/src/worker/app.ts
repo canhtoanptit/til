@@ -6,6 +6,9 @@ import type { AppContextEnv, Deps } from "./deps.js";
 import { createChatRouter } from "./routes/chat.js";
 import { createDigestsRouter } from "./routes/digests.js";
 import { createEntriesRouter } from "./routes/entries.js";
+import { createFeedbackRouter } from "./routes/feedback.js";
+import { createFeedsRouter } from "./routes/feeds.js";
+import { createReviewsRouter } from "./routes/reviews.js";
 import { createSearchRouter } from "./routes/search.js";
 import { createSettingsRouter } from "./routes/settings.js";
 
@@ -42,6 +45,9 @@ export function createApp(depsFor: (c: { env: unknown; executionCtx: unknown }) 
   app.route("/api/search", createSearchRouter());
   app.route("/api/settings", createSettingsRouter());
   app.route("/api/digests", createDigestsRouter());
+  app.route("/api/feeds", createFeedsRouter());
+  app.route("/api/reviews", createReviewsRouter());
+  app.route("/api/feedback", createFeedbackRouter());
   app.route("/api/chat", createChatRouter());
 
   app.onError((err, c) => {
