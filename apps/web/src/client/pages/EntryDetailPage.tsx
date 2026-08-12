@@ -318,6 +318,7 @@ export function EntryDetailPage() {
           type="button"
           onClick={() => enroll.mutate()}
           disabled={enroll.isPending}
+          title="Turn this entry into a flashcard — Review quizzes you on it at growing intervals so it sticks."
         >
           {enroll.isPending ? "Adding…" : "Add to review"}
         </Button>

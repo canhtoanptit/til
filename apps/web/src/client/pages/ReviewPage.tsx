@@ -163,6 +163,7 @@ export function ReviewPage() {
             </Button>
           </div>
         </Card>
+        <ReviewExplainer />
       </div>
     );
   }
@@ -242,22 +243,31 @@ export function ReviewPage() {
               </>
             )}
 
-            <div className="flex flex-wrap gap-2 border-t pt-4">
-              {GRADES.map(({ grade, label, hint, variant }) => (
-                <Button
-                  key={grade}
-                  type="button"
-                  variant={variant}
-                  disabled={pending}
-                  onClick={() => gradeCard.mutate({ entryId: card.entryId, grade })}
-                  title={`${label} (${hint})`}
-                >
-                  {label}
-                  <span aria-hidden="true" className="text-xs opacity-60">
-                    {hint}
-                  </span>
-                </Button>
-              ))}
+            <div className="space-y-2 border-t pt-4">
+              <p className="text-xs text-muted-foreground">
+                How well did you remember? Your answer decides when this card
+                comes back — <em>Again</em> means tomorrow, <em>Easy</em> pushes
+                it weeks out.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {GRADES.map(({ grade, label, hint, variant }) => (
+                  <Button
+                    key={grade}
+                    type="button"
+                    variant={variant}
+                    disabled={pending}
+                    onClick={() =>
+                      gradeCard.mutate({ entryId: card.entryId, grade })
+                    }
+                    title={`${label} (${hint})`}
+                  >
+                    {label}
+                    <span aria-hidden="true" className="text-xs opacity-60">
+                      {hint}
+                    </span>
+                  </Button>
+                ))}
+              </div>
             </div>
           </div>
         )}
@@ -268,11 +278,52 @@ export function ReviewPage() {
 
 function Header({ dueCount }: { dueCount: number }) {
   return (
-    <div className="flex items-baseline justify-between">
-      <h2 className="text-sm font-medium text-muted-foreground">Review</h2>
-      <span className="text-sm text-muted-foreground">
-        {dueCount === 0 ? "all caught up" : `${dueCount} due`}
-      </span>
+    <div className="space-y-1">
+      <div className="flex items-baseline justify-between">
+        <h2 className="text-sm font-medium text-muted-foreground">Review</h2>
+        <span className="text-sm text-muted-foreground">
+          {dueCount === 0 ? "all caught up" : `${dueCount} due`}
+        </span>
+      </div>
+      <p className="text-xs text-muted-foreground">
+        A quick self-quiz over what you&rsquo;ve saved, timed so each entry comes
+        back just before you&rsquo;d forget it.
+      </p>
     </div>
+  );
+}
+
+/**
+ * Shown on the empty queue — which is also the first thing a new user sees,
+ * since the queue API can't distinguish "all caught up" from "never enrolled".
+ * The copy has to work for both readers.
+ */
+function ReviewExplainer() {
+  return (
+    <Card className="gap-0 p-6">
+      <h3 className="text-sm font-semibold">What is review?</h3>
+      <div className="mt-2 space-y-2 text-sm text-muted-foreground">
+        <p>
+          Saving a link is the easy part — most of what an article taught you
+          fades within days. Review fights that: it turns each saved entry into
+          a flashcard and quizzes you on it at growing intervals, so the ideas
+          stick without rereading anything.
+        </p>
+        <p>
+          Each card shows an entry&rsquo;s title and a question. Try to recall
+          the takeaway from memory, reveal the answer, then grade yourself
+          honestly. The grade sets when the card returns:{" "}
+          <em>Again</em> brings it back tomorrow, <em>Good</em> stretches the
+          gap each time (1 day, then 3, then about a week, and so on), and{" "}
+          <em>Easy</em> pushes it out even further.
+        </p>
+        <p>
+          Add your saved entries above to get started, or enroll entries one at
+          a time with &ldquo;Add to review&rdquo; on any entry&rsquo;s page. A
+          few cards a day is all it takes — the due count in the nav tells you
+          when there&rsquo;s something waiting.
+        </p>
+      </div>
+    </Card>
   );
 }
