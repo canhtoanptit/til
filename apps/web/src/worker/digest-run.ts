@@ -20,6 +20,7 @@ import {
   type DigestStepConfig,
   type RankedItem,
 } from "./digest.js";
+import { listEnabledFeedUrls } from "./feeds.js";
 import { HttpError } from "./http-error.js";
 import { toLLMSettings } from "./settings.js";
 
@@ -56,6 +57,8 @@ export interface DigestPlan {
   runAt: number;
   windowDays: number;
   maxItems: number;
+  /** Enabled `feeds` rows at plan time — see planRun for why it is frozen here. */
+  feeds: string[];
 }
 
 export interface DigestRunOutcome {
@@ -180,7 +183,10 @@ export async function runDigest(
 }
 
 // WHY: this step exists to freeze `runAt` in durable storage. Every later step and
-// every adapter reads it, so retries and replays cannot shift the window.
+// every adapter reads it, so retries and replays cannot shift the window. The
+// enabled feed list is frozen the same way and for the same reason: a run that
+// retries an hour after the owner toggled a feed must still be the run it started
+// as, not a half-and-half of two source sets.
 async function planRun(
   deps: Deps,
   params: DigestRunParams,
@@ -188,6 +194,7 @@ async function planRun(
   const runAt = params.now ?? deps.now();
   const windowDays = clampWindowDays(params.windowDays);
   const maxItems = clampMaxItems(params.maxItems);
+  const feeds = await listEnabledFeedUrls(deps.db);
 
   const existing = await deps.db
     .select({ id: digests.id })
@@ -211,7 +218,7 @@ async function planRun(
     });
   }
 
-  return { digestId: params.digestId, runAt, windowDays, maxItems };
+  return { digestId: params.digestId, runAt, windowDays, maxItems, feeds };
 }
 
 async function fetchCandidates(
@@ -221,6 +228,7 @@ async function fetchCandidates(
 ): Promise<Candidate[]> {
   const adapters = deps.adapters({
     now: plan.runAt,
+    feeds: plan.feeds,
     onFeedError: (feedUrl, error) => {
       console.warn(
         `[digest ${plan.digestId}] feed ${feedUrl} failed:`,

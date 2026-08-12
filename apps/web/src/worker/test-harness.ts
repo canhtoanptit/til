@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import Database from "better-sqlite3";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import * as schema from "@til/db";
-import { digestItems, digests, entries } from "@til/db";
+import { digestItems, digests, entries, feeds } from "@til/db";
 import { createApp } from "./app.js";
 import type { ChatMessageDTO } from "./chat-dto.js";
 import type {
@@ -399,6 +399,34 @@ export async function insertDigestItem(
     why: overrides.why ?? "Because it matters.",
     evidence: JSON.stringify(overrides.evidence ?? []),
     createdAt: overrides.createdAt ?? Date.now(),
+  });
+  return id;
+}
+
+/**
+ * Adds a feed on top of the three rows migration 0005 already seeded. Pass
+ * `enabled: false` to model the owner having turned a source off.
+ */
+export async function insertFeed(
+  db: Deps["db"],
+  overrides: {
+    id?: string;
+    url?: string;
+    title?: string | null;
+    enabled?: boolean;
+    createdAt?: number;
+    updatedAt?: number;
+  } = {},
+) {
+  const id = overrides.id ?? crypto.randomUUID();
+  const now = overrides.createdAt ?? Date.now();
+  await db.insert(feeds).values({
+    id,
+    url: overrides.url ?? `https://example.com/${id}/atom.xml`,
+    title: overrides.title ?? null,
+    enabled: overrides.enabled ?? true,
+    createdAt: now,
+    updatedAt: overrides.updatedAt ?? now,
   });
   return id;
 }

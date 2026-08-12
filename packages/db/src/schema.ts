@@ -98,6 +98,27 @@ export const chats = sqliteTable(
   (t) => [index("chats_updated_at_idx").on(desc(t.updatedAt))],
 );
 
+/**
+ * The owner's RSS/Atom sources for the digest. `enabled` is stored as the integer
+ * SQLite has (0/1) and read as a boolean, so a route never has to remember which
+ * end of the seam it is on.
+ */
+export const feeds = sqliteTable(
+  "feeds",
+  {
+    id: text("id").primaryKey(),
+    url: text("url").notNull(),
+    title: text("title"),
+    enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (t) => [
+    uniqueIndex("feeds_url_uq").on(t.url),
+    index("feeds_enabled_idx").on(t.enabled),
+  ],
+);
+
 export const entryVectors = sqliteTable("entry_vectors", {
   entryId: text("entry_id")
     .primaryKey()
@@ -121,3 +142,5 @@ export type EntryVector = typeof entryVectors.$inferSelect;
 export type NewEntryVector = typeof entryVectors.$inferInsert;
 export type Chat = typeof chats.$inferSelect;
 export type NewChat = typeof chats.$inferInsert;
+export type Feed = typeof feeds.$inferSelect;
+export type NewFeed = typeof feeds.$inferInsert;

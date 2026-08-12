@@ -103,6 +103,19 @@ export interface RunDigestResponse {
   id: string;
 }
 
+export interface FeedDTO {
+  id: string;
+  url: string;
+  title: string | null;
+  enabled: boolean;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface FeedListResponse {
+  items: FeedDTO[];
+}
+
 export interface ChatToolCallDTO {
   name: string;
   args: unknown;
@@ -376,6 +389,21 @@ export const api = {
   },
   deleteDigest(id: string): Promise<void> {
     return request(`/api/digests/${encodeURIComponent(id)}`, { method: "DELETE" });
+  },
+  listFeeds(signal?: AbortSignal): Promise<FeedListResponse> {
+    return request("/api/feeds", { signal });
+  },
+  createFeed(url: string): Promise<FeedDTO> {
+    return request("/api/feeds", { method: "POST", body: { url } });
+  },
+  setFeedEnabled(id: string, enabled: boolean): Promise<FeedDTO> {
+    return request(`/api/feeds/${encodeURIComponent(id)}`, {
+      method: "PUT",
+      body: { enabled },
+    });
+  },
+  deleteFeed(id: string): Promise<void> {
+    return request(`/api/feeds/${encodeURIComponent(id)}`, { method: "DELETE" });
   },
   listChats(
     params: { limit?: number; signal?: AbortSignal } = {},

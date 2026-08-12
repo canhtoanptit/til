@@ -1,4 +1,4 @@
-import type { DigestItem, DigestRun, Entry } from "@til/db";
+import type { DigestItem, DigestRun, Entry, Feed } from "@til/db";
 
 export type EntryStatus = "pending" | "ready" | "failed";
 
@@ -70,6 +70,15 @@ export interface DigestDetailDTO extends DigestSummaryDTO {
   items: DigestItemDTO[];
 }
 
+export interface FeedDTO {
+  id: string;
+  url: string;
+  title: string | null;
+  enabled: boolean;
+  createdAt: number;
+  updatedAt: number;
+}
+
 /** Single definition of how the JSON `tags` column is read — retrieval and the
  * stats aggregates share it so a count can never drift from a response. */
 export function parseTags(raw: string | null | undefined): string[] {
@@ -122,6 +131,17 @@ export function toRelatedEntryDTO(row: Entry, score: number): RelatedEntryDTO {
     sourceDomain: row.sourceDomain ?? null,
     takeaway: row.takeaway ?? null,
     score,
+  };
+}
+
+export function toFeedDTO(row: Feed): FeedDTO {
+  return {
+    id: row.id,
+    url: row.url,
+    title: row.title ?? null,
+    enabled: row.enabled,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
   };
 }
 

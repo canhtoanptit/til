@@ -32,6 +32,16 @@ export const settingsSchema = z.object({
   cfAigToken: z.string().optional(),
 });
 
+export const createFeedSchema = z.object({
+  url: z.string().min(1),
+});
+
+export const updateFeedSchema = z.object({
+  enabled: z.boolean(),
+});
+
 export type CreateEntryBody = z.infer<typeof createEntrySchema>;
+export type CreateFeedBody = z.infer<typeof createFeedSchema>;
+export type UpdateFeedBody = z.infer<typeof updateFeedSchema>;
 export type SettingsBody = z.infer<typeof settingsSchema>;
 export type RunDigestBody = z.infer<typeof runDigestSchema>;

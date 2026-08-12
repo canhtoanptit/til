@@ -2,6 +2,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState, type FormEvent } from "react";
 import { toast } from "sonner";
 import { api, type LLMProvider, type SettingsInput } from "../api";
+import { BookmarkletCard } from "../components/BookmarkletCard";
+import { DigestSourcesCard } from "../components/DigestSourcesCard";
 import { ErrorBanner, friendlyMessage } from "../components/ErrorBanner";
 import { Spinner } from "../components/Spinner";
 import { Button } from "@/components/ui/button";
@@ -156,15 +158,26 @@ export function SettingsPage() {
     saveMutation.mutate(input);
   }
 
+  // WHY the extras repeat in every branch: digest sources and the bookmarklet do
+  // not depend on the LLM settings query, so a slow or failing GET /api/settings
+  // must not take the rest of the page down with it.
   if (settingsQuery.isLoading) {
-    return <Spinner label="Loading settings…" />;
+    return (
+      <div className="space-y-6">
+        <Spinner label="Loading settings…" />
+        <SettingsExtras />
+      </div>
+    );
   }
   if (settingsQuery.isError) {
     return (
-      <ErrorBanner
-        error={settingsQuery.error}
-        onRetry={() => settingsQuery.refetch()}
-      />
+      <div className="space-y-6">
+        <ErrorBanner
+          error={settingsQuery.error}
+          onRetry={() => settingsQuery.refetch()}
+        />
+        <SettingsExtras />
+      </div>
     );
   }
 
@@ -346,6 +359,17 @@ export function SettingsPage() {
           </form>
         </CardContent>
       </Card>
+
+      <SettingsExtras />
     </div>
+  );
+}
+
+function SettingsExtras() {
+  return (
+    <>
+      <DigestSourcesCard />
+      <BookmarkletCard />
+    </>
   );
 }

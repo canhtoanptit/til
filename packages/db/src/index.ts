@@ -5,6 +5,7 @@ import * as schema from "./schema.js";
 export {
   chats,
   entries,
+  feeds,
   settings,
   digests,
   digestItems,
@@ -14,6 +15,8 @@ export type {
   Chat,
   NewChat,
   Entry,
+  Feed,
+  NewFeed,
   NewEntry,
   Settings,
   NewSettings,
