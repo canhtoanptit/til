@@ -31,6 +31,26 @@ export interface SearchResults {
   items: EntryDTO[];
 }
 
+export interface RelatedEntryDTO {
+  id: string;
+  title: string | null;
+  sourceDomain: string | null;
+  takeaway: string | null;
+  score: number;
+}
+
+/**
+ * `available: false` means there is nothing to compute related entries from —
+ * no vector index, or this entry was never embedded — as opposed to
+ * `available: true` with an empty `items`, which means it simply has no
+ * neighbours yet. The UI hides the section for both; the flag is what tells the
+ * two apart without asking again.
+ */
+export interface RelatedEntriesResponse {
+  available: boolean;
+  items: RelatedEntryDTO[];
+}
+
 export interface CreateEntryResponse {
   id: string;
   status: EntryStatus;
@@ -315,6 +335,15 @@ export const api = {
   },
   getEntry(id: string, signal?: AbortSignal): Promise<EntryDetailDTO> {
     return request(`/api/entries/${encodeURIComponent(id)}`, { signal });
+  },
+  getRelatedEntries(
+    id: string,
+    params: { limit?: number; signal?: AbortSignal } = {},
+  ): Promise<RelatedEntriesResponse> {
+    return request(`/api/entries/${encodeURIComponent(id)}/related`, {
+      query: { limit: params.limit ?? 5 },
+      signal: params.signal,
+    });
   },
   createEntry(url: string): Promise<CreateEntryResponse> {
     return request("/api/entries", { method: "POST", body: { url } });

@@ -103,6 +103,13 @@ export interface VectorRecord {
 export interface VectorStore {
   upsert(vectors: VectorRecord[]): Promise<void>;
   query(values: number[], opts: { topK: number }): Promise<VectorMatch[]>;
+  /**
+   * The stored vector for one id, or null when there is nothing usable — the id
+   * has no vector, or the stored one no longer matches the index's dimensions.
+   * Implementations MUST NOT hand back an off-dimension vector: the only thing a
+   * caller can do with the result is feed it to `query`, which rejects those.
+   */
+  getVector(id: string): Promise<number[] | null>;
   deleteByIds(ids: string[]): Promise<void>;
 }
 

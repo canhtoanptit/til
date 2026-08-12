@@ -1,6 +1,6 @@
 import { entryVectors } from "@til/db";
 import type { Db } from "@til/db";
-import { inArray } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { cosineSimilarity } from "@til/core";
 import type { VectorMatch, VectorRecord, VectorStore } from "@til/core";
 
@@ -13,6 +13,20 @@ interface VectorizeMatches {
   matches?: VectorizeMatch[] | null;
 }
 
+/**
+ * What `getByIds` hands back. Verified against `@cloudflare/workers-types`
+ * 5.20260801.1: `getByIds(ids: string[]): Promise<VectorizeVector[]>`, where
+ * `VectorizeVector.values` is `VectorFloatArray | number[]` — i.e. the runtime
+ * may return a Float32Array/Float64Array, never guaranteed a plain array. The
+ * local shape is deliberately wider (optional/nullable `values`) so a binding
+ * that omits them degrades to null instead of throwing.
+ */
+interface VectorizeStoredVector {
+  id: string;
+  values?: number[] | Float32Array | Float64Array | null;
+  metadata?: unknown;
+}
+
 export interface VectorizeIndexLike {
   upsert(
     vectors: { id: string; values: number[]; metadata?: unknown }[],
@@ -21,6 +35,7 @@ export interface VectorizeIndexLike {
     values: number[],
     opts?: { topK?: number; returnValues?: boolean; returnMetadata?: unknown },
   ): Promise<VectorizeMatches>;
+  getByIds(ids: string[]): Promise<VectorizeStoredVector[] | null | undefined>;
   deleteByIds(ids: string[]): Promise<unknown>;
 }
 
@@ -72,6 +87,24 @@ export class VectorizeStore implements VectorStore {
       });
     }
     return out;
+  }
+
+  async getVector(id: string): Promise<number[] | null> {
+    if (id.length === 0) return null;
+    const stored = await this.index.getByIds([id]);
+    if (!Array.isArray(stored)) return null;
+    // Match on id rather than position: the API returns only the vectors that
+    // exist, so a miss is an empty array, not a null hole at index 0.
+    const found = stored.find((vector) => vector?.id === id);
+    const values = toNumberArray(found?.values);
+    if (values === null) return null;
+    if (values.length !== this.dimensions) {
+      console.warn(
+        `[VectorizeStore] vector for ${id} has ${values.length} dimensions, index expects ${this.dimensions} — re-embed it.`,
+      );
+      return null;
+    }
+    return values;
   }
 
   async deleteByIds(ids: string[]): Promise<void> {
@@ -167,6 +200,26 @@ export class D1VectorStore implements VectorStore {
     return scored.slice(0, opts.topK);
   }
 
+  async getVector(id: string): Promise<number[] | null> {
+    if (id.length === 0) return null;
+    const rows = await this.db
+      .select({ dims: entryVectors.dims, values: entryVectors.values })
+      .from(entryVectors)
+      .where(eq(entryVectors.entryId, id))
+      .limit(1);
+    const row = rows[0];
+    if (!row) return null;
+    const values = parseVector(row.values);
+    if (values === null) return null;
+    if (values.length !== this.dimensions || row.dims !== this.dimensions) {
+      console.warn(
+        `[D1VectorStore] vector for ${id} has ${values.length} dimensions, index expects ${this.dimensions} — re-embed it.`,
+      );
+      return null;
+    }
+    return values;
+  }
+
   async deleteByIds(ids: string[]): Promise<void> {
     if (ids.length === 0) return;
     await this.db
@@ -183,8 +236,24 @@ export function isVectorizeIndexLike(
   return (
     typeof candidate.upsert === "function" &&
     typeof candidate.query === "function" &&
+    // Part of the guard, not optional: `getVector` is unimplementable without it,
+    // and a binding missing it is not the Vectorize API we compiled against.
+    typeof candidate.getByIds === "function" &&
     typeof candidate.deleteByIds === "function"
   );
+}
+
+/** Vectorize may hand back a typed array; every caller here wants number[]. */
+function toNumberArray(
+  values: number[] | Float32Array | Float64Array | null | undefined,
+): number[] | null {
+  if (values === null || values === undefined) return null;
+  const out: number[] = [];
+  for (const value of values) {
+    if (typeof value !== "number" || !Number.isFinite(value)) return null;
+    out.push(value);
+  }
+  return out.length === 0 ? null : out;
 }
 
 function parseVector(raw: string): number[] | null {

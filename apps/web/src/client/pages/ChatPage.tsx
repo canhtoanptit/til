@@ -7,7 +7,7 @@ import {
   useState,
   type KeyboardEvent,
 } from "react";
-import { Link, useNavigate, useParams } from "react-router";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAgent } from "agents/react";
 import { useAgentChat } from "@cloudflare/ai-chat/react";
@@ -18,7 +18,7 @@ import { ChatMessageView } from "../components/ChatMessageView";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { ErrorBanner, friendlyMessage } from "../components/ErrorBanner";
 import { Spinner } from "../components/Spinner";
-import { chatConversationTitle } from "../components/chat-format";
+import { chatConversationTitle, entryChatSeed } from "../components/chat-format";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
@@ -39,6 +39,7 @@ export function ChatPage() {
   const id = params.id ?? "";
   const navigate = useNavigate();
   const qc = useQueryClient();
+  const [searchParams] = useSearchParams();
   const [attempt, setAttempt] = useState(0);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
@@ -46,6 +47,24 @@ export function ChatPage() {
     queryKey: ["chats"] as const,
     queryFn: ({ signal }) => api.listChats({ limit: 50, signal }),
   });
+
+  // "Ask about this entry" arrives as `?about=<entryId>`. The key matches the
+  // detail page's, so the entry is already in cache and the seed appears without
+  // a visible fetch; if it isn't (reload, shared link) one cheap GET fills it in.
+  const aboutId = searchParams.get("about") ?? "";
+  const aboutQuery = useQuery({
+    queryKey: ["entry", aboutId] as const,
+    queryFn: ({ signal }) => api.getEntry(aboutId, signal),
+    enabled: aboutId.length > 0,
+    retry: false,
+  });
+  // Waiting for the title to settle keeps the seed from being written twice, once
+  // without a title. A failed lookup still seeds — the id alone is what
+  // `get_entry` needs.
+  const seedDraft =
+    aboutId.length > 0 && !aboutQuery.isPending
+      ? entryChatSeed({ id: aboutId, title: aboutQuery.data?.title ?? null })
+      : null;
 
   const remove = useMutation({
     mutationFn: () => api.deleteChat(id),
@@ -118,6 +137,7 @@ export function ChatPage() {
             key={`${id}:${attempt}`}
             conversationId={id}
             attempt={attempt}
+            seedDraft={seedDraft}
             onRetry={() => setAttempt((n) => n + 1)}
           />
         </Suspense>
@@ -129,10 +149,12 @@ export function ChatPage() {
 function Conversation({
   conversationId,
   attempt,
+  seedDraft,
   onRetry,
 }: {
   conversationId: string;
   attempt: number;
+  seedDraft: string | null;
   onRetry: () => void;
 }) {
   const qc = useQueryClient();
@@ -141,6 +163,7 @@ function Conversation({
   const [ticketError, setTicketError] = useState<unknown>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const seeded = useRef(false);
 
   // WHY swallow instead of reject: `useAgent` resolves this with React `use()`,
   // so a rejection would throw during render. `request` has already cleared the
@@ -202,6 +225,17 @@ function Conversation({
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ block: "end" });
   }, [messages, busy]);
+
+  // WHY fill the composer instead of sending for the user: an auto-send would
+  // have to fire exactly once, after the socket is open and after history has
+  // hydrated — and StrictMode runs effects twice. Filling the box is
+  // deterministic, shows the question before it is asked, and is editable.
+  useEffect(() => {
+    if (seeded.current || seedDraft === null || messages.length > 0) return;
+    seeded.current = true;
+    setDraft(seedDraft);
+    textareaRef.current?.focus();
+  }, [seedDraft, messages.length]);
 
   function send() {
     const text = draft.trim();

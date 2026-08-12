@@ -24,6 +24,20 @@ export interface EntryDetailDTO extends EntryDTO {
   contentMarkdown: string | null;
 }
 
+export interface RelatedEntryDTO {
+  id: string;
+  title: string | null;
+  sourceDomain: string | null;
+  takeaway: string | null;
+  score: number;
+}
+
+/** See `RelatedResult` in retrieval.ts for what `available: false` means. */
+export interface RelatedEntriesDTO {
+  available: boolean;
+  items: RelatedEntryDTO[];
+}
+
 export interface DigestEvidenceDTO {
   url: string;
   sourceName: string;
@@ -98,6 +112,16 @@ export function toEntryDetailDTO(row: Entry): EntryDetailDTO {
   return {
     ...toEntryDTO(row),
     contentMarkdown: row.contentMarkdown ?? null,
+  };
+}
+
+export function toRelatedEntryDTO(row: Entry, score: number): RelatedEntryDTO {
+  return {
+    id: row.id,
+    title: row.title ?? null,
+    sourceDomain: row.sourceDomain ?? null,
+    takeaway: row.takeaway ?? null,
+    score,
   };
 }
 

@@ -3,7 +3,7 @@ import { useId, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { toast } from "sonner";
 import { ChevronDownIcon } from "lucide-react";
-import { ApiError, api } from "../api";
+import { ApiError, api, type RelatedEntryDTO } from "../api";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { ErrorBanner, friendlyMessage } from "../components/ErrorBanner";
 import { Spinner } from "../components/Spinner";
@@ -27,6 +27,31 @@ function formatDate(ms: number): string {
   }
 }
 
+function RelatedRow({ item }: { item: RelatedEntryDTO }) {
+  return (
+    <Card asChild className="gap-0 p-3 transition-shadow hover:shadow-md">
+      <article>
+        <Link
+          to={`/entries/${encodeURIComponent(item.id)}`}
+          className="text-sm font-semibold hover:underline"
+        >
+          {item.title?.trim() || item.id}
+        </Link>
+        {item.sourceDomain && (
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            {item.sourceDomain}
+          </p>
+        )}
+        {item.takeaway && (
+          <p className="mt-1.5 line-clamp-2 text-sm text-muted-foreground">
+            {item.takeaway}
+          </p>
+        )}
+      </article>
+    </Card>
+  );
+}
+
 export function EntryDetailPage() {
   const params = useParams();
   const id = params.id ?? "";
@@ -44,6 +69,16 @@ export function EntryDetailPage() {
       if (err instanceof ApiError && err.status === 404) return false;
       return failureCount < 2;
     },
+  });
+
+  // Only ready entries have a vector, so only they can have neighbours. Failures
+  // stay silent: "Related" is an extra, and an error banner for it would shout
+  // over the entry the page exists to show.
+  const relatedQuery = useQuery({
+    queryKey: ["entry", id, "related"] as const,
+    queryFn: ({ signal }) => api.getRelatedEntries(id, { limit: 5, signal }),
+    enabled: id.length > 0 && query.data?.status === "ready",
+    retry: false,
   });
 
   const reingest = useMutation({
@@ -97,6 +132,7 @@ export function EntryDetailPage() {
   if (!entry) return null;
 
   const title = entry.title?.trim() || entry.canonicalUrl;
+  const related = relatedQuery.data?.items ?? [];
 
   return (
     <article className="space-y-5">
@@ -226,7 +262,37 @@ export function EntryDetailPage() {
         </Collapsible>
       )}
 
+      {related.length > 0 && (
+        <section aria-label="Related entries" className="border-t pt-4">
+          <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Related
+          </h2>
+          <ul className="mt-2 space-y-2">
+            {related.map((item) => (
+              <li key={item.id}>
+                <RelatedRow item={item} />
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
       <div className="flex flex-wrap items-center gap-2 border-t pt-4">
+        <Button
+          type="button"
+          // Reuses the "New chat" path from ChatListPage: a client-minted
+          // conversation id, so no round-trip is needed to start one. `?about`
+          // carries the entry through, which — unlike router state — survives a
+          // reload and a copied link.
+          onClick={() =>
+            void navigate(
+              `/chat/${crypto.randomUUID()}?about=${encodeURIComponent(entry.id)}`,
+            )
+          }
+          disabled={entry.status !== "ready"}
+        >
+          Ask about this entry
+        </Button>
         <Button
           type="button"
           variant="outline"

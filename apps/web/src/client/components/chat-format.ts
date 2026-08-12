@@ -28,6 +28,21 @@ const TOOL_ICONS: Record<ChatToolName, string> = {
   stats: "📊",
 };
 
+/**
+ * The first message "Ask about this entry" drops into the composer. It reads as
+ * a question a person would type, and it carries the entry id verbatim, which is
+ * the whole point: `get_entry` takes an id, so quoting one lets the assistant
+ * open the right entry on its first tool call instead of searching for the title.
+ */
+export function entryChatSeed(entry: {
+  id: string;
+  title?: string | null;
+}): string {
+  const title = entry.title?.trim();
+  const named = title ? ` "${title}"` : "";
+  return `Tell me about my saved entry${named} (id: ${entry.id}) — what's the takeaway, and what else have I saved that relates to it?`;
+}
+
 /** `null` for text, reasoning, step markers and any tool we do not render. */
 export function toolNameOfPart(part: ChatUIPart): ChatToolName | null {
   return TOOL_PART_TYPES[part.type] ?? null;
