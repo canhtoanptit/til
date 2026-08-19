@@ -1,5 +1,9 @@
 import { settings as settingsTable } from "@til/db";
-import { CHAT_DEFAULT_MAX_STEPS, chatNoticeResponse, streamChat } from "@til/core";
+import {
+  CHAT_DEFAULT_MAX_STEPS,
+  chatNoticeResponse,
+  streamChat,
+} from "@til/core";
 import { chatTitleFrom, toChatMessageDTO } from "./chat-dto.js";
 import { indexConversation } from "./chat-index.js";
 import { buildChatTools } from "./chat-tools.js";

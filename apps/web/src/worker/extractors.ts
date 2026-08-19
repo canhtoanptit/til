@@ -115,7 +115,10 @@ export class WorkersAIExtractor implements Extractor {
     try {
       markdown = await this.convert(name, blob);
     } catch (err) {
-      if (err instanceof ExtractionError && /markdown was empty/i.test(err.message)) {
+      if (
+        err instanceof ExtractionError &&
+        /markdown was empty/i.test(err.message)
+      ) {
         throw new ExtractionError(
           "This PDF has no extractable text — a scanned PDF is a picture of a page, and PDF conversion does not run OCR.",
         );
@@ -174,17 +177,20 @@ const ENTITY_MAP: Record<string, string> = {
  * youtube.ts, which is why this is exported rather than private.
  */
 export function decodeEntities(input: string): string {
-  return input.replace(/&(#\d+|#x[0-9a-fA-F]+|[a-zA-Z]+);/g, (_, ref: string) => {
-    if (ref.startsWith("#x") || ref.startsWith("#X")) {
-      const code = parseInt(ref.slice(2), 16);
-      return Number.isFinite(code) ? String.fromCodePoint(code) : "";
-    }
-    if (ref.startsWith("#")) {
-      const code = parseInt(ref.slice(1), 10);
-      return Number.isFinite(code) ? String.fromCodePoint(code) : "";
-    }
-    return ENTITY_MAP[ref.toLowerCase()] ?? "";
-  });
+  return input.replace(
+    /&(#\d+|#x[0-9a-fA-F]+|[a-zA-Z]+);/g,
+    (_, ref: string) => {
+      if (ref.startsWith("#x") || ref.startsWith("#X")) {
+        const code = parseInt(ref.slice(2), 16);
+        return Number.isFinite(code) ? String.fromCodePoint(code) : "";
+      }
+      if (ref.startsWith("#")) {
+        const code = parseInt(ref.slice(1), 10);
+        return Number.isFinite(code) ? String.fromCodePoint(code) : "";
+      }
+      return ENTITY_MAP[ref.toLowerCase()] ?? "";
+    },
+  );
 }
 
 // WHY a floor at all: Readability will happily return a heading plus one stray
@@ -272,7 +278,9 @@ export class ReadabilityExtractor implements Extractor {
 
     let markdown: string;
     try {
-      markdown = newTurndown().turndown(content as never).trim();
+      markdown = newTurndown()
+        .turndown(content as never)
+        .trim();
     } catch (err) {
       throw new ExtractionError(
         `Markdown conversion failed for ${url}: ${describeError(err)}`,

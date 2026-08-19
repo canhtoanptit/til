@@ -190,7 +190,12 @@ export function clampWindowDays(
   raw: number | undefined,
   kind: DigestKind = "weekly",
 ): number {
-  return clampInt(raw, defaultWindowDays(kind), MIN_WINDOW_DAYS, MAX_WINDOW_DAYS);
+  return clampInt(
+    raw,
+    defaultWindowDays(kind),
+    MIN_WINDOW_DAYS,
+    MAX_WINDOW_DAYS,
+  );
 }
 
 export function clampMaxItems(raw: number | undefined): number {

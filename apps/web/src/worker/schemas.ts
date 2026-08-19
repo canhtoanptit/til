@@ -35,7 +35,9 @@ export const updateEntrySchema = z
   })
   .refine(
     (v) =>
-      v.favorite !== undefined || v.archived !== undefined || v.note !== undefined,
+      v.favorite !== undefined ||
+      v.archived !== undefined ||
+      v.note !== undefined,
     { message: "Provide at least one of favorite, archived or note." },
   );
 

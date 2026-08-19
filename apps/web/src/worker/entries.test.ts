@@ -110,7 +110,10 @@ describe("POST /api/entries", () => {
     expect(res.status).toBe(201);
     const { id } = (await res.json()) as { id: string };
     await t.flush();
-    const rows = await t.deps.db.select().from(entries).where(eq(entries.id, id));
+    const rows = await t.deps.db
+      .select()
+      .from(entries)
+      .where(eq(entries.id, id));
     const row = rows[0];
     expect(row?.status).toBe("ready");
     expect(row?.title).toBe("Stub Title");
@@ -127,7 +130,10 @@ describe("POST /api/entries", () => {
     });
     const { id } = (await res.json()) as { id: string };
     await t.flush();
-    const rows = await t.deps.db.select().from(entries).where(eq(entries.id, id));
+    const rows = await t.deps.db
+      .select()
+      .from(entries)
+      .where(eq(entries.id, id));
     expect(rows[0]?.status).toBe("failed");
     expect(rows[0]?.error).toContain("settings not configured");
   });
@@ -165,7 +171,9 @@ describe("GET /api/entries", () => {
     expect(body.items.map((x) => x.id)).toEqual(["c", "b"]);
     expect(body.nextCursor).toBe("200_b");
 
-    const next = await t.request(`/api/entries?limit=2&cursor=${body.nextCursor}`);
+    const next = await t.request(
+      `/api/entries?limit=2&cursor=${body.nextCursor}`,
+    );
     const nextBody = (await next.json()) as {
       items: Array<{ id: string }>;
       nextCursor: string | null;
@@ -230,7 +238,10 @@ describe("GET /api/entries/:id", () => {
     await insertEntry(t.deps.db, { id: "detail-1" });
     const ok = await t.request("/api/entries/detail-1");
     expect(ok.status).toBe(200);
-    const body = (await ok.json()) as { id: string; contentMarkdown: string | null };
+    const body = (await ok.json()) as {
+      id: string;
+      contentMarkdown: string | null;
+    };
     expect(body.id).toBe("detail-1");
     expect("contentMarkdown" in body).toBe(true);
 
@@ -282,19 +293,25 @@ describe("POST /api/entries/:id/reingest", () => {
       createdAt: 1,
       updatedAt: 1,
     });
-    const res = await t.request("/api/entries/re-1/reingest", { method: "POST" });
+    const res = await t.request("/api/entries/re-1/reingest", {
+      method: "POST",
+    });
     expect(res.status).toBe(202);
     const body = (await res.json()) as { id: string; status: string };
     expect(body).toEqual({ id: "re-1", status: "pending" });
     await t.flush();
-    const rows = await t.deps.db.select().from(entries).where(eq(entries.id, "re-1"));
+    const rows = await t.deps.db
+      .select()
+      .from(entries)
+      .where(eq(entries.id, "re-1"));
     expect(rows[0]?.status).toBe("ready");
   });
 
   it("404 when missing", async () => {
     const t = buildTestApp();
-    const res = await t.request("/api/entries/missing/reingest", { method: "POST" });
+    const res = await t.request("/api/entries/missing/reingest", {
+      method: "POST",
+    });
     expect(res.status).toBe(404);
   });
 });
-

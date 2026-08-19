@@ -51,7 +51,8 @@ export class LobstersAdapter implements SourceAdapter {
     for (const story of stories) {
       const candidate = toCandidate(story);
       if (candidate === undefined) continue;
-      if (!isWithinWindow(candidate.publishedAt, now, opts.windowDays)) continue;
+      if (!isWithinWindow(candidate.publishedAt, now, opts.windowDays))
+        continue;
       candidates.push(candidate);
       if (candidates.length >= opts.limit) break;
     }

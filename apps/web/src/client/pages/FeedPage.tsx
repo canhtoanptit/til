@@ -104,19 +104,21 @@ export function FeedPage() {
       };
       // Always the default view, whichever chip is showing: a link just saved is
       // neither a favorite nor archived, so "all" is the only list it belongs in.
-      qc.setQueryData<{ pages: EntryListPage[]; pageParams: unknown[] } | undefined>(
-        entriesKey({ filter: "all" }),
-        (prev) => {
-          if (!prev) return prev;
-          const [firstPage, ...rest] = prev.pages;
-          if (!firstPage) return prev;
-          const newFirst: EntryListPage = {
-            items: [optimistic, ...firstPage.items.filter((i) => i.id !== data.id)],
-            nextCursor: firstPage.nextCursor,
-          };
-          return { ...prev, pages: [newFirst, ...rest] };
-        },
-      );
+      qc.setQueryData<
+        { pages: EntryListPage[]; pageParams: unknown[] } | undefined
+      >(entriesKey({ filter: "all" }), (prev) => {
+        if (!prev) return prev;
+        const [firstPage, ...rest] = prev.pages;
+        if (!firstPage) return prev;
+        const newFirst: EntryListPage = {
+          items: [
+            optimistic,
+            ...firstPage.items.filter((i) => i.id !== data.id),
+          ],
+          nextCursor: firstPage.nextCursor,
+        };
+        return { ...prev, pages: [newFirst, ...rest] };
+      });
       // Reconcile with the server soon.
       void qc.invalidateQueries({ queryKey: ["entries"] });
     },
@@ -206,7 +208,10 @@ export function FeedPage() {
   return (
     <div className="space-y-6">
       <section aria-label="Add a link">
-        <form onSubmit={onAddSubmit} className="flex flex-col gap-2 sm:flex-row">
+        <form
+          onSubmit={onAddSubmit}
+          className="flex flex-col gap-2 sm:flex-row"
+        >
           <label htmlFor="til-url" className="sr-only">
             URL
           </label>
@@ -220,7 +225,10 @@ export function FeedPage() {
             className="flex-1"
             disabled={createMutation.isPending}
           />
-          <Button type="submit" disabled={createMutation.isPending || !url.trim()}>
+          <Button
+            type="submit"
+            disabled={createMutation.isPending || !url.trim()}
+          >
             {createMutation.isPending ? "Adding…" : "Add"}
           </Button>
         </form>
@@ -286,7 +294,9 @@ export function FeedPage() {
         onLoadMore={() => void listQuery.fetchNextPage()}
         onReingest={(id) => reingestMutation.mutate(id)}
         reingestingId={
-          reingestMutation.isPending ? (reingestMutation.variables ?? null) : null
+          reingestMutation.isPending
+            ? (reingestMutation.variables ?? null)
+            : null
         }
       />
     </div>

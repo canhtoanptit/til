@@ -247,7 +247,9 @@ async function runWeeklyDigest(
     rankCandidates(pooled, plan),
   );
   if (ranked.length === 0) {
-    throw new Error(`no candidates found in the last ${plan.windowDays} day(s)`);
+    throw new Error(
+      `no candidates found in the last ${plan.windowDays} day(s)`,
+    );
   }
 
   // Ranking and selection use the blend from here on; `ranked` is the fallback
@@ -355,7 +357,14 @@ async function planRun(
     });
   }
 
-  return { digestId: params.digestId, runAt, windowDays, maxItems, kind, feeds };
+  return {
+    digestId: params.digestId,
+    runAt,
+    windowDays,
+    maxItems,
+    kind,
+    feeds,
+  };
 }
 
 async function fetchCandidates(

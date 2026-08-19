@@ -60,7 +60,8 @@ export class HNAdapter implements SourceAdapter {
     for (const hit of hits) {
       const candidate = toCandidate(hit);
       if (candidate === undefined) continue;
-      if (!isWithinWindow(candidate.publishedAt, now, opts.windowDays)) continue;
+      if (!isWithinWindow(candidate.publishedAt, now, opts.windowDays))
+        continue;
       candidates.push(candidate);
       if (candidates.length >= opts.limit) break;
     }
@@ -74,7 +75,10 @@ export function createHNAdapter(opts?: HNAdapterOptions): SourceAdapter {
 
 function extractHits(body: unknown): Record<string, unknown>[] {
   if (typeof body !== "object" || body === null) {
-    throw new SourceError(SOURCE_NAME, `${SOURCE_NAME}: response was not an object`);
+    throw new SourceError(
+      SOURCE_NAME,
+      `${SOURCE_NAME}: response was not an object`,
+    );
   }
   const hits = (body as { hits?: unknown }).hits;
   if (!Array.isArray(hits)) {
@@ -93,7 +97,8 @@ function extractHits(body: unknown): Record<string, unknown>[] {
 }
 
 function toCandidate(hit: Record<string, unknown>): Candidate | undefined {
-  const title = typeof hit.title === "string" ? collapseWhitespace(hit.title) : "";
+  const title =
+    typeof hit.title === "string" ? collapseWhitespace(hit.title) : "";
   if (title.length === 0) return undefined;
 
   const createdAt = hit.created_at_i;
@@ -102,7 +107,8 @@ function toCandidate(hit: Record<string, unknown>): Candidate | undefined {
   }
 
   const objectId = typeof hit.objectID === "string" ? hit.objectID : undefined;
-  const storyUrl = typeof hit.url === "string" && hit.url.length > 0 ? hit.url : undefined;
+  const storyUrl =
+    typeof hit.url === "string" && hit.url.length > 0 ? hit.url : undefined;
   const url =
     storyUrl ??
     (objectId === undefined
@@ -110,9 +116,10 @@ function toCandidate(hit: Record<string, unknown>): Candidate | undefined {
       : `https://news.ycombinator.com/item?id=${objectId}`);
   if (url === undefined || !isSafeCandidateUrl(url)) return undefined;
 
-  const points = typeof hit.points === "number" && Number.isFinite(hit.points)
-    ? hit.points
-    : undefined;
+  const points =
+    typeof hit.points === "number" && Number.isFinite(hit.points)
+      ? hit.points
+      : undefined;
 
   const candidate: Candidate = {
     url,

@@ -23,7 +23,8 @@ const NOW = 1_700_000_000_000;
 function card(overrides: Partial<ReviewCard> = {}): ReviewCard {
   return {
     state: overrides.state ?? "new",
-    intervalDays: overrides.intervalDays === undefined ? null : overrides.intervalDays,
+    intervalDays:
+      overrides.intervalDays === undefined ? null : overrides.intervalDays,
     ease: overrides.ease ?? EASE_DEFAULT,
     lapses: overrides.lapses ?? 0,
   };
@@ -55,10 +56,42 @@ describe("scheduleReview — the full grade × state matrix", () => {
     lapses: number;
   }[] = [
     // --- new -------------------------------------------------------------
-    { name: "new + Again", from: card(), grade: 1, state: "learning", intervalDays: 1, ease: 2.3, lapses: 1 },
-    { name: "new + Hard", from: card(), grade: 2, state: "learning", intervalDays: 1, ease: 2.35, lapses: 0 },
-    { name: "new + Good", from: card(), grade: 3, state: "learning", intervalDays: 1, ease: 2.5, lapses: 0 },
-    { name: "new + Easy", from: card(), grade: 4, state: "learning", intervalDays: 3, ease: 2.65, lapses: 0 },
+    {
+      name: "new + Again",
+      from: card(),
+      grade: 1,
+      state: "learning",
+      intervalDays: 1,
+      ease: 2.3,
+      lapses: 1,
+    },
+    {
+      name: "new + Hard",
+      from: card(),
+      grade: 2,
+      state: "learning",
+      intervalDays: 1,
+      ease: 2.35,
+      lapses: 0,
+    },
+    {
+      name: "new + Good",
+      from: card(),
+      grade: 3,
+      state: "learning",
+      intervalDays: 1,
+      ease: 2.5,
+      lapses: 0,
+    },
+    {
+      name: "new + Easy",
+      from: card(),
+      grade: 4,
+      state: "learning",
+      intervalDays: 3,
+      ease: 2.65,
+      lapses: 0,
+    },
 
     // --- learning, on the 1-day step ------------------------------------
     {
@@ -193,7 +226,9 @@ describe("scheduleReview — the full grade × state matrix", () => {
 
   it("covers every grade for every reachable state", () => {
     const seen = new Set(
-      cases.map((c) => `${c.from.state}:${c.from.intervalDays ?? "null"}:${c.grade}`),
+      cases.map(
+        (c) => `${c.from.state}:${c.from.intervalDays ?? "null"}:${c.grade}`,
+      ),
     );
     expect(seen.size).toBe(cases.length);
     for (const grade of REVIEW_GRADES) {
@@ -268,7 +303,12 @@ describe("scheduleReview — invariants across every grade", () => {
   });
 
   it("is pure: repeated calls agree and the input card is untouched", () => {
-    const start = card({ state: "review", intervalDays: 12, ease: 2.4, lapses: 1 });
+    const start = card({
+      state: "review",
+      intervalDays: 12,
+      ease: 2.4,
+      lapses: 1,
+    });
     const snapshot = { ...start };
     for (const grade of REVIEW_GRADES) {
       const a = scheduleReview(start, grade, NOW);
@@ -376,20 +416,44 @@ describe("scheduleReview — invariants across every grade", () => {
       1,
       NOW,
     );
-    expect(lapsed).toMatchObject({ state: "learning", intervalDays: 1, ease: 2.3, lapses: 1 });
+    expect(lapsed).toMatchObject({
+      state: "learning",
+      intervalDays: 1,
+      ease: 2.3,
+      lapses: 1,
+    });
     const back = scheduleReview(
-      { state: lapsed.state, intervalDays: lapsed.intervalDays, ease: lapsed.ease, lapses: lapsed.lapses },
+      {
+        state: lapsed.state,
+        intervalDays: lapsed.intervalDays,
+        ease: lapsed.ease,
+        lapses: lapsed.lapses,
+      },
       3,
       NOW,
     );
-    expect(back).toMatchObject({ state: "learning", intervalDays: 3, ease: 2.3, lapses: 1 });
+    expect(back).toMatchObject({
+      state: "learning",
+      intervalDays: 3,
+      ease: 2.3,
+      lapses: 1,
+    });
     const graduated = scheduleReview(
-      { state: back.state, intervalDays: back.intervalDays, ease: back.ease, lapses: back.lapses },
+      {
+        state: back.state,
+        intervalDays: back.intervalDays,
+        ease: back.ease,
+        lapses: back.lapses,
+      },
       3,
       NOW,
     );
     // round(3 * 2.3) = round(6.9) = 7 — a lower ease than before the lapse.
-    expect(graduated).toMatchObject({ state: "review", intervalDays: 7, ease: 2.3 });
+    expect(graduated).toMatchObject({
+      state: "review",
+      intervalDays: 7,
+      ease: 2.3,
+    });
   });
 
   it("does not accumulate float noise in ease across many grades", () => {
@@ -409,7 +473,12 @@ describe("scheduleReview — invariants across every grade", () => {
 
   it("repairs a corrupt row rather than propagating NaN", () => {
     const next = scheduleReview(
-      { state: "review", intervalDays: Number.NaN, ease: Number.NaN, lapses: -3 },
+      {
+        state: "review",
+        intervalDays: Number.NaN,
+        ease: Number.NaN,
+        lapses: -3,
+      },
       3,
       NOW,
     );
@@ -420,7 +489,11 @@ describe("scheduleReview — invariants across every grade", () => {
   });
 
   it("treats a 'learning' row with no interval as a new card", () => {
-    const next = scheduleReview(card({ state: "learning", intervalDays: null }), 3, NOW);
+    const next = scheduleReview(
+      card({ state: "learning", intervalDays: null }),
+      3,
+      NOW,
+    );
     expect(next).toMatchObject({ state: "learning", intervalDays: 1 });
   });
 });
@@ -428,11 +501,21 @@ describe("scheduleReview — invariants across every grade", () => {
 describe("ladderPosition", () => {
   it("maps stored intervals onto ladder positions", () => {
     expect(ladderPosition(card())).toBe(-1);
-    expect(ladderPosition(card({ state: "learning", intervalDays: null }))).toBe(-1);
-    expect(ladderPosition(card({ state: "learning", intervalDays: 0.5 }))).toBe(-1);
-    expect(ladderPosition(card({ state: "learning", intervalDays: 1 }))).toBe(0);
-    expect(ladderPosition(card({ state: "learning", intervalDays: 2 }))).toBe(0);
-    expect(ladderPosition(card({ state: "learning", intervalDays: 3 }))).toBe(1);
+    expect(
+      ladderPosition(card({ state: "learning", intervalDays: null })),
+    ).toBe(-1);
+    expect(ladderPosition(card({ state: "learning", intervalDays: 0.5 }))).toBe(
+      -1,
+    );
+    expect(ladderPosition(card({ state: "learning", intervalDays: 1 }))).toBe(
+      0,
+    );
+    expect(ladderPosition(card({ state: "learning", intervalDays: 2 }))).toBe(
+      0,
+    );
+    expect(ladderPosition(card({ state: "learning", intervalDays: 3 }))).toBe(
+      1,
+    );
     expect(ladderPosition(card({ state: "review", intervalDays: 99 }))).toBe(1);
   });
 

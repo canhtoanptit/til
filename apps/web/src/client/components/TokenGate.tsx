@@ -53,12 +53,19 @@ export function TokenGate() {
               {showHint ? "hide hint" : "hint"}
             </Button>
             {showHint && (
-              <p id="til-token-hint" className="mt-1 text-xs text-muted-foreground">
+              <p
+                id="til-token-hint"
+                className="mt-1 text-xs text-muted-foreground"
+              >
                 Local dev token is{" "}
                 <code className="rounded bg-muted px-1">dev-token</code>.
               </p>
             )}
-            <Button type="submit" disabled={!value.trim()} className="mt-4 w-full">
+            <Button
+              type="submit"
+              disabled={!value.trim()}
+              className="mt-4 w-full"
+            >
               Save
             </Button>
           </form>

@@ -123,7 +123,11 @@ function recordingFetch(respond: () => Response): {
 }
 
 const userTurn = [
-  { id: "m1", role: "user", parts: [{ type: "text", text: "what about css?" }] },
+  {
+    id: "m1",
+    role: "user",
+    parts: [{ type: "text", text: "what about css?" }],
+  },
 ];
 
 describe("chat routes — auth", () => {
@@ -297,7 +301,9 @@ describe("chat tool arguments", () => {
   });
 
   it("bounds sinceDays on stats too", () => {
-    expect(parseStatsArgs({ kind: "per_week", sinceDays: -1 }).sinceDays).toBe(1);
+    expect(parseStatsArgs({ kind: "per_week", sinceDays: -1 }).sinceDays).toBe(
+      1,
+    );
     expect(
       parseStatsArgs({ kind: "per_week", sinceDays: 10_000 }).sinceDays,
     ).toBe(CHAT_MAX_SINCE_DAYS);
@@ -629,7 +635,12 @@ describe("ChatMessageDTO mapping", () => {
       { id: "m1", role: "user", parts: [{ type: "text", text: "hi" }] },
       5,
     );
-    expect(dto).toEqual({ id: "m1", role: "user", content: "hi", createdAt: 5 });
+    expect(dto).toEqual({
+      id: "m1",
+      role: "user",
+      content: "hi",
+      createdAt: 5,
+    });
     expect(dto && "toolCalls" in dto).toBe(false);
   });
 
@@ -672,7 +683,12 @@ describe("ChatMessageDTO mapping", () => {
         id: "a1",
         role: "assistant",
         parts: [
-          { type: "dynamic-tool", toolName: "getLocation", input: {}, output: 1 },
+          {
+            type: "dynamic-tool",
+            toolName: "getLocation",
+            input: {},
+            output: 1,
+          },
         ],
       },
       0,
@@ -684,7 +700,9 @@ describe("ChatMessageDTO mapping", () => {
 
   it("drops rows that are not a user or assistant turn", () => {
     expect(toChatMessageDTO(null, 0)).toBeNull();
-    expect(toChatMessageDTO({ id: "s", role: "system", parts: [] }, 0)).toBeNull();
+    expect(
+      toChatMessageDTO({ id: "s", role: "system", parts: [] }, 0),
+    ).toBeNull();
     expect(toChatMessageDTO({ role: "user", parts: [] }, 0)).toBeNull();
   });
 });
@@ -711,9 +729,15 @@ describe("conversation index", () => {
   it("keeps the first title and refreshes count and updatedAt", async () => {
     let clock = NOW;
     const t = buildTestApp({ now: () => clock });
-    await indexConversation(t.deps, "c1", { title: "First question", messageCount: 1 });
+    await indexConversation(t.deps, "c1", {
+      title: "First question",
+      messageCount: 1,
+    });
     clock = NOW + 60_000;
-    await indexConversation(t.deps, "c1", { title: "Later question", messageCount: 4 });
+    await indexConversation(t.deps, "c1", {
+      title: "Later question",
+      messageCount: 4,
+    });
 
     const rows = await t.deps.db.select().from(chats);
     expect(rows).toHaveLength(1);
@@ -754,18 +778,26 @@ describe("conversation index", () => {
 describe("chat REST routes", () => {
   it("lists conversations", async () => {
     const t = buildTestApp({ now: () => NOW });
-    await indexConversation(t.deps, "c1", { title: "About css", messageCount: 3 });
+    await indexConversation(t.deps, "c1", {
+      title: "About css",
+      messageCount: 3,
+    });
     const res = await t.request("/api/chat");
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({
-      items: [{ id: "c1", title: "About css", updatedAt: NOW, messageCount: 3 }],
+      items: [
+        { id: "c1", title: "About css", updatedAt: NOW, messageCount: 3 },
+      ],
     });
   });
 
   it("honours the list limit", async () => {
     const t = buildTestApp({ now: () => NOW });
     for (let i = 0; i < 5; i += 1) {
-      await indexConversation(t.deps, `c${i}`, { title: `c${i}`, messageCount: 1 });
+      await indexConversation(t.deps, `c${i}`, {
+        title: `c${i}`,
+        messageCount: 1,
+      });
     }
     const res = await t.request("/api/chat?limit=2");
     const body = (await res.json()) as { items: unknown[] };
@@ -801,7 +833,10 @@ describe("chat REST routes", () => {
   it("deletes the transcript and the index row", async () => {
     const chatAgents = createRecordingChatAgents();
     const t = buildTestApp({ now: () => NOW, chatAgents: chatAgents.binding });
-    await indexConversation(t.deps, "c1", { title: "About css", messageCount: 3 });
+    await indexConversation(t.deps, "c1", {
+      title: "About css",
+      messageCount: 3,
+    });
     await indexConversation(t.deps, "c2", { title: "Other", messageCount: 1 });
 
     const res = await t.request("/api/chat/c1", { method: "DELETE" });
@@ -814,7 +849,9 @@ describe("chat REST routes", () => {
   it("deleting an unknown conversation is idempotent", async () => {
     const chatAgents = createRecordingChatAgents();
     const t = buildTestApp({ chatAgents: chatAgents.binding });
-    const res = await t.request("/api/chat/never-existed", { method: "DELETE" });
+    const res = await t.request("/api/chat/never-existed", {
+      method: "DELETE",
+    });
     expect(res.status).toBe(204);
   });
 

@@ -77,12 +77,17 @@ export function ReviewPage() {
           : prev,
       );
       void qc.invalidateQueries({ queryKey: REVIEW_KEY });
-      toast.success(GRADES.find((g) => g.grade === vars.grade)?.label ?? "Graded", {
-        description: describeNextDue(schedule),
-      });
+      toast.success(
+        GRADES.find((g) => g.grade === vars.grade)?.label ?? "Graded",
+        {
+          description: describeNextDue(schedule),
+        },
+      );
     },
     onError: (e) => {
-      toast.error("Could not save that answer", { description: friendlyMessage(e) });
+      toast.error("Could not save that answer", {
+        description: friendlyMessage(e),
+      });
     },
   });
 
@@ -105,7 +110,9 @@ export function ReviewPage() {
       void qc.invalidateQueries({ queryKey: REVIEW_KEY });
     },
     onError: (e) => {
-      toast.error("Could not add your entries", { description: friendlyMessage(e) });
+      toast.error("Could not add your entries", {
+        description: friendlyMessage(e),
+      });
     },
   });
 
@@ -127,7 +134,10 @@ export function ReviewPage() {
       const grade = Number(e.key);
       if (grade >= 1 && grade <= 4) {
         e.preventDefault();
-        gradeCard.mutate({ entryId: card.entryId, grade: grade as ReviewGrade });
+        gradeCard.mutate({
+          entryId: card.entryId,
+          grade: grade as ReviewGrade,
+        });
       }
     }
     window.addEventListener("keydown", onKeyDown);
@@ -207,7 +217,10 @@ export function ReviewPage() {
           <div className="mt-5 space-y-4 border-t pt-4">
             {answer.isLoading && <Spinner label="Loading the answer…" />}
             {answer.isError && (
-              <ErrorBanner error={answer.error} onRetry={() => answer.refetch()} />
+              <ErrorBanner
+                error={answer.error}
+                onRetry={() => answer.refetch()}
+              />
             )}
             {answer.isSuccess && (
               <>
@@ -227,7 +240,9 @@ export function ReviewPage() {
                     <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                       Summary
                     </h2>
-                    <p className="mt-1 whitespace-pre-wrap text-sm">{summary}</p>
+                    <p className="mt-1 whitespace-pre-wrap text-sm">
+                      {summary}
+                    </p>
                   </section>
                 )}
                 {takeaway === "" && summary === "" && (
@@ -286,8 +301,8 @@ function Header({ dueCount }: { dueCount: number }) {
         </span>
       </div>
       <p className="text-xs text-muted-foreground">
-        A quick self-quiz over what you&rsquo;ve saved, timed so each entry comes
-        back just before you&rsquo;d forget it.
+        A quick self-quiz over what you&rsquo;ve saved, timed so each entry
+        comes back just before you&rsquo;d forget it.
       </p>
     </div>
   );
@@ -312,10 +327,10 @@ function ReviewExplainer() {
         <p>
           Each card shows an entry&rsquo;s title and a question. Try to recall
           the takeaway from memory, reveal the answer, then grade yourself
-          honestly. The grade sets when the card returns:{" "}
-          <em>Again</em> brings it back tomorrow, <em>Good</em> stretches the
-          gap each time (1 day, then 3, then about a week, and so on), and{" "}
-          <em>Easy</em> pushes it out even further.
+          honestly. The grade sets when the card returns: <em>Again</em> brings
+          it back tomorrow, <em>Good</em> stretches the gap each time (1 day,
+          then 3, then about a week, and so on), and <em>Easy</em> pushes it out
+          even further.
         </p>
         <p>
           Add your saved entries above to get started, or enroll entries one at

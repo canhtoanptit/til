@@ -168,7 +168,9 @@ describe("WorkersAIExtractor", () => {
  * markdown-conversion binding reference (docs page last updated 2026-07-13).
  */
 describe("WorkersAIExtractor.documentToMarkdown (PDF)", () => {
-  const PDF_BYTES = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x37]);
+  const PDF_BYTES = new Uint8Array([
+    0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x37,
+  ]);
 
   function recordingAi(result: unknown) {
     const calls: { name: string; type: string; size: number }[] = [];
@@ -205,7 +207,11 @@ describe("WorkersAIExtractor.documentToMarkdown (PDF)", () => {
     // The name and mime type are how the service picks its converter, so both are
     // part of the contract, not decoration.
     expect(calls).toEqual([
-      { name: "paper.pdf", type: "application/pdf", size: PDF_BYTES.byteLength },
+      {
+        name: "paper.pdf",
+        type: "application/pdf",
+        size: PDF_BYTES.byteLength,
+      },
     ]);
     expect(out.markdown).toContain("dominant sequence transduction");
     // A PDF has no <title>; the first heading is the closest thing to one.

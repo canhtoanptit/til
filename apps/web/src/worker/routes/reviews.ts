@@ -42,7 +42,10 @@ export function createReviewsRouter() {
     const limitRaw = Number(url.searchParams.get("limit") ?? DEFAULT_LIMIT);
     const limit = Math.min(
       MAX_LIMIT,
-      Math.max(1, Number.isFinite(limitRaw) ? Math.trunc(limitRaw) : DEFAULT_LIMIT),
+      Math.max(
+        1,
+        Number.isFinite(limitRaw) ? Math.trunc(limitRaw) : DEFAULT_LIMIT,
+      ),
     );
     const now = deps.now();
 

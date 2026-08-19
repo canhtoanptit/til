@@ -90,7 +90,9 @@ export function DigestDetailPage() {
     if (err instanceof ApiError && err.status === 404) {
       return (
         <Card className="gap-0 p-6 text-center">
-          <p className="text-sm text-muted-foreground">This digest doesn't exist.</p>
+          <p className="text-sm text-muted-foreground">
+            This digest doesn't exist.
+          </p>
           <Button asChild variant="link" className="mt-3">
             <Link to="/digests">Back to digests</Link>
           </Button>
@@ -108,7 +110,10 @@ export function DigestDetailPage() {
   return (
     <article className="space-y-5">
       <div>
-        <Link to="/digests" className="text-sm text-muted-foreground hover:underline">
+        <Link
+          to="/digests"
+          className="text-sm text-muted-foreground hover:underline"
+        >
           ← Back
         </Link>
       </div>
@@ -119,7 +124,9 @@ export function DigestDetailPage() {
           <DigestKindBadge kind={digest.kind} />
           <span>{formatRunDateTime(digest.runAt)}</span>
           <span aria-hidden="true">·</span>
-          <span>last {digest.windowDays} days{range ? ` (${range})` : ""}</span>
+          <span>
+            last {digest.windowDays} days{range ? ` (${range})` : ""}
+          </span>
           <span aria-hidden="true">·</span>
           <span>{formatItemCount(digest.itemCount)}</span>
           {digest.status === "pending" && (
@@ -225,13 +232,7 @@ export function DigestDetailPage() {
   );
 }
 
-function DigestItem({
-  item,
-  kind,
-}: {
-  item: DigestItemDTO;
-  kind: DigestKind;
-}) {
+function DigestItem({ item, kind }: { item: DigestItemDTO; kind: DigestKind }) {
   // A monthly report has no ranking, so its rows carry score 0 and no interest
   // score. Showing "score 0.00" on every highlighted save would be noise that
   // reads as a measurement.

@@ -6,13 +6,13 @@ This guide takes you from a fresh clone to a working deployment on your own Clou
 
 TIL ships as **one Cloudflare Worker** that serves both the React SPA and the API, so there is a single deploy target. Around it sit five Cloudflare resources, all declared in [`apps/web/wrangler.jsonc`](../apps/web/wrangler.jsonc):
 
-| Resource | Name / binding | What it does |
-| --- | --- | --- |
-| D1 database | `til` / `DB` | Entries, digests, chats, settings, FTS5 keyword index |
-| Vectorize index | `til-entries` / `VECTORIZE` | Embedding vectors for semantic search |
-| Workers AI | `AI` | `bge-m3` embeddings + `toMarkdown` page extraction |
-| Durable Object | `TilChatAgent` / `CHAT` | The chat agent (SQLite-backed) |
-| Workflow + cron | `til-digest` / `DIGEST` | The weekly digest run (Mondays 08:00 UTC) |
+| Resource        | Name / binding              | What it does                                          |
+| --------------- | --------------------------- | ----------------------------------------------------- |
+| D1 database     | `til` / `DB`                | Entries, digests, chats, settings, FTS5 keyword index |
+| Vectorize index | `til-entries` / `VECTORIZE` | Embedding vectors for semantic search                 |
+| Workers AI      | `AI`                        | `bge-m3` embeddings + `toMarkdown` page extraction    |
+| Durable Object  | `TilChatAgent` / `CHAT`     | The chat agent (SQLite-backed)                        |
+| Workflow + cron | `til-digest` / `DIGEST`     | The weekly digest run (Mondays 08:00 UTC)             |
 
 Two credentials exist at runtime, and neither lives in the repo:
 
@@ -106,7 +106,7 @@ You do **not** need to touch `TIL_STACK`: the checked-in config already sets `"T
 pnpm build   # from apps/web; runs `vite build`
 ```
 
-This builds the SPA **and** the worker, and regenerates `dist/til/wrangler.json` from your edited `wrangler.jsonc`. Build before the next two steps — wrangler in this project reads the *generated* config (via `.wrangler/deploy/config.json`), so migrating or deploying against a stale build would use your old, placeholder config.
+This builds the SPA **and** the worker, and regenerates `dist/til/wrangler.json` from your edited `wrangler.jsonc`. Build before the next two steps — wrangler in this project reads the _generated_ config (via `.wrangler/deploy/config.json`), so migrating or deploying against a stale build would use your old, placeholder config.
 
 ## Step 7 — Apply the database migrations to remote D1
 
@@ -172,7 +172,7 @@ Work through these in order; each one exercises a different resource.
    ```
    Expect `{"ok":true,"stack":"cloud","embedder":"ok"}`. `"embedder":"unavailable"` means the `AI` binding is still commented out — revisit step 5, rebuild, redeploy.
 2. **Ingest:** on the Feed page, paste an article URL. The entry should appear with a summary and takeaways (that was your LLM through the AI Gateway; you'll see the request in the gateway's dashboard logs).
-3. **Semantic search:** press **⌘K / Ctrl+K** and search for a *paraphrase* of the article — not its literal words. A hit proves Workers AI embeddings and Vectorize are wired up.
+3. **Semantic search:** press **⌘K / Ctrl+K** and search for a _paraphrase_ of the article — not its literal words. A hit proves Workers AI embeddings and Vectorize are wired up.
 4. **Chat:** open Chat and ask about the saved entry. The agent should cite it.
 5. **Digest:** on the Digests page press **Run now** (or wait for Monday 08:00 UTC). A digest of the default feeds should appear after ~a minute.
 
@@ -190,16 +190,16 @@ npx wrangler deploy
 
 ## Troubleshooting
 
-| Symptom | Likely cause / fix |
-| --- | --- |
-| Every API call returns 401 | `APP_TOKEN` secret missing or you typed a different token at the gate. Re-run step 9, then use **sign out** in the nav to re-enter the token (it's stored in your browser's localStorage). |
-| `/api/health` says `"embedder":"unavailable"` | The `ai` binding is still commented out in `wrangler.jsonc` (step 5), or you deployed a stale build (step 6). Entries ingested while the embedder was down stay unindexed — after fixing, backfill them with `curl -X POST -H "Authorization: Bearer $APP_TOKEN" https://<your-url>/api/entries/reembed`. |
-| `settings not configured` when adding an entry | Step 11 — save LLM settings first. |
-| Chat errors mentioning tool calls | Your chosen model can't call tools. Pick a tool-calling-capable model in Settings. |
-| Vector dimension errors in logs | The Vectorize index was created with the wrong `--dimensions`. Delete and recreate it exactly as in step 4 (1024, cosine). |
-| Wrangler targets the wrong account | `export CLOUDFLARE_ACCOUNT_ID=<id>` before running wrangler commands. |
-| `Authentication error [code: 10000]` on `vectorize` commands | Your OAuth token lacks `workers:write` (the scope that gates Vectorize — `ai:write` is not enough). Re-run the login command from step 2 exactly as written. |
-| Deploy succeeds but the app shows old config | Rebuild before deploying — wrangler reads the generated `dist/til/wrangler.json`, which only updates on `pnpm build`. |
+| Symptom                                                      | Likely cause / fix                                                                                                                                                                                                                                                                                        |
+| ------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Every API call returns 401                                   | `APP_TOKEN` secret missing or you typed a different token at the gate. Re-run step 9, then use **sign out** in the nav to re-enter the token (it's stored in your browser's localStorage).                                                                                                                |
+| `/api/health` says `"embedder":"unavailable"`                | The `ai` binding is still commented out in `wrangler.jsonc` (step 5), or you deployed a stale build (step 6). Entries ingested while the embedder was down stay unindexed — after fixing, backfill them with `curl -X POST -H "Authorization: Bearer $APP_TOKEN" https://<your-url>/api/entries/reembed`. |
+| `settings not configured` when adding an entry               | Step 11 — save LLM settings first.                                                                                                                                                                                                                                                                        |
+| Chat errors mentioning tool calls                            | Your chosen model can't call tools. Pick a tool-calling-capable model in Settings.                                                                                                                                                                                                                        |
+| Vector dimension errors in logs                              | The Vectorize index was created with the wrong `--dimensions`. Delete and recreate it exactly as in step 4 (1024, cosine).                                                                                                                                                                                |
+| Wrangler targets the wrong account                           | `export CLOUDFLARE_ACCOUNT_ID=<id>` before running wrangler commands.                                                                                                                                                                                                                                     |
+| `Authentication error [code: 10000]` on `vectorize` commands | Your OAuth token lacks `workers:write` (the scope that gates Vectorize — `ai:write` is not enough). Re-run the login command from step 2 exactly as written.                                                                                                                                              |
+| Deploy succeeds but the app shows old config                 | Rebuild before deploying — wrangler reads the generated `dist/til/wrangler.json`, which only updates on `pnpm build`.                                                                                                                                                                                     |
 
 ## Notes for self-hosters
 

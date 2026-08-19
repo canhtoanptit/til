@@ -58,7 +58,8 @@ export function BookmarkletCard() {
               <li>Copy the snippet below.</li>
               <li>
                 Add a new bookmark in your browser, name it{" "}
-                <span className="font-medium text-foreground">Save to TIL</span>.
+                <span className="font-medium text-foreground">Save to TIL</span>
+                .
               </li>
               <li>Paste the snippet as the bookmark's URL.</li>
             </ol>

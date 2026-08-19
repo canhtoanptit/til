@@ -37,7 +37,8 @@ export function TagsPage() {
         <Card className="gap-0 border-dashed bg-transparent p-8 text-center text-sm text-muted-foreground shadow-none">
           <p className="font-medium text-foreground">No tags yet.</p>
           <p className="mt-1">
-            Tags are written when an entry is summarised — save a link to get some.
+            Tags are written when an entry is summarised — save a link to get
+            some.
           </p>
         </Card>
       ) : (

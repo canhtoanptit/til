@@ -144,22 +144,22 @@ All routes require `Authorization: Bearer <APP_TOKEN>` except `GET /api/health` 
 | Method | Path                        | Purpose                                                                                                                   |
 | ------ | --------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
 | POST   | `/api/entries`              | `{url}` → create `pending` entry, kick off ingest; `409` + existing id on duplicate `canonical_url`                       |
-| GET    | `/api/entries`              | list (keyset-paginated); `?filter=favorites\|archived` and `?tag=` narrow it; lazily fails entries `pending` > 10 min      |
+| GET    | `/api/entries`              | list (keyset-paginated); `?filter=favorites\|archived` and `?tag=` narrow it; lazily fails entries `pending` > 10 min     |
 | GET    | `/api/entries/:id`          | detail (client polls until `ready`)                                                                                       |
-| PATCH  | `/api/entries/:id`          | library edits — any of `{favorite, archived, note}`; empty-string note clears it to null                                   |
+| PATCH  | `/api/entries/:id`          | library edits — any of `{favorite, archived, note}`; empty-string note clears it to null                                  |
 | DELETE | `/api/entries/:id`          | remove (also deletes the Vectorize vector)                                                                                |
-| GET    | `/api/entries/:id/related`  | nearest neighbours by vector (`?limit=`, ≤20); `{available:false}` when there is no embedder or no vector                  |
+| GET    | `/api/entries/:id/related`  | nearest neighbours by vector (`?limit=`, ≤20); `{available:false}` when there is no embedder or no vector                 |
 | POST   | `/api/entries/:id/reingest` | retry a `failed`/stale entry (re-extracts, re-digests, re-embeds)                                                         |
 | POST   | `/api/entries/reembed`      | backfill vectors for `ready` entries missing them (after enabling an embedder)                                            |
 | GET    | `/api/tags`                 | tag facets `{tag, count}` for the browse UI, count desc; archived entries excluded                                        |
 | GET    | `/api/search?q=`            | hybrid search — vector + `entries_fts` fused by RRF, degrading to FTS-only with no embedder                               |
-| GET    | `/api/reviews/queue`        | due cards + `dueCount` (`?limit=`, ≤50) — question side only, so the answer stays hidden                                   |
+| GET    | `/api/reviews/queue`        | due cards + `dueCount` (`?limit=`, ≤50) — question side only, so the answer stays hidden                                  |
 | POST   | `/api/reviews/enroll`       | add cards: `{entryId}` for one, `{all:true}` to backfill every `ready` entry without one                                  |
-| POST   | `/api/reviews/:entryId`     | grade a card `{grade:1–4}` → next SM-2-lite state (`dueAt`, `intervalDays`, `ease`, `lapses`)                              |
-| GET    | `/api/digests`              | list digest runs; `GET /:id` detail, `DELETE /:id`; lazily fails runs `pending` > 15 min                                   |
-| POST   | `/api/digests/run`          | manual trigger (202) — optional `{windowDays, maxItems, kind}`; `kind` is `weekly` (default) or `monthly-report`, strict   |
+| POST   | `/api/reviews/:entryId`     | grade a card `{grade:1–4}` → next SM-2-lite state (`dueAt`, `intervalDays`, `ease`, `lapses`)                             |
+| GET    | `/api/digests`              | list digest runs; `GET /:id` detail, `DELETE /:id`; lazily fails runs `pending` > 15 min                                  |
+| POST   | `/api/digests/run`          | manual trigger (202) — optional `{windowDays, maxItems, kind}`; `kind` is `weekly` (default) or `monthly-report`, strict  |
 | GET    | `/api/feeds`                | feed list; `POST` add `{url}` (`409` on duplicate), `PUT /:id` `{enabled}` to pause, `DELETE /:id`                        |
-| POST   | `/api/feedback`             | 👍/👎 `{kind}` plus optional `{conversationId, messageId, entryId, comment}` — write-only signal, no dedupe                 |
+| POST   | `/api/feedback`             | 👍/👎 `{kind}` plus optional `{conversationId, messageId, entryId, comment}` — write-only signal, no dedupe               |
 | WS     | `/api/chat/:id`             | **WebSocket only** — chat turns as Agents SDK frames; there is no HTTP chat endpoint                                      |
 | POST   | `/api/chat/ticket`          | mint a 60 s HMAC ticket authorising the WS upgrade (bearer-authed; see [ADR-0007](./adr/0007-single-user-local-first.md)) |
 | GET    | `/api/chat`                 | conversation list; `GET /:id/messages` transcript; `DELETE /:id` clears it                                                |
@@ -167,7 +167,7 @@ All routes require `Authorization: Bearer <APP_TOKEN>` except `GET /api/health` 
 | PUT    | `/api/settings`             | update BYOK config — full replace; `apiKey` omittable only if provider/account/gateway unchanged                          |
 | POST   | `/api/settings/test`        | `LLMClient.ping()` — validate key/gateway                                                                                 |
 | GET    | `/api/health`               | liveness (no auth)                                                                                                        |
-| GET    | `/api/export`               | streamed full backup as JSON; `?format=markdown` for a single readable `.md` bundle (see below)                            |
+| GET    | `/api/export`               | streamed full backup as JSON; `?format=markdown` for a single readable `.md` bundle (see below)                           |
 
 ### 8.1 What an export deliberately leaves out
 

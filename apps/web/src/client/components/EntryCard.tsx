@@ -115,7 +115,11 @@ export function EntryCard({
  *
  * Shared by the card and the detail page so the two cannot drift.
  */
-export function ContentTypeBadge({ contentType }: { contentType: ContentType }) {
+export function ContentTypeBadge({
+  contentType,
+}: {
+  contentType: ContentType;
+}) {
   const badge = contentTypeBadge(contentType);
   if (!badge) return null;
   const Icon = contentType === "video" ? VideoIcon : FileTextIcon;
@@ -138,7 +142,10 @@ export function ContentTypeBadge({ contentType }: { contentType: ContentType }) 
 export function TagLink({ tag }: { tag: string }) {
   return (
     <Badge asChild variant="secondary">
-      <Link to={`/tags/${encodeURIComponent(tag)}`} title={`Entries tagged ${tag}`}>
+      <Link
+        to={`/tags/${encodeURIComponent(tag)}`}
+        title={`Entries tagged ${tag}`}
+      >
         {tag}
       </Link>
     </Badge>
@@ -177,7 +184,9 @@ export function FavoriteButton({
       <StarIcon
         aria-hidden="true"
         className={cn(
-          entry.favorite ? "fill-warning text-warning" : "text-muted-foreground",
+          entry.favorite
+            ? "fill-warning text-warning"
+            : "text-muted-foreground",
         )}
       />
     </Button>

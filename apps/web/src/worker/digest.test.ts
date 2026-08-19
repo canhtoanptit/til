@@ -205,9 +205,9 @@ describe("cron routing (P26)", () => {
       resolve(dirname(fileURLToPath(import.meta.url)), "../../wrangler.jsonc"),
       "utf8",
     );
-    const crons = [
-      ...config.matchAll(/"((?:[-\d*/,]+ ){4}[-\d*/,]+)"/g),
-    ].map((match) => match[1]);
+    const crons = [...config.matchAll(/"((?:[-\d*/,]+ ){4}[-\d*/,]+)"/g)].map(
+      (match) => match[1],
+    );
     expect(crons).toEqual([WEEKLY_CRON, MONTHLY_REPORT_CRON]);
   });
 });

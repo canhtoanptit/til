@@ -905,7 +905,10 @@ describe("runDigest — monthly report (P26)", () => {
 describe("startScheduledRun — cron routing (P26)", () => {
   it("starts a weekly digest for the Monday cron", async () => {
     const workflow = createRecordingWorkflow();
-    const t = buildTestApp({ now: () => NOW, digestWorkflow: workflow.binding });
+    const t = buildTestApp({
+      now: () => NOW,
+      digestWorkflow: workflow.binding,
+    });
 
     const started = await startScheduledRun(t.deps, WEEKLY_CRON);
 
@@ -924,7 +927,10 @@ describe("startScheduledRun — cron routing (P26)", () => {
 
   it("starts a monthly report for the 1st-of-the-month cron", async () => {
     const workflow = createRecordingWorkflow();
-    const t = buildTestApp({ now: () => NOW, digestWorkflow: workflow.binding });
+    const t = buildTestApp({
+      now: () => NOW,
+      digestWorkflow: workflow.binding,
+    });
 
     const started = await startScheduledRun(t.deps, MONTHLY_REPORT_CRON);
 
@@ -943,7 +949,10 @@ describe("startScheduledRun — cron routing (P26)", () => {
 
   it("starts a weekly digest for an expression nobody claimed", async () => {
     const workflow = createRecordingWorkflow();
-    const t = buildTestApp({ now: () => NOW, digestWorkflow: workflow.binding });
+    const t = buildTestApp({
+      now: () => NOW,
+      digestWorkflow: workflow.binding,
+    });
     const started = await startScheduledRun(t.deps, "0 0 * * *");
     expect(started.kind).toBe("weekly");
     expect(workflow.created).toHaveLength(1);

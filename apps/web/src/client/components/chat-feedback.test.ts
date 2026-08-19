@@ -88,9 +88,9 @@ describe("voteActionFor", () => {
 
 describe("canVoteOnTurn", () => {
   it("allows a settled assistant turn", () => {
-    expect(canVoteOnTurn({ role: "assistant", isLast: true, busy: false })).toBe(
-      true,
-    );
+    expect(
+      canVoteOnTurn({ role: "assistant", isLast: true, busy: false }),
+    ).toBe(true);
     expect(
       canVoteOnTurn({ role: "assistant", isLast: false, busy: false }),
     ).toBe(true);
@@ -100,9 +100,9 @@ describe("canVoteOnTurn", () => {
     expect(canVoteOnTurn({ role: "assistant", isLast: true, busy: true })).toBe(
       false,
     );
-    expect(canVoteOnTurn({ role: "assistant", isLast: false, busy: true })).toBe(
-      true,
-    );
+    expect(
+      canVoteOnTurn({ role: "assistant", isLast: false, busy: true }),
+    ).toBe(true);
   });
 
   it("never offers a vote on the reader's own messages", () => {

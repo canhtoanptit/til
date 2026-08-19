@@ -437,14 +437,15 @@ describe("runDigest reads its feeds from D1", () => {
 
     const step = inlineStep();
     const wrapped = {
-      do: async <T,>(
+      do: async <T>(
         name: string,
         config: Parameters<typeof step.step.do>[1],
         fn: () => Promise<T>,
       ): Promise<T> => {
         const out = await step.step.do(name, config, fn);
         // The owner turns everything off the instant planning finishes.
-        if (name === "plan") await t.deps.db.update(feeds).set({ enabled: false });
+        if (name === "plan")
+          await t.deps.db.update(feeds).set({ enabled: false });
         return out;
       },
     };

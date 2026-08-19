@@ -196,7 +196,9 @@ export function toolSummary(
       return title ? `Opened “${title}”` : `Opened ${entry.url}`;
     }
     case "stats": {
-      const kind = readString(readProp(output, "kind")) ?? readString(readProp(input, "kind"));
+      const kind =
+        readString(readProp(output, "kind")) ??
+        readString(readProp(input, "kind"));
       const since = readNumber(readProp(input, "sinceDays"));
       const window = since === null ? "" : ` (last ${since} days)`;
       return `Looked up ${statsLabel(kind)}${window}`;

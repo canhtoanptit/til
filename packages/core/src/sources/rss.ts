@@ -39,8 +39,7 @@ export class RssAdapter implements SourceAdapter {
   private readonly feeds: readonly string[];
   private readonly now: () => number;
   private readonly onFeedError:
-    | ((feedUrl: string, error: unknown) => void)
-    | undefined;
+    ((feedUrl: string, error: unknown) => void) | undefined;
 
   constructor(opts: RssAdapterOptions) {
     this.feeds = [...opts.feeds];
@@ -101,7 +100,8 @@ export class RssAdapter implements SourceAdapter {
     for (const item of items) {
       const candidate = toCandidate(item, sourceName);
       if (candidate === undefined) continue;
-      if (!isWithinWindow(candidate.publishedAt, now, opts.windowDays)) continue;
+      if (!isWithinWindow(candidate.publishedAt, now, opts.windowDays))
+        continue;
       candidates.push(candidate);
       if (candidates.length >= opts.limit) break;
     }

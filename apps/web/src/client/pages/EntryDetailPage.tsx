@@ -3,7 +3,12 @@ import { useId, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { toast } from "sonner";
 import { ArchiveIcon, ArchiveRestoreIcon, ChevronDownIcon } from "lucide-react";
-import { ApiError, api, type EntryDetailDTO, type RelatedEntryDTO } from "../api";
+import {
+  ApiError,
+  api,
+  type EntryDetailDTO,
+  type RelatedEntryDTO,
+} from "../api";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import {
   ContentTypeBadge,
@@ -76,7 +81,8 @@ function NoteEditor({ entry }: { entry: EntryDetailDTO }) {
             patch.mutate({
               id: entry.id,
               patch: { note: draft },
-              success: draft.trim().length === 0 ? "Note cleared" : "Note saved",
+              success:
+                draft.trim().length === 0 ? "Note cleared" : "Note saved",
               failure: "Could not save that note",
             })
           }
@@ -219,7 +225,9 @@ export function EntryDetailPage() {
     if (err instanceof ApiError && err.status === 404) {
       return (
         <Card className="gap-0 p-6 text-center">
-          <p className="text-sm text-muted-foreground">This entry doesn't exist.</p>
+          <p className="text-sm text-muted-foreground">
+            This entry doesn't exist.
+          </p>
           <Button asChild variant="link" className="mt-3">
             <Link to="/">Back to feed</Link>
           </Button>
@@ -326,7 +334,9 @@ export function EntryDetailPage() {
               <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 Summary
               </h2>
-              <p className="mt-1 whitespace-pre-wrap text-sm">{entry.summary}</p>
+              <p className="mt-1 whitespace-pre-wrap text-sm">
+                {entry.summary}
+              </p>
             </section>
           )}
           {entry.question && (
@@ -354,7 +364,6 @@ export function EntryDetailPage() {
       {/* Keyed on the id so navigating between entries re-seeds the draft from the
           entry actually on screen, instead of carrying the previous one's text. */}
       <NoteEditor key={entry.id} entry={entry} />
-
 
       {entry.contentMarkdown && (
         <Collapsible asChild>

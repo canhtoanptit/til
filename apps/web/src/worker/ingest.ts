@@ -57,7 +57,8 @@ async function readSource(
     const videoId = youtubeVideoId(url);
     // Unreachable — `guess === "video"` is defined as `youtubeVideoId() !== null` —
     // but the types do not know that and a throw is cheaper than a non-null assert.
-    if (videoId === null) throw new ExtractionError(`Not a YouTube video: ${url}`);
+    if (videoId === null)
+      throw new ExtractionError(`Not a YouTube video: ${url}`);
     const transcript = await fetchYoutubeTranscript(videoId, deps.fetchImpl);
     console.log(
       `[ingest] youtube transcript ${videoId}: ${transcript.text.length} chars, track=${transcript.track.languageCode}${transcript.track.kind === "asr" ? " (auto)" : ""}`,

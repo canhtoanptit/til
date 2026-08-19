@@ -55,7 +55,9 @@ describe("PATCH /api/entries/:id", () => {
     const t = buildTestApp();
     await insertEntry(t.deps.db, { id: "p-2", favorite: true, note: "kept" });
 
-    const body = (await (await patch(t, "p-2", { archived: true })).json()) as EntryBody;
+    const body = (await (
+      await patch(t, "p-2", { archived: true })
+    ).json()) as EntryBody;
     expect(body.archived).toBe(true);
     expect(body.favorite).toBe(true);
     expect(body.note).toBe("kept");
@@ -99,7 +101,9 @@ describe("PATCH /api/entries/:id", () => {
     const t = buildTestApp();
     await insertEntry(t.deps.db, { id: "p-6", note: "to be cleared" });
 
-    const body = (await (await patch(t, "p-6", { note: "" })).json()) as EntryBody;
+    const body = (await (
+      await patch(t, "p-6", { note: "" })
+    ).json()) as EntryBody;
     expect(body.note).toBeNull();
     // NULL in the column, not "" — "no note" has one representation.
     const row = (
@@ -121,7 +125,11 @@ describe("PATCH /api/entries/:id", () => {
   it("stamps updatedAt from deps.now()", async () => {
     const now = 4_242_424_242;
     const t = buildTestApp({ now: () => now });
-    await insertEntry(t.deps.db, { id: "p-8", createdAt: 1_000, updatedAt: 1_000 });
+    await insertEntry(t.deps.db, {
+      id: "p-8",
+      createdAt: 1_000,
+      updatedAt: 1_000,
+    });
 
     const body = (await (
       await patch(t, "p-8", { favorite: true })
@@ -167,7 +175,7 @@ describe("PATCH /api/entries/:id", () => {
     expect(res.status).toBe(422);
   });
 
-  it("422 for a null note — clearing is spelled \"\", not null", async () => {
+  it('422 for a null note — clearing is spelled "", not null', async () => {
     const t = buildTestApp();
     await insertEntry(t.deps.db, { id: "p-12" });
     const res = await patch(t, "p-12", { note: null });
@@ -177,7 +185,9 @@ describe("PATCH /api/entries/:id", () => {
   it("422 for a note over the size cap, and 200 exactly at it", async () => {
     const t = buildTestApp();
     await insertEntry(t.deps.db, { id: "p-13" });
-    const over = await patch(t, "p-13", { note: "x".repeat(MAX_ENTRY_NOTE + 1) });
+    const over = await patch(t, "p-13", {
+      note: "x".repeat(MAX_ENTRY_NOTE + 1),
+    });
     expect(over.status).toBe(422);
     const at = await patch(t, "p-13", { note: "x".repeat(MAX_ENTRY_NOTE) });
     expect(at.status).toBe(200);
@@ -194,14 +204,21 @@ describe("PATCH /api/entries/:id", () => {
       takeaway: "ownership matters",
       tags: ["rust"],
     });
-    const before = (await (await t.request("/api/search?q=ownership")).json()) as {
+    const before = (await (
+      await t.request("/api/search?q=ownership")
+    ).json()) as {
       items: { id: string }[];
     };
     expect(before.items.map((i) => i.id)).toEqual(["p-14"]);
 
-    await patch(t, "p-14", { favorite: true, note: "a note nobody can search for" });
+    await patch(t, "p-14", {
+      favorite: true,
+      note: "a note nobody can search for",
+    });
 
-    const after = (await (await t.request("/api/search?q=ownership")).json()) as {
+    const after = (await (
+      await t.request("/api/search?q=ownership")
+    ).json()) as {
       items: { id: string; favorite: boolean }[];
     };
     expect(after.items.map((i) => i.id)).toEqual(["p-14"]);
@@ -278,7 +295,9 @@ describe("GET /api/entries?filter=", () => {
     const t = buildTestApp();
     await seedFour(t);
     for (const q of ["?filter=bogus", "?filter=", "?filter=ARCHIVED"]) {
-      const body = (await (await t.request(`/api/entries${q}`)).json()) as ListBody;
+      const body = (await (
+        await t.request(`/api/entries${q}`)
+      ).json()) as ListBody;
       expect(body.items.map((i) => i.id)).toEqual(["b", "a"]);
     }
   });
@@ -309,7 +328,9 @@ describe("GET /api/entries?filter=", () => {
     let cursor: string | null = null;
     for (let page = 0; page < 5; page += 1) {
       const qs = cursor === null ? "?limit=2" : `?limit=2&cursor=${cursor}`;
-      const body = (await (await t.request(`/api/entries${qs}`)).json()) as ListBody;
+      const body = (await (
+        await t.request(`/api/entries${qs}`)
+      ).json()) as ListBody;
       seen.push(...body.items.map((i) => i.id));
       cursor = body.nextCursor;
       if (cursor === null) break;
@@ -399,7 +420,9 @@ describe("GET /api/entries?tag=", () => {
   it("matches a tag exactly — 'go' must not match 'golang'", async () => {
     const t = buildTestApp();
     await seedTagged(t);
-    const body = (await (await t.request("/api/entries?tag=go")).json()) as ListBody;
+    const body = (await (
+      await t.request("/api/entries?tag=go")
+    ).json()) as ListBody;
     expect(body.items.map((i) => i.id)).toEqual(["t-go-2", "t-go"]);
   });
 
@@ -436,7 +459,9 @@ describe("GET /api/entries?tag=", () => {
     await seedTagged(t);
     // `%` and `_` are stripped before the pattern is built, so this asks for the
     // tag "go" and not "anything starting with go".
-    const body = (await (await t.request("/api/entries?tag=go%")).json()) as ListBody;
+    const body = (await (
+      await t.request("/api/entries?tag=go%")
+    ).json()) as ListBody;
     expect(body.items.map((i) => i.id)).toEqual(["t-go-2", "t-go"]);
   });
 
@@ -460,7 +485,9 @@ describe("GET /api/entries?tag=", () => {
       url: "https://example.com/go-fav",
     });
 
-    const def = (await (await t.request("/api/entries?tag=go")).json()) as ListBody;
+    const def = (await (
+      await t.request("/api/entries?tag=go")
+    ).json()) as ListBody;
     expect(def.items.map((i) => i.id)).toEqual(["t-go-fav", "t-go-2", "t-go"]);
 
     const favs = (await (
@@ -497,7 +524,9 @@ describe("GET /api/entries?tag=", () => {
     ).json()) as ListBody;
     expect(first.items.map((i) => i.id)).toEqual(["pg-3", "pg-2"]);
     const second = (await (
-      await t.request(`/api/entries?tag=rust&limit=2&cursor=${first.nextCursor}`)
+      await t.request(
+        `/api/entries?tag=rust&limit=2&cursor=${first.nextCursor}`,
+      )
     ).json()) as ListBody;
     expect(second.items.map((i) => i.id)).toEqual(["pg-1"]);
     expect(second.nextCursor).toBeNull();
@@ -558,7 +587,9 @@ describe("GET /api/tags", () => {
     expect(body.items).toEqual([{ tag: "go", count: 1 }]);
 
     // The promise the count makes: following the link finds exactly that many.
-    const listed = (await (await t.request("/api/entries?tag=go")).json()) as ListBody;
+    const listed = (await (
+      await t.request("/api/entries?tag=go")
+    ).json()) as ListBody;
     expect(listed.items).toHaveLength(1);
   });
 
@@ -627,7 +658,11 @@ describe("entry DTO — P23 additions", () => {
     const detail = (await (
       await t.request("/api/entries/dto-1")
     ).json()) as EntryBody;
-    expect(detail).toMatchObject({ favorite: false, archived: false, note: null });
+    expect(detail).toMatchObject({
+      favorite: false,
+      archived: false,
+      note: null,
+    });
   });
 
   it("round-trips the marks through the list and detail responses", async () => {

@@ -45,7 +45,10 @@ interface FixtureOptions {
 function watchPage(opts: FixtureOptions = {}): string {
   const player = {
     responseContext: { note: "a string with };  and </script> inside it" },
-    playabilityStatus: opts.playabilityStatus ?? { status: "OK", playableInEmbed: true },
+    playabilityStatus: opts.playabilityStatus ?? {
+      status: "OK",
+      playableInEmbed: true,
+    },
     videoDetails: {
       videoId: VIDEO_ID,
       title: opts.title ?? 'Why "ownership" beats a garbage collector',
@@ -63,7 +66,7 @@ function watchPage(opts: FixtureOptions = {}): string {
   };
   const json = opts.playerJson ?? JSON.stringify(player);
   return `<!doctype html><html><head><title>${
-    opts.title ?? 'Why &quot;ownership&quot; beats a garbage collector'
+    opts.title ?? "Why &quot;ownership&quot; beats a garbage collector"
   } - YouTube</title></head><body>
 <script nonce="abc">var meta = {"unrelated":"object"};</script>
 <script nonce="xyz">var ytInitialPlayerResponse = ${json};if (window.ytcsi) {window.ytcsi.tick("pr");}</script>
@@ -129,15 +132,19 @@ function xmlTranscript(lines: readonly string[]): string {
 
 describe("extractPlayerResponse", () => {
   it("lifts the player response out of a real-shaped watch page", () => {
-    const parsed = extractPlayerResponse(watchPage({ captionTracks: [ENGLISH_TRACK] }));
-    expect((parsed as { videoDetails: { videoId: string } }).videoDetails.videoId).toBe(
-      VIDEO_ID,
+    const parsed = extractPlayerResponse(
+      watchPage({ captionTracks: [ENGLISH_TRACK] }),
     );
+    expect(
+      (parsed as { videoDetails: { videoId: string } }).videoDetails.videoId,
+    ).toBe(VIDEO_ID);
   });
 
   it("is not fooled by `};` or `</script>` inside a string literal", () => {
     // A regex-based parser stops at the first `};` and produces invalid JSON here.
-    const parsed = extractPlayerResponse(watchPage({ captionTracks: [ENGLISH_TRACK] }));
+    const parsed = extractPlayerResponse(
+      watchPage({ captionTracks: [ENGLISH_TRACK] }),
+    );
     expect(captionTracksFrom(parsed)).toHaveLength(1);
   });
 
@@ -186,7 +193,9 @@ describe("extractPlayerResponse — escaping", () => {
 describe("captionTracksFrom", () => {
   it("reads baseUrl, languageCode, kind and both name shapes", () => {
     const tracks = captionTracksFrom(
-      extractPlayerResponse(watchPage({ captionTracks: [ENGLISH_TRACK, AUTO_TRACK] })),
+      extractPlayerResponse(
+        watchPage({ captionTracks: [ENGLISH_TRACK, AUTO_TRACK] }),
+      ),
     );
     expect(tracks).toEqual([
       { baseUrl: CAPTION_BASE, languageCode: "en", name: "English" },
@@ -205,7 +214,9 @@ describe("captionTracksFrom", () => {
 
   it("is empty when captionTracks is present but empty", () => {
     expect(
-      captionTracksFrom(extractPlayerResponse(watchPage({ captionTracks: [] }))),
+      captionTracksFrom(
+        extractPlayerResponse(watchPage({ captionTracks: [] })),
+      ),
     ).toEqual([]);
   });
 
@@ -216,8 +227,14 @@ describe("captionTracksFrom", () => {
     ["a number", 7],
     ["an array", [1, 2]],
     ["an unrelated object", { player: {} }],
-    ["captionTracks as an object", { captions: { playerCaptionsTracklistRenderer: { captionTracks: {} } } }],
-    ["a renamed renderer", { captions: { somethingNewRenderer: { captionTracks: [] } } }],
+    [
+      "captionTracks as an object",
+      { captions: { playerCaptionsTracklistRenderer: { captionTracks: {} } } },
+    ],
+    [
+      "a renamed renderer",
+      { captions: { somethingNewRenderer: { captionTracks: [] } } },
+    ],
   ])("survives %s without throwing", (_label, input) => {
     // Every shape here is "YouTube changed something". None may crash the ingest.
     expect(() => captionTracksFrom(input)).not.toThrow();
@@ -240,13 +257,15 @@ describe("captionTracksFrom", () => {
 describe("pickCaptionTrack", () => {
   it("prefers a human-authored English track over the auto one", () => {
     // Auto-captions have no punctuation, which measurably worsens the digest.
-    expect(pickCaptionTrack([AUTO_TRACK, ENGLISH_TRACK].map(toTrack))?.kind).toBeUndefined();
+    expect(
+      pickCaptionTrack([AUTO_TRACK, ENGLISH_TRACK].map(toTrack))?.kind,
+    ).toBeUndefined();
   });
 
   it("prefers any human-authored track over an auto one", () => {
-    expect(pickCaptionTrack([AUTO_TRACK, GERMAN_TRACK].map(toTrack))?.languageCode).toBe(
-      "de",
-    );
+    expect(
+      pickCaptionTrack([AUTO_TRACK, GERMAN_TRACK].map(toTrack))?.languageCode,
+    ).toBe("de");
   });
 
   it("takes auto English when that is all there is", () => {
@@ -346,7 +365,9 @@ describe("playabilityProblem", () => {
   });
 
   it("reports a bare status with no reason", () => {
-    expect(playabilityProblem({ playabilityStatus: { status: "ERROR" } })).toBe("ERROR");
+    expect(playabilityProblem({ playabilityStatus: { status: "ERROR" } })).toBe(
+      "ERROR",
+    );
   });
 
   it("truncates a long reason — it lands in a DB column and on screen", () => {
@@ -372,9 +393,9 @@ describe("needsProofOfOrigin", () => {
     // Verified 2026-08-12: fetching one of these returns HTTP 200 with a
     // zero-length body for every fmt, so it is checked before spending a request.
     expect(needsProofOfOrigin(`${CAPTION_BASE}&exp=xpe&xoaf=5`)).toBe(true);
-    expect(needsProofOfOrigin("https://www.youtube.com/api/timedtext?exp=xpe")).toBe(
-      true,
-    );
+    expect(
+      needsProofOfOrigin("https://www.youtube.com/api/timedtext?exp=xpe"),
+    ).toBe(true);
     expect(needsProofOfOrigin(`${CAPTION_BASE}&exp=xpe`)).toBe(true);
   });
 
@@ -391,7 +412,9 @@ describe("needsProofOfOrigin", () => {
 
 describe("transcriptToText", () => {
   it("joins fmt=json3 segments into prose", () => {
-    const text = transcriptToText(json3Transcript(["hello there", "world again"]));
+    const text = transcriptToText(
+      json3Transcript(["hello there", "world again"]),
+    );
     expect(text).toBe("hello there world again");
   });
 
@@ -419,7 +442,9 @@ describe("transcriptToText", () => {
   it("decodes the double-encoded entities the XML payload carries", () => {
     // `&amp;#39;` — one decode pass leaves `&#39;` on screen.
     expect(
-      transcriptToText(`<transcript><text start="0">don&amp;#39;t &amp;amp; won&amp;#39;t</text></transcript>`),
+      transcriptToText(
+        `<transcript><text start="0">don&amp;#39;t &amp;amp; won&amp;#39;t</text></transcript>`,
+      ),
     ).toBe("don't & won't");
   });
 
@@ -580,7 +605,10 @@ describe("fetchYoutubeTranscript — degradation", () => {
   });
 
   it("an empty caption track list", async () => {
-    await expectUnavailable([{ body: watchPage({ captionTracks: [] }) }], /no caption track/);
+    await expectUnavailable(
+      [{ body: watchPage({ captionTracks: [] }) }],
+      /no caption track/,
+    );
   });
 
   it("the bot check — reported as YouTube's refusal, not as 'no subtitles'", async () => {
@@ -606,7 +634,9 @@ describe("fetchYoutubeTranscript — degradation", () => {
     const { fetchImpl, urls } = stubFetch([
       {
         body: watchPage({
-          captionTracks: [{ ...ENGLISH_TRACK, baseUrl: `${CAPTION_BASE}&exp=xpe` }],
+          captionTracks: [
+            { ...ENGLISH_TRACK, baseUrl: `${CAPTION_BASE}&exp=xpe` },
+          ],
         }),
       },
     ]);
@@ -621,7 +651,11 @@ describe("fetchYoutubeTranscript — degradation", () => {
     // The realistic failure for a datacenter IP: HTTP 200, a cookie notice, no
     // player response anywhere in it.
     await expectUnavailable(
-      [{ body: "<html><body><h1>Before you continue to YouTube</h1></body></html>" }],
+      [
+        {
+          body: "<html><body><h1>Before you continue to YouTube</h1></body></html>",
+        },
+      ],
       /consent or bot check/,
     );
   });
@@ -661,12 +695,18 @@ describe("fetchYoutubeTranscript — degradation", () => {
     // AbortSignal.timeout rejects with an AbortError; it must not escape raw.
     const abort = new Error("The operation was aborted due to timeout");
     abort.name = "TimeoutError";
-    await expectUnavailable([{ throws: abort }], /could not load the watch page/);
+    await expectUnavailable(
+      [{ throws: abort }],
+      /could not load the watch page/,
+    );
   });
 
   it("the caption fetch 403s — the shape of a token-gated request", async () => {
     await expectUnavailable(
-      [{ body: watchPage({ captionTracks: [ENGLISH_TRACK] }) }, { status: 403 }],
+      [
+        { body: watchPage({ captionTracks: [ENGLISH_TRACK] }) },
+        { status: 403 },
+      ],
       /caption track returned HTTP 403/,
     );
   });
@@ -703,7 +743,9 @@ describe("fetchYoutubeTranscript — degradation", () => {
     const { fetchImpl, urls } = stubFetch([
       {
         body: watchPage({
-          captionTracks: [{ ...ENGLISH_TRACK, baseUrl: "http://169.254.169.254/latest" }],
+          captionTracks: [
+            { ...ENGLISH_TRACK, baseUrl: "http://169.254.169.254/latest" },
+          ],
         }),
       },
     ]);
@@ -727,7 +769,10 @@ describe("fetchYoutubeTranscript — degradation", () => {
         controller.enqueue(chunk);
       },
     });
-    await expectUnavailable([{ body: stream }], /could not load the watch page.*cap/);
+    await expectUnavailable(
+      [{ body: stream }],
+      /could not load the watch page.*cap/,
+    );
   });
 
   it("an oversized caption body is cut off too", async () => {
@@ -744,7 +789,10 @@ describe("fetchYoutubeTranscript — degradation", () => {
       },
     });
     await expectUnavailable(
-      [{ body: watchPage({ captionTracks: [ENGLISH_TRACK] }) }, { body: stream }],
+      [
+        { body: watchPage({ captionTracks: [ENGLISH_TRACK] }) },
+        { body: stream },
+      ],
       /could not load the caption track.*cap/,
     );
   });

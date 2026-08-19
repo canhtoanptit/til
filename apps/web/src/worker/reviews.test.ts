@@ -64,8 +64,12 @@ async function seedCard(
   const entryId = await insertEntry(t.deps.db, {
     ...(overrides.entryId === undefined ? {} : { id: overrides.entryId }),
     ...(overrides.title === undefined ? {} : { title: overrides.title }),
-    ...(overrides.question === undefined ? {} : { question: overrides.question }),
-    ...(overrides.takeaway === undefined ? {} : { takeaway: overrides.takeaway }),
+    ...(overrides.question === undefined
+      ? {}
+      : { question: overrides.question }),
+    ...(overrides.takeaway === undefined
+      ? {}
+      : { takeaway: overrides.takeaway }),
     ...(overrides.summary === undefined ? {} : { summary: overrides.summary }),
     canonicalUrl:
       overrides.canonicalUrl ??
@@ -192,8 +196,14 @@ describe("POST /api/reviews/enroll", () => {
 
   it("all: true is idempotent when run twice", async () => {
     const t = buildTestApp({ now: () => NOW });
-    await insertEntry(t.deps.db, { id: "a", canonicalUrl: "https://example.com/a" });
-    await insertEntry(t.deps.db, { id: "b", canonicalUrl: "https://example.com/b" });
+    await insertEntry(t.deps.db, {
+      id: "a",
+      canonicalUrl: "https://example.com/a",
+    });
+    await insertEntry(t.deps.db, {
+      id: "b",
+      canonicalUrl: "https://example.com/b",
+    });
 
     const first = await enroll(t, { all: true });
     expect(first.body).toEqual({ enrolled: 2, skipped: 0 });
@@ -314,7 +324,10 @@ describe("GET /api/reviews/queue", () => {
   it("clamps a nonsense limit instead of failing", async () => {
     const t = buildTestApp({ now: () => NOW });
     for (let i = 0; i < 12; i += 1) {
-      await seedCard(t, { entryId: `l-${i}`, canonicalUrl: `https://example.com/l-${i}` });
+      await seedCard(t, {
+        entryId: `l-${i}`,
+        canonicalUrl: `https://example.com/l-${i}`,
+      });
     }
     expect((await queue(t, "?limit=0")).items).toHaveLength(1);
     expect((await queue(t, "?limit=abc")).items).toHaveLength(10);

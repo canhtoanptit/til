@@ -282,7 +282,10 @@ describe("PDF ingestion — cloud stack", () => {
         contentType: "article" as const,
       }),
       extractor: {
-        toMarkdown: async () => ({ markdown: "Sign in to download", title: "Login" }),
+        toMarkdown: async () => ({
+          markdown: "Sign in to download",
+          title: "Login",
+        }),
         documentToMarkdown: async () => {
           throw new Error("the pdf path must not be taken for html");
         },
@@ -307,7 +310,8 @@ function watchPage(captionTracks: unknown): string {
 }
 
 const TRACK = {
-  baseUrl: "https://www.youtube.com/api/timedtext?v=dQw4w9WgXcQ&lang=en&signature=A",
+  baseUrl:
+    "https://www.youtube.com/api/timedtext?v=dQw4w9WgXcQ&lang=en&signature=A",
   name: { simpleText: "English" },
   languageCode: "en",
 };
@@ -360,7 +364,11 @@ describe("YouTube ingestion", () => {
       llmFactory: () =>
         makeStubLLM({
           digest: async (markdown, meta) => {
-            digested.push({ markdown, url: meta.url, ...(meta.title === undefined ? {} : { title: meta.title }) });
+            digested.push({
+              markdown,
+              url: meta.url,
+              ...(meta.title === undefined ? {} : { title: meta.title }),
+            });
             return {
               title: "Ownership, explained",
               summary: "A talk about ownership.",
@@ -397,14 +405,12 @@ describe("YouTube ingestion", () => {
     ],
     [
       "changed markup",
-      ["<html><body><script>var ytInitialPlayerResponse = {</script></body></html>"],
+      [
+        "<html><body><script>var ytInitialPlayerResponse = {</script></body></html>",
+      ],
       /no player data/,
     ],
-    [
-      "an empty caption response",
-      [watchPage([TRACK]), ""],
-      /came back empty/,
-    ],
+    ["an empty caption response", [watchPage([TRACK]), ""], /came back empty/],
     [
       "a network failure",
       [new Error("Network connection lost.")],
@@ -412,7 +418,11 @@ describe("YouTube ingestion", () => {
     ],
     [
       "a timeout",
-      [Object.assign(new Error("aborted due to timeout"), { name: "TimeoutError" })],
+      [
+        Object.assign(new Error("aborted due to timeout"), {
+          name: "TimeoutError",
+        }),
+      ],
       /could not load the watch page/,
     ],
   ])("fails the entry readably for %s", async (_label, pages, reason) => {
@@ -463,7 +473,9 @@ describe("YouTube ingestion", () => {
       contentType: "video",
       status: "failed",
     });
-    const res = await t.request("/api/entries/e-retry/reingest", { method: "POST" });
+    const res = await t.request("/api/entries/e-retry/reingest", {
+      method: "POST",
+    });
     expect(res.status).toBe(202);
     await t.flush();
     const rows = await t.deps.db

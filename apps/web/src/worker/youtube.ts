@@ -178,7 +178,8 @@ function text(value: unknown): string | undefined {
 export function captionTracksFrom(playerResponse: unknown): CaptionTrack[] {
   const captions = asRecord(asRecord(playerResponse)?.captions);
   const renderer = asRecord(
-    captions?.playerCaptionsTracklistRenderer ?? captions?.playerCaptionsRenderer,
+    captions?.playerCaptionsTracklistRenderer ??
+      captions?.playerCaptionsRenderer,
   );
   const raw = renderer?.captionTracks;
   if (!Array.isArray(raw)) return [];
@@ -195,7 +196,9 @@ export function captionTracksFrom(playerResponse: unknown): CaptionTrack[] {
     out.push({
       baseUrl,
       languageCode: text(rec?.languageCode) ?? "",
-      ...(text(rec?.kind) === undefined ? {} : { kind: text(rec?.kind) as string }),
+      ...(text(rec?.kind) === undefined
+        ? {}
+        : { kind: text(rec?.kind) as string }),
       ...(label === undefined ? {} : { name: label }),
     });
   }
@@ -212,8 +215,11 @@ export function captionTracksFrom(playerResponse: unknown): CaptionTrack[] {
  * language would be better — but the player response does not reliably say which
  * that is, and a preference beats an arbitrary array order.
  */
-export function pickCaptionTrack(tracks: readonly CaptionTrack[]): CaptionTrack | null {
-  const isEnglish = (t: CaptionTrack) => t.languageCode.toLowerCase().startsWith("en");
+export function pickCaptionTrack(
+  tracks: readonly CaptionTrack[],
+): CaptionTrack | null {
+  const isEnglish = (t: CaptionTrack) =>
+    t.languageCode.toLowerCase().startsWith("en");
   const isManual = (t: CaptionTrack) => t.kind !== "asr";
   return (
     tracks.find((t) => isManual(t) && isEnglish(t)) ??
@@ -333,7 +339,8 @@ export function playabilityProblem(playerResponse: unknown): string | null {
     text(status?.reason) ??
     text(
       asRecord(
-        asRecord(asRecord(status?.errorScreen)?.playerErrorMessageRenderer)?.reason,
+        asRecord(asRecord(status?.errorScreen)?.playerErrorMessageRenderer)
+          ?.reason,
       )?.simpleText,
     );
   // Trimmed: this string is YouTube's, it ends up in a DB column and on screen.
@@ -455,7 +462,11 @@ export async function fetchYoutubeTranscript(
 
   let body: string;
   try {
-    const response = await get(requestUrl, fetchImpl, "application/json,text/xml,*/*;q=0.8");
+    const response = await get(
+      requestUrl,
+      fetchImpl,
+      "application/json,text/xml,*/*;q=0.8",
+    );
     if (!response.ok) {
       throw transcriptUnavailable(
         `the caption track returned HTTP ${response.status}`,
@@ -491,7 +502,10 @@ export async function fetchYoutubeTranscript(
  * fetch, a DNS error, a runtime TypeError — into the same sentence with a cause.
  */
 function wrap(err: unknown, what: string): ExtractionError {
-  if (err instanceof ExtractionError && err.message.startsWith(TRANSCRIPT_UNAVAILABLE)) {
+  if (
+    err instanceof ExtractionError &&
+    err.message.startsWith(TRANSCRIPT_UNAVAILABLE)
+  ) {
     return err;
   }
   const detail = err instanceof Error ? err.message : String(err);

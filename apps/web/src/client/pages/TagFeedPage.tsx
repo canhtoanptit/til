@@ -47,7 +47,10 @@ export function TagFeedPage() {
   return (
     <div className="space-y-5">
       <div>
-        <Link to="/tags" className="text-sm text-muted-foreground hover:underline">
+        <Link
+          to="/tags"
+          className="text-sm text-muted-foreground hover:underline"
+        >
           ← All tags
         </Link>
       </div>
@@ -71,8 +74,8 @@ export function TagFeedPage() {
               Nothing tagged <span className="font-mono">{tag}</span>.
             </p>
             <p className="mt-1">
-              Archived entries are not listed here — check the Archived filter on
-              your feed.
+              Archived entries are not listed here — check the Archived filter
+              on your feed.
             </p>
             <Button asChild variant="link" className="mt-2">
               <Link to="/tags">Back to all tags</Link>

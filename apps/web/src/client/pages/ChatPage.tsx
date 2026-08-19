@@ -28,7 +28,10 @@ import {
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { ErrorBanner, friendlyMessage } from "../components/ErrorBanner";
 import { Spinner } from "../components/Spinner";
-import { chatConversationTitle, entryChatSeed } from "../components/chat-format";
+import {
+  chatConversationTitle,
+  entryChatSeed,
+} from "../components/chat-format";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
@@ -111,7 +114,10 @@ export function ChatPage() {
   return (
     <div className="space-y-4">
       <div>
-        <Link to="/chat" className="text-sm text-muted-foreground hover:underline">
+        <Link
+          to="/chat"
+          className="text-sm text-muted-foreground hover:underline"
+        >
           ← All conversations
         </Link>
       </div>
@@ -372,7 +378,9 @@ function Conversation({
           role="alert"
           className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"
         >
-          <p className="font-medium">The assistant couldn't finish that answer.</p>
+          <p className="font-medium">
+            The assistant couldn't finish that answer.
+          </p>
           <p className="mt-1 italic">{friendlyMessage(error)}</p>
           <p className="mt-1">
             Ask again, or check the provider and model in{" "}
@@ -424,7 +432,11 @@ function Conversation({
           </span>
           <div className="flex items-center gap-2">
             {busy && (
-              <Button type="button" variant="outline" onClick={() => void stop()}>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => void stop()}
+              >
                 Stop
               </Button>
             )}
@@ -450,7 +462,9 @@ function Primer({
 }) {
   return (
     <Card className="gap-0 border-dashed bg-transparent p-6 text-sm text-muted-foreground shadow-none">
-      <p className="font-medium text-foreground">Ask about what you've saved.</p>
+      <p className="font-medium text-foreground">
+        Ask about what you've saved.
+      </p>
       <p className="mt-1">
         The assistant searches your entries and cites them, so you can click
         through to the original.

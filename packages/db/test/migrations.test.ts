@@ -5,7 +5,13 @@ import { fileURLToPath } from "node:url";
 import Database from "better-sqlite3";
 import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/better-sqlite3";
-import { digests, digestItems, entries, feedback, feeds } from "../src/schema.js";
+import {
+  digests,
+  digestItems,
+  entries,
+  feedback,
+  feeds,
+} from "../src/schema.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const migrationsDir = join(__dirname, "..", "migrations");
@@ -738,7 +744,10 @@ describe("library columns (0009)", () => {
   it("gives an already-saved row the defaults, with no backfill statement", () => {
     // insertEntry names only the pre-0009 columns, exactly like the INSERT the
     // app shipped before this migration.
-    insertEntry(db, { id: "e-legacy", canonical_url: "https://example.com/legacy" });
+    insertEntry(db, {
+      id: "e-legacy",
+      canonical_url: "https://example.com/legacy",
+    });
     const row = db
       .prepare(`SELECT favorite, archived, note FROM entries WHERE id = ?`)
       .get("e-legacy") as {
@@ -831,7 +840,10 @@ describe("library columns (0009)", () => {
     });
 
     // The boolean seam works in a predicate too, which is what the feed filters do.
-    insertEntry(db, { id: "e-plain", canonical_url: "https://example.com/plain" });
+    insertEntry(db, {
+      id: "e-plain",
+      canonical_url: "https://example.com/plain",
+    });
     expect(
       orm
         .select({ id: entries.id })
@@ -868,7 +880,11 @@ describe("content type column (0010)", () => {
       dflt_value: string | null;
     }[];
     const col = new Map(cols.map((c) => [c.name, c])).get("content_type");
-    expect(col).toMatchObject({ type: "TEXT", notnull: 1, dflt_value: "'article'" });
+    expect(col).toMatchObject({
+      type: "TEXT",
+      notnull: 1,
+      dflt_value: "'article'",
+    });
   });
 
   it("leaves every pre-0010 column in place", () => {
@@ -903,7 +919,10 @@ describe("content type column (0010)", () => {
   it("reads an already-saved row as an article, with no backfill statement", () => {
     // insertEntry names only the pre-0009 columns, exactly like the INSERT the app
     // shipped before either migration — a legacy row is an article.
-    insertEntry(db, { id: "e-legacy-ct", canonical_url: "https://example.com/legacy-ct" });
+    insertEntry(db, {
+      id: "e-legacy-ct",
+      canonical_url: "https://example.com/legacy-ct",
+    });
     const row = db
       .prepare(`SELECT content_type FROM entries WHERE id = ?`)
       .get("e-legacy-ct") as { content_type: string };
@@ -967,7 +986,9 @@ describe("content type column (0010)", () => {
     // The kind of a document is not searchable text — 0001 lists the five columns
     // it mirrors and `content_type` is not among them.
     expect(
-      db.prepare(`SELECT rowid FROM entries_fts WHERE entries_fts MATCH ?`).all("pdf"),
+      db
+        .prepare(`SELECT rowid FROM entries_fts WHERE entries_fts MATCH ?`)
+        .all("pdf"),
     ).toHaveLength(0);
   });
 
@@ -1006,7 +1027,12 @@ describe("content type column (0010)", () => {
       })
       .run();
     expect(
-      orm.select().from(entries).where(eq(entries.id, "e-orm-default")).all().at(0),
+      orm
+        .select()
+        .from(entries)
+        .where(eq(entries.id, "e-orm-default"))
+        .all()
+        .at(0),
     ).toMatchObject({ contentType: "article" });
   });
 });
@@ -1049,18 +1075,20 @@ describe("feedback schema", () => {
 
   it("creates the table and its created_at index", () => {
     const tables = (
-      db
-        .prepare("SELECT name FROM sqlite_master WHERE type='table'")
-        .all() as { name: string }[]
+      db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as {
+        name: string;
+      }[]
     ).map((t) => t.name);
     expect(tables).toContain("feedback");
 
     const indexes = db
       .prepare("SELECT name, tbl_name FROM sqlite_master WHERE type='index'")
       .all() as { name: string; tbl_name: string }[];
-    expect(new Map(indexes.map((i) => [i.name, i.tbl_name])).get("feedback_created_at_idx")).toBe(
-      "feedback",
-    );
+    expect(
+      new Map(indexes.map((i) => [i.name, i.tbl_name])).get(
+        "feedback_created_at_idx",
+      ),
+    ).toBe("feedback");
   });
 
   it("requires only id, kind and created_at", () => {
@@ -1084,7 +1112,9 @@ describe("feedback schema", () => {
   it("rejects a row with no kind", () => {
     expect(() =>
       db
-        .prepare(`INSERT INTO feedback (id, created_at) VALUES ('f-nokind', 1700)`)
+        .prepare(
+          `INSERT INTO feedback (id, created_at) VALUES ('f-nokind', 1700)`,
+        )
         .run(),
     ).toThrow(/NOT NULL|constraint/i);
   });
@@ -1093,7 +1123,10 @@ describe("feedback schema", () => {
     // The no-foreign-key decision. A cascade here would erase exactly the
     // history this table exists to accumulate, and a restricting FK would make
     // DELETE /api/entries/:id fail once any feedback existed.
-    insertEntry(db, { id: "e-voted", canonical_url: "https://example.com/voted" });
+    insertEntry(db, {
+      id: "e-voted",
+      canonical_url: "https://example.com/voted",
+    });
     insertFeedback({ id: "f-entry", entry_id: "e-voted", kind: "down" });
 
     expect(() =>
@@ -1115,8 +1148,18 @@ describe("feedback schema", () => {
   });
 
   it("stores repeat votes on one message as separate rows, newest-first by created_at", () => {
-    insertFeedback({ id: "f-1", message_id: "m", kind: "up", created_at: 1_000 });
-    insertFeedback({ id: "f-2", message_id: "m", kind: "down", created_at: 2_000 });
+    insertFeedback({
+      id: "f-1",
+      message_id: "m",
+      kind: "up",
+      created_at: 1_000,
+    });
+    insertFeedback({
+      id: "f-2",
+      message_id: "m",
+      kind: "down",
+      created_at: 2_000,
+    });
 
     const rows = db
       .prepare(

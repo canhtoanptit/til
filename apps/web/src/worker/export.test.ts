@@ -219,7 +219,11 @@ describe("GET /api/export (json)", () => {
     ]);
 
     expect(body.reviews).toHaveLength(1);
-    expect(body.reviews[0]).toMatchObject({ entryId, state: "review", ease: 2.5 });
+    expect(body.reviews[0]).toMatchObject({
+      entryId,
+      state: "review",
+      ease: 2.5,
+    });
 
     // Migration 0005's three seeded feeds plus the one this test added.
     expect(body.feeds).toHaveLength(DEFAULT_RSS_FEEDS.length + 1);
@@ -334,7 +338,9 @@ describe("GET /api/export (json)", () => {
     const t = buildTestApp({ now: () => NOW });
     const { res } = await getJsonExport(t.request);
 
-    expect(res.headers.get("content-type")).toBe("application/json; charset=utf-8");
+    expect(res.headers.get("content-type")).toBe(
+      "application/json; charset=utf-8",
+    );
     expect(res.headers.get("content-disposition")).toBe(
       `attachment; filename="til-export-${NOW_DATE}.json"`,
     );
@@ -402,7 +408,9 @@ describe("GET /api/export?format=markdown", () => {
     let cursor = -1;
     for (const fragment of order) {
       const at = text.indexOf(fragment, cursor + 1);
-      expect(at, `"${fragment}" out of order or missing`).toBeGreaterThan(cursor);
+      expect(at, `"${fragment}" out of order or missing`).toBeGreaterThan(
+        cursor,
+      );
       cursor = at;
     }
   });
@@ -420,9 +428,9 @@ describe("GET /api/export?format=markdown", () => {
     expect(tail).toContain(
       "1. [Streaming responses on Workers](https://example.com/item-1) · example.com — Because it explains the memory ceiling.",
     );
-    expect(text.trimEnd().endsWith("1 entries · 1 digests · 1 digest items.")).toBe(
-      true,
-    );
+    expect(
+      text.trimEnd().endsWith("1 entries · 1 digests · 1 digest items."),
+    ).toBe(true);
   });
 
   it("says out loud that it is not the restore format", async () => {
@@ -444,7 +452,9 @@ describe("GET /api/export?format=markdown", () => {
   it("attaches as a dated .md and serves markdown", async () => {
     const t = buildTestApp({ now: () => NOW });
     const { res } = await getMarkdown(t);
-    expect(res.headers.get("content-type")).toBe("text/markdown; charset=utf-8");
+    expect(res.headers.get("content-type")).toBe(
+      "text/markdown; charset=utf-8",
+    );
     expect(res.headers.get("content-disposition")).toBe(
       `attachment; filename="til-export-${NOW_DATE}.md"`,
     );
@@ -455,9 +465,9 @@ describe("GET /api/export?format=markdown", () => {
     const { text } = await getMarkdown(t);
     expect(text).toContain("_No entries saved yet._");
     expect(text).toContain("_No digests yet._");
-    expect(text.trimEnd().endsWith("0 entries · 0 digests · 0 digest items.")).toBe(
-      true,
-    );
+    expect(
+      text.trimEnd().endsWith("0 entries · 0 digests · 0 digest items."),
+    ).toBe(true);
   });
 
   it("requires the app token", async () => {
@@ -607,7 +617,9 @@ describe("export format helpers", () => {
     // follow the stamp inside the file, not the reader's clock.
     const lateUtc = Date.parse("2023-11-14T23:30:00.000Z");
     expect(exportFilename("json", lateUtc)).toBe("til-export-2023-11-14.json");
-    expect(exportFilename("markdown", lateUtc)).toBe("til-export-2023-11-14.md");
+    expect(exportFilename("markdown", lateUtc)).toBe(
+      "til-export-2023-11-14.md",
+    );
     expect(exportContentDisposition("json", lateUtc)).toBe(
       'attachment; filename="til-export-2023-11-14.json"',
     );

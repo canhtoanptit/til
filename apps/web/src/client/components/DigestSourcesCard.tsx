@@ -46,7 +46,9 @@ export function DigestSourcesCard() {
         invalidate();
         return;
       }
-      toast.error("Could not add that source", { description: friendlyMessage(e) });
+      toast.error("Could not add that source", {
+        description: friendlyMessage(e),
+      });
     },
   });
 
@@ -148,7 +150,9 @@ export function DigestSourcesCard() {
                     busy={toggle.isPending && toggle.variables?.id === feed.id}
                     confirming={confirmId === feed.id}
                     deleting={remove.isPending && remove.variables === feed.id}
-                    onToggle={(enabled) => toggle.mutate({ id: feed.id, enabled })}
+                    onToggle={(enabled) =>
+                      toggle.mutate({ id: feed.id, enabled })
+                    }
                     onConfirmingChange={(open) =>
                       setConfirmId(open ? feed.id : null)
                     }
@@ -238,7 +242,10 @@ function FeedRow({
 
 function RowSkeleton() {
   return (
-    <div aria-hidden="true" className="flex items-center gap-3 rounded-md border p-3">
+    <div
+      aria-hidden="true"
+      className="flex items-center gap-3 rounded-md border p-3"
+    >
       <Skeleton className="h-5 w-9 rounded-full" />
       <div className="flex-1">
         <Skeleton className="h-4 w-1/3" />

@@ -76,9 +76,7 @@ export class AISDKClient implements LLMClient {
       return parseDigest(output);
     } catch (err) {
       if (err instanceof DigestError) throw err;
-      throw new DigestError(
-        `AI SDK digest failed: ${describeError(err)}`,
-      );
+      throw new DigestError(`AI SDK digest failed: ${describeError(err)}`);
     }
   }
 
@@ -110,9 +108,7 @@ export class AISDKClient implements LLMClient {
       return parseSynthesis(output, inputs, opts.maxItems);
     } catch (err) {
       if (err instanceof DigestError) throw err;
-      throw new DigestError(
-        `AI SDK synthesis failed: ${describeError(err)}`,
-      );
+      throw new DigestError(`AI SDK synthesis failed: ${describeError(err)}`);
     }
   }
 
@@ -129,4 +125,3 @@ export class AISDKClient implements LLMClient {
     }
   }
 }
-

@@ -256,7 +256,9 @@ function reportAggregateLines(report: ReportContext): string[] {
   if (report.topDomains.length > 0) {
     lines.push(
       `Top domains: ${report.topDomains
-        .map((d) => `${oneLine(d.domain, MAX_SYNTHESIS_TITLE_CHARS)} (${d.count})`)
+        .map(
+          (d) => `${oneLine(d.domain, MAX_SYNTHESIS_TITLE_CHARS)} (${d.count})`,
+        )
         .join(", ")}`,
     );
   }

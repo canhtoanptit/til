@@ -141,7 +141,9 @@ function ToolOutput({ tool, output }: { tool: ChatToolName; output: unknown }) {
   if (tool === "search_entries") {
     const hits = parseSearchHits(output);
     if (hits.length === 0) {
-      return <p className="text-xs text-muted-foreground">No matching entries.</p>;
+      return (
+        <p className="text-xs text-muted-foreground">No matching entries.</p>
+      );
     }
     return (
       <ul className="space-y-2">
@@ -174,7 +176,9 @@ function ToolOutput({ tool, output }: { tool: ChatToolName; output: unknown }) {
           </Link>
           {entry.takeaway && <p className="mt-2 text-xs">{entry.takeaway}</p>}
           {entry.summary && (
-            <p className="mt-2 text-xs text-muted-foreground">{entry.summary}</p>
+            <p className="mt-2 text-xs text-muted-foreground">
+              {entry.summary}
+            </p>
           )}
           {entry.question && (
             <p className="mt-2 text-xs italic text-muted-foreground">
@@ -189,7 +193,9 @@ function ToolOutput({ tool, output }: { tool: ChatToolName; output: unknown }) {
 
   const stats = parseStatsResult(output);
   if (stats.rows.length === 0) {
-    return <p className="text-xs text-muted-foreground">Nothing to report yet.</p>;
+    return (
+      <p className="text-xs text-muted-foreground">Nothing to report yet.</p>
+    );
   }
   return (
     <div className="rounded-md border bg-card">
@@ -200,7 +206,11 @@ function ToolOutput({ tool, output }: { tool: ChatToolName; output: unknown }) {
         <TableHeader>
           <TableRow className="hover:bg-transparent">
             {stats.columns.map((column) => (
-              <TableHead key={column} scope="col" className="h-8 text-muted-foreground">
+              <TableHead
+                key={column}
+                scope="col"
+                className="h-8 text-muted-foreground"
+              >
                 {statsColumnLabel(column)}
               </TableHead>
             ))}

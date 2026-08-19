@@ -162,10 +162,10 @@ export function makeThrowingEmbedder(message = "ollama unreachable"): Embedder {
   };
 }
 
-
 export function makeStubLLM(overrides?: Partial<LLMClient>): LLMClient {
   return {
-    digest: overrides?.digest ??
+    digest:
+      overrides?.digest ??
       (async () => ({
         title: "Stub Title",
         summary: "Stub summary body.",
@@ -173,7 +173,8 @@ export function makeStubLLM(overrides?: Partial<LLMClient>): LLMClient {
         question: "What is the stub question?",
         tags: ["alpha", "beta", "gamma"],
       })),
-    synthesizeDigest: overrides?.synthesizeDigest ??
+    synthesizeDigest:
+      overrides?.synthesizeDigest ??
       (async (inputs, opts) => ({
         title: "Stub Digest",
         intro: "Stub digest intro.",
@@ -244,7 +245,7 @@ export function inlineStep(): InlineStepBundle {
     names,
     configs,
     step: {
-      do: async <T,>(
+      do: async <T>(
         name: string,
         config: DigestStepConfig,
         fn: () => Promise<T>,

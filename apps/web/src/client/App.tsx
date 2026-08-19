@@ -57,7 +57,9 @@ function NotFound() {
   return (
     <Card className="gap-0 p-6 text-center">
       <h1 className="text-lg font-semibold">Not found</h1>
-      <p className="mt-1 text-sm text-muted-foreground">That page doesn't exist.</p>
+      <p className="mt-1 text-sm text-muted-foreground">
+        That page doesn't exist.
+      </p>
     </Card>
   );
 }

@@ -131,7 +131,9 @@ describe("POST /api/feedback", () => {
     await post(t, { kind: "down", entryId });
     await post(t, { kind: "up", entryId: "never-existed" });
 
-    const del = await t.request(`/api/entries/${entryId}`, { method: "DELETE" });
+    const del = await t.request(`/api/entries/${entryId}`, {
+      method: "DELETE",
+    });
     expect(del.status).toBe(204);
     expect(await t.deps.db.select().from(entries)).toHaveLength(0);
 
@@ -147,7 +149,9 @@ describe("POST /api/feedback", () => {
     const t = buildTestApp();
     const res = await post(t, { kind: "meh", messageId: "m" });
     expect(res.status).toBe(422);
-    const body = (await res.json()) as { error: { code: string; message: string } };
+    const body = (await res.json()) as {
+      error: { code: string; message: string };
+    };
     expect(body.error.code).toBe("validation_error");
     expect(body.error.message).toMatch(/kind/i);
     expect(await t.deps.db.select().from(feedback)).toHaveLength(0);
@@ -172,9 +176,9 @@ describe("POST /api/feedback", () => {
     const atCap = "x".repeat(MAX_FEEDBACK_COMMENT);
 
     expect((await post(t, { kind: "up", comment: atCap })).status).toBe(201);
-    expect(
-      (await post(t, { kind: "up", comment: `${atCap}x` })).status,
-    ).toBe(422);
+    expect((await post(t, { kind: "up", comment: `${atCap}x` })).status).toBe(
+      422,
+    );
 
     const rows = await t.deps.db.select().from(feedback);
     expect(rows).toHaveLength(1);

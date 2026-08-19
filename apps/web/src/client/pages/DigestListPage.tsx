@@ -22,7 +22,8 @@ export function DigestListPage() {
     mutationFn: () => api.runDigest(),
     onSuccess: (data) => {
       toast.success("Digest run started", {
-        description: "Gathering and ranking candidates — this takes a minute or two.",
+        description:
+          "Gathering and ranking candidates — this takes a minute or two.",
       });
       void qc.invalidateQueries({ queryKey: ["digests"] });
       void navigate(`/digests/${encodeURIComponent(data.id)}`);
@@ -42,11 +43,15 @@ export function DigestListPage() {
         <div>
           <h1 className="text-xl font-semibold">Digests</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            A weekly roundup of interesting things from Hacker News, Lobsters, arXiv
-            and your RSS feeds.
+            A weekly roundup of interesting things from Hacker News, Lobsters,
+            arXiv and your RSS feeds.
           </p>
         </div>
-        <Button type="button" onClick={() => run.mutate()} disabled={run.isPending}>
+        <Button
+          type="button"
+          onClick={() => run.mutate()}
+          disabled={run.isPending}
+        >
           {run.isPending ? "Starting…" : "Run now"}
         </Button>
       </header>
@@ -59,7 +64,10 @@ export function DigestListPage() {
             <DigestCardSkeleton />
           </div>
         ) : listQuery.isError ? (
-          <ErrorBanner error={listQuery.error} onRetry={() => listQuery.refetch()} />
+          <ErrorBanner
+            error={listQuery.error}
+            onRetry={() => listQuery.refetch()}
+          />
         ) : items.length === 0 ? (
           <EmptyState />
         ) : (
@@ -81,9 +89,9 @@ function EmptyState() {
     <Card className="gap-0 border-dashed bg-transparent p-8 text-center text-sm text-muted-foreground shadow-none">
       <p className="font-medium text-foreground">No digests yet.</p>
       <p className="mt-1">
-        A digest is generated automatically once a week. You can also start one at
-        any time with <span className="font-medium">Run now</span> — it takes a
-        minute or two to gather and rank candidates.
+        A digest is generated automatically once a week. You can also start one
+        at any time with <span className="font-medium">Run now</span> — it takes
+        a minute or two to gather and rank candidates.
       </p>
     </Card>
   );

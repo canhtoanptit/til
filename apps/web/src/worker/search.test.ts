@@ -57,7 +57,9 @@ describe("GET /api/search", () => {
   });
 
   it("keeps the EntryDTO response shape after the hybrid upgrade", async () => {
-    const t = buildTestApp({ embedder: makeStubEmbedder([["rust"]], { dimensions: 4 }) });
+    const t = buildTestApp({
+      embedder: makeStubEmbedder([["rust"]], { dimensions: 4 }),
+    });
     await insertEntry(t.deps.db, {
       id: "shape-1",
       canonicalUrl: "https://example.com/shape",

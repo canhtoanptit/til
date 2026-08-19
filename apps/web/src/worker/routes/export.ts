@@ -30,7 +30,10 @@ export function createExportRouter() {
 
     const exportedAt = deps.now();
     c.header("content-type", exportContentType(format));
-    c.header("content-disposition", exportContentDisposition(format, exportedAt));
+    c.header(
+      "content-disposition",
+      exportContentDisposition(format, exportedAt),
+    );
     // WHY Identity: Hono's own guidance for the streaming helper on Cloudflare
     // Workers — without it, streaming misbehaves behind wrangler (verified against
     // hono 4.12.33 docs at build time).

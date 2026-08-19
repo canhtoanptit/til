@@ -80,9 +80,7 @@ function isPrivateIPv4(host: string): boolean {
 }
 
 function stripIPv6Brackets(host: string): string {
-  return host.startsWith("[") && host.endsWith("]")
-    ? host.slice(1, -1)
-    : host;
+  return host.startsWith("[") && host.endsWith("]") ? host.slice(1, -1) : host;
 }
 
 function isIPv6Literal(host: string): boolean {

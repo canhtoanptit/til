@@ -48,8 +48,8 @@ export function ChatListPage() {
         <div>
           <h1 className="text-xl font-semibold">Chat</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Ask questions about the things you have saved. Answers only ever come
-            from your own entries.
+            Ask questions about the things you have saved. Answers only ever
+            come from your own entries.
           </p>
         </div>
         <Button
@@ -68,7 +68,10 @@ export function ChatListPage() {
             <RowSkeleton />
           </div>
         ) : listQuery.isError ? (
-          <ErrorBanner error={listQuery.error} onRetry={() => listQuery.refetch()} />
+          <ErrorBanner
+            error={listQuery.error}
+            onRetry={() => listQuery.refetch()}
+          />
         ) : items.length === 0 ? (
           <EmptyState />
         ) : (
@@ -79,7 +82,9 @@ export function ChatListPage() {
                   chat={chat}
                   confirming={confirmId === chat.id}
                   deleting={remove.isPending && remove.variables === chat.id}
-                  onConfirmingChange={(open) => setConfirmId(open ? chat.id : null)}
+                  onConfirmingChange={(open) =>
+                    setConfirmId(open ? chat.id : null)
+                  }
                   onConfirmDelete={() => remove.mutate(chat.id)}
                 />
               </li>
@@ -165,8 +170,8 @@ function EmptyState() {
       <p className="mt-1">
         Start one and ask things like{" "}
         <span className="font-medium">“what have I saved about CSS?”</span>,{" "}
-        <span className="font-medium">“what did I read most this month?”</span> or{" "}
-        <span className="font-medium">“what should I revisit?”</span>
+        <span className="font-medium">“what did I read most this month?”</span>{" "}
+        or <span className="font-medium">“what should I revisit?”</span>
       </p>
       <p className="mt-1">
         It searches your saved entries and links back to them, so you can always

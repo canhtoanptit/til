@@ -226,7 +226,8 @@ export function exportDigestItems(
   digestId?: string,
 ): AsyncGenerator<ExportDigestItem> {
   return (async function* () {
-    const scope = digestId === undefined ? undefined : eq(digestItems.digestId, digestId);
+    const scope =
+      digestId === undefined ? undefined : eq(digestItems.digestId, digestId);
     const rows = batched<
       DigestItem,
       { digestId: string; rank: number; id: string }
@@ -365,7 +366,7 @@ export async function writeJsonExport(
       `"excluded":${JSON.stringify(EXPORT_EXCLUSIONS)}`,
   );
 
-  const walk = async <TRow,>(
+  const walk = async <TRow>(
     key: keyof ExportCounts,
     rows: AsyncGenerator<TRow>,
   ): Promise<void> => {

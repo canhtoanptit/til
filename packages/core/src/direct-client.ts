@@ -101,7 +101,10 @@ export class DirectLLMClient implements LLMClient {
 
   private async pingRequest(): Promise<Response> {
     const base = gatewayBaseURL(this.settings);
-    if (this.settings.provider === "openai" || this.settings.provider === "groq") {
+    if (
+      this.settings.provider === "openai" ||
+      this.settings.provider === "groq"
+    ) {
       return this.fetchImpl(`${base}/chat/completions`, {
         method: "POST",
         headers: this.bearerHeaders(),
@@ -160,9 +163,7 @@ export class DirectLLMClient implements LLMClient {
     try {
       parsed = JSON.parse(content);
     } catch {
-      throw new DigestError(
-        "OpenAI response content was not valid JSON.",
-      );
+      throw new DigestError("OpenAI response content was not valid JSON.");
     }
     return parseDigest(parsed);
   }
@@ -197,9 +198,7 @@ export class DirectLLMClient implements LLMClient {
     try {
       parsed = JSON.parse(content);
     } catch {
-      throw new DigestError(
-        "Groq response content was not valid JSON.",
-      );
+      throw new DigestError("Groq response content was not valid JSON.");
     }
     return parseDigest(parsed);
   }

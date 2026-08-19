@@ -74,6 +74,7 @@ export async function deleteConversationIndex(
 }
 
 export function clampLimit(raw: number | undefined): number {
-  if (raw === undefined || !Number.isFinite(raw)) return CHAT_LIST_DEFAULT_LIMIT;
+  if (raw === undefined || !Number.isFinite(raw))
+    return CHAT_LIST_DEFAULT_LIMIT;
   return Math.min(CHAT_LIST_MAX_LIMIT, Math.max(1, Math.trunc(raw)));
 }

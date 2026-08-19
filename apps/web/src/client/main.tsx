@@ -17,7 +17,10 @@ const queryClient = new QueryClient({
         // Do not retry auth failures or 4xx — the request will not succeed
         // without user action.
         if (error instanceof ApiError) {
-          if (error.status === 401 || (error.status >= 400 && error.status < 500)) {
+          if (
+            error.status === 401 ||
+            (error.status >= 400 && error.status < 500)
+          ) {
             return false;
           }
         }

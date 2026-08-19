@@ -1,6 +1,12 @@
 import { NavLink, Outlet } from "react-router";
 import { useQuery } from "@tanstack/react-query";
-import { LogOutIcon, MonitorIcon, MoonIcon, SearchIcon, SunIcon } from "lucide-react";
+import {
+  LogOutIcon,
+  MonitorIcon,
+  MoonIcon,
+  SearchIcon,
+  SunIcon,
+} from "lucide-react";
 import { api, clearToken } from "../api";
 import { HealthDot } from "./HealthDot";
 import { CommandPalette, useCommandPalette } from "./CommandPalette";
