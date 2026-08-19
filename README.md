@@ -6,20 +6,26 @@
 
 **Paste a link, and an LLM turns it into something you'll actually remember.**
 
-TIL is a single-user, self-hosted reading companion. Save a URL and it extracts the article, writes a short summary, pulls out the single most interesting takeaway, tags it, and suggests a follow-up question worth exploring. Over time you get a searchable feed of what you've learned — plus a weekly digest of interesting things from around the web.
+TIL is a single-user, self-hosted reading companion. Save a URL and it extracts the article, writes a short summary, pulls out the single most interesting takeaway, tags it, and suggests a follow-up question worth exploring. Over time you get a searchable, organizable library of what you've learned — plus a weekly digest of interesting things from around the web, and a monthly report on your own reading.
 
 It's built to be run by one person, in their own Cloudflare account, with their own LLM API key. No accounts, no third party holding your data or your key.
 
-> **Status:** working software, active development. Capture + digest feed (M1), the weekly digest (M2) and the chat agent's backend (M3) are complete and verified against real data; the chat UI is landing now. Nothing is deployed yet — it runs locally today.
+> **Status:** working software, active development, and deployed — capture (M1), the weekly digest (M2), the chat agent (M3), the eval harness, the UI refresh, and both feature waves (review queue, related entries, feedback, personalized ranking, library organization, export, extra content types, monthly report) are complete and verified against real data. It also still runs entirely locally.
 
 ---
 
 ## Features
 
 - **Capture** — paste a URL, get a structured digest: title, ~150-word summary, the key takeaway, 3–6 tags, and a follow-up question.
-- **Search** — full-text search across everything you've saved (SQLite FTS5).
-- **Weekly digest** — a scheduled job gathers candidates from Hacker News, Lobsters, arXiv and your own RSS feeds, ranks them by recency, popularity and cross-source corroboration, then has an LLM write up the most interesting ones.
-- **Chat with your reading** — ask *"what have I saved about CSS?"* or *"what did I read most this month?"*. A Durable-Object agent answers using three **read-only** tools: hybrid semantic + keyword search, single-entry lookup, and reading statistics. Answers cite the entries they came from.
+- **Search** — full-text search across everything you've saved (SQLite FTS5), fused with semantic search when an embedder is available.
+- **Organize your library** — favorite, archive and annotate entries, and browse by tag. Archived reading stays searchable but out of the way.
+- **Related entries** — every entry links to its nearest neighbours by meaning, so old saves resurface when you read something adjacent.
+- **Review queue** — turn takeaways into spaced repetition (SM-2-lite). The queue shows the follow-up question and hides the answer until you grade yourself.
+- **Weekly digest** — a scheduled job gathers candidates from Hacker News, Lobsters, arXiv and your own RSS feeds, ranks them by recency, popularity and cross-source corroboration, then has an LLM write up the most interesting ones. Ranking is **personalized** against what you've actually saved.
+- **Monthly reading report** — a second scheduled job writes up *your* month: what you read, what stuck, what you kept coming back to. It is structurally incapable of citing a URL you never saved.
+- **Chat with your reading** — ask *"what have I saved about CSS?"* or *"what did I read most this month?"*. A Durable-Object agent answers using three **read-only** tools: hybrid semantic + keyword search, single-entry lookup, and reading statistics. Answers cite the entries they came from, and 👍/👎 feedback is recorded against the answer.
+- **More than articles** — PDFs are extracted server-side via Workers AI `toMarkdown` (no OCR, so scanned documents say so). *YouTube transcripts: experimental* — the keyless caption path is frequently blocked from datacenter IPs, and every failure explains itself rather than pretending the video had no words.
+- **Export** — one streamed request gives you the whole library as JSON for restore, or as a single readable markdown bundle. Your provider key is deliberately left out.
 - **Runs offline** — one env var switches between local open-source adapters (Readability extraction, Ollama embeddings, cosine search in SQLite) and the Cloudflare services (Workers AI, Vectorize). Same embedding model either way, so local search behaves like production.
 - **Bring your own key** — OpenAI, Anthropic or Groq, routed through *your* Cloudflare AI Gateway for caching, rate limiting and cost visibility. The key never reaches the browser.
 - **Graceful failure** — paywalls, bot protection and JS-heavy pages are surfaced as failed cards with a retry, never as hangs.
@@ -27,8 +33,8 @@ It's built to be run by one person, in their own Cloudflare account, with their 
 
 ### Coming next
 
-- **Deploy** — first `wrangler deploy` once the full flow is done locally. Step-by-step guide: [docs/deploy.md](./docs/deploy.md).
 - **Desktop & mobile** — PWA first, then a Tauri 2 shell around the same build.
+- **Email** — weekly digest delivered by email, and capture-by-forwarding a link. Deferred: Cloudflare Email Routing needs a custom domain, which this deployment doesn't have yet.
 
 ---
 
@@ -57,7 +63,7 @@ Every external capability sits behind a small interface (`LLMClient`, `Extractor
 
 **Tech stack:** TypeScript · React 19 + Vite + Tailwind 4 · Hono on Cloudflare Workers · D1 + Drizzle ORM · Cloudflare Workflows · Vercel AI SDK · pnpm workspaces + Turborepo · Vitest.
 
-Design rationale lives in [`docs/`](./docs/README.md) — a technical design document plus 9 ADRs covering each load-bearing decision and the alternatives that were rejected.
+Design rationale lives in [`docs/`](./docs/README.md) — a technical design document plus 12 ADRs covering each load-bearing decision and the alternatives that were rejected. Deploying to your own account is a step-by-step guide: [docs/deploy.md](./docs/deploy.md).
 
 ---
 
@@ -126,6 +132,7 @@ The alternative is `TIL_STACK=cloud`, which uses Workers AI and Vectorize instea
 apps/web/            # the Cloudflare Worker: React SPA (src/client) + Hono API (src/worker)
 packages/core/       # domain layer: LLMClient/Extractor seams, prompts, source adapters, ranking
 packages/db/         # Drizzle schema + D1 migrations (incl. FTS5 triggers)
+packages/evals/      # offline eval harness: datasets, metrics and runners for retrieval and chat
 docs/                # technical design, ADRs, implementation plan
 ```
 

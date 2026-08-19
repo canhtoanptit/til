@@ -344,7 +344,7 @@ function toEvidence(candidates: readonly Candidate[]): DigestEvidenceDTO[] {
   const out: DigestEvidenceDTO[] = [];
   for (const candidate of candidates) {
     if (out.length >= MAX_EVIDENCE_PER_ITEM) break;
-    const key = `${candidate.sourceName} ${candidate.url}`;
+    const key = `${candidate.sourceName}\u0000${candidate.url}`;
     if (seen.has(key)) continue;
     seen.add(key);
     out.push({

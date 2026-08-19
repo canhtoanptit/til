@@ -133,9 +133,9 @@ Indexes: **unique on `canonical_url`** (dedupe — resubmitting a URL returns th
 
 Built since v2 (see migrations): `digests` + `digest_items` (M2), `entry_vectors` (local-mode vector store, [ADR-0010](./adr/0010-dual-mode-local-cloud-stack.md)), `chats` conversation index (M3).
 
-**Planned for M-FEAT1 / online evals** (contracts frozen in the [implementation plan](./implementation-plan.md), migrations `0005+`): `feeds` (digest source list, replacing the hardcoded defaults), `reviews` (SM-2-lite state keyed to `entries.id`), `feedback` (👍/👎 on chat answers, post-deploy), plus a nullable `interest_score` on `digest_items` for personalized ranking.
+Built in M-FEAT1 / M-FEAT2 (migrations `0005`–`0011`): `feeds` (digest source list, replacing the hardcoded defaults), `reviews` (SM-2-lite state keyed to `entries.id`), `feedback` (👍/👎 on chat answers), a nullable `interest_score` on `digest_items` for personalized ranking, a `kind` on `digests` (`weekly` | `monthly-report`), and on `entries` a `content_type` plus the library columns `favorite`, `archived`, `note`.
 
-Migrations: `drizzle-kit generate` → `wrangler d1 migrations apply til`.
+Migrations: hand-numbered SQL, applied by filename sort via `wrangler d1 migrations apply til`. Most are hand-written, not generated — the policy and the `db:generate` footgun are documented in [`packages/db/migrations/README.md`](../packages/db/migrations/README.md).
 
 ## 8. API surface (Hono, under `/api`)
 
@@ -144,13 +144,22 @@ All routes require `Authorization: Bearer <APP_TOKEN>` except `GET /api/health` 
 | Method | Path                        | Purpose                                                                                                                   |
 | ------ | --------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
 | POST   | `/api/entries`              | `{url}` → create `pending` entry, kick off ingest; `409` + existing id on duplicate `canonical_url`                       |
-| GET    | `/api/entries`              | list (keyset-paginated); lazily fails entries `pending` > 10 min                                                          |
+| GET    | `/api/entries`              | list (keyset-paginated); `?filter=favorites\|archived` and `?tag=` narrow it; lazily fails entries `pending` > 10 min      |
 | GET    | `/api/entries/:id`          | detail (client polls until `ready`)                                                                                       |
+| PATCH  | `/api/entries/:id`          | library edits — any of `{favorite, archived, note}`; empty-string note clears it to null                                   |
 | DELETE | `/api/entries/:id`          | remove (also deletes the Vectorize vector)                                                                                |
+| GET    | `/api/entries/:id/related`  | nearest neighbours by vector (`?limit=`, ≤20); `{available:false}` when there is no embedder or no vector                  |
 | POST   | `/api/entries/:id/reingest` | retry a `failed`/stale entry (re-extracts, re-digests, re-embeds)                                                         |
 | POST   | `/api/entries/reembed`      | backfill vectors for `ready` entries missing them (after enabling an embedder)                                            |
+| GET    | `/api/tags`                 | tag facets `{tag, count}` for the browse UI, count desc; archived entries excluded                                        |
 | GET    | `/api/search?q=`            | hybrid search — vector + `entries_fts` fused by RRF, degrading to FTS-only with no embedder                               |
-| GET    | `/api/digests`              | list digest runs; `GET /:id` detail, `POST /run` manual trigger (202), `DELETE /:id`                                      |
+| GET    | `/api/reviews/queue`        | due cards + `dueCount` (`?limit=`, ≤50) — question side only, so the answer stays hidden                                   |
+| POST   | `/api/reviews/enroll`       | add cards: `{entryId}` for one, `{all:true}` to backfill every `ready` entry without one                                  |
+| POST   | `/api/reviews/:entryId`     | grade a card `{grade:1–4}` → next SM-2-lite state (`dueAt`, `intervalDays`, `ease`, `lapses`)                              |
+| GET    | `/api/digests`              | list digest runs; `GET /:id` detail, `DELETE /:id`; lazily fails runs `pending` > 15 min                                   |
+| POST   | `/api/digests/run`          | manual trigger (202) — optional `{windowDays, maxItems, kind}`; `kind` is `weekly` (default) or `monthly-report`, strict   |
+| GET    | `/api/feeds`                | feed list; `POST` add `{url}` (`409` on duplicate), `PUT /:id` `{enabled}` to pause, `DELETE /:id`                        |
+| POST   | `/api/feedback`             | 👍/👎 `{kind}` plus optional `{conversationId, messageId, entryId, comment}` — write-only signal, no dedupe                 |
 | WS     | `/api/chat/:id`             | **WebSocket only** — chat turns as Agents SDK frames; there is no HTTP chat endpoint                                      |
 | POST   | `/api/chat/ticket`          | mint a 60 s HMAC ticket authorising the WS upgrade (bearer-authed; see [ADR-0007](./adr/0007-single-user-local-first.md)) |
 | GET    | `/api/chat`                 | conversation list; `GET /:id/messages` transcript; `DELETE /:id` clears it                                                |
