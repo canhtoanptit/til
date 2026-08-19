@@ -321,6 +321,39 @@ describe("GET /api/reviews/queue", () => {
     expect(body.dueCount).toBe(5);
   });
 
+  it("counts every enrolled card, due or not, separately from dueCount", async () => {
+    const t = buildTestApp({ now: () => NOW });
+    await seedCard(t, { entryId: "due-1" });
+    await seedCard(t, { entryId: "due-2" });
+    await seedCard(t, {
+      entryId: "not-due",
+      state: "review",
+      dueAt: NOW + 10 * DAY_MS,
+      intervalDays: 10,
+    });
+
+    const body = await queue(t);
+    // The distinction the empty state depends on: 2 due, but 3 enrolled — so an
+    // empty queue here would mean "caught up", never "never started".
+    expect(body.dueCount).toBe(2);
+    expect(body.enrolledCount).toBe(3);
+  });
+
+  it("reports enrolledCount 0 only when nothing has ever been enrolled", async () => {
+    const t = buildTestApp({ now: () => NOW });
+    await insertEntry(t.deps.db, { id: "saved-not-enrolled" });
+    expect((await queue(t)).enrolledCount).toBe(0);
+
+    await enroll(t, { entryId: "saved-not-enrolled" });
+    expect((await queue(t)).enrolledCount).toBe(1);
+
+    // Grading does not un-enroll: the card leaves the due queue, not the library.
+    await grade(t, "saved-not-enrolled", 4);
+    const after = await queue(t);
+    expect(after.dueCount).toBe(0);
+    expect(after.enrolledCount).toBe(1);
+  });
+
   it("clamps a nonsense limit instead of failing", async () => {
     const t = buildTestApp({ now: () => NOW });
     for (let i = 0; i < 12; i += 1) {
@@ -338,7 +371,8 @@ describe("GET /api/reviews/queue", () => {
     const t = buildTestApp({ now: () => NOW });
     await insertEntry(t.deps.db, { id: "unenrolled" });
     const body = await queue(t);
-    expect(body).toEqual({ items: [], dueCount: 0 });
+    // Exact shape, so a future field has to be added here deliberately.
+    expect(body).toEqual({ items: [], dueCount: 0, enrolledCount: 0 });
   });
 
   it("breaks dueAt ties deterministically by entryId", async () => {
@@ -600,7 +634,11 @@ describe("reviews schema, against the real migration", () => {
 
     const remaining = await t.deps.db.select().from(reviews);
     expect(remaining.map((r) => r.entryId)).toEqual([kept]);
-    expect((await queue(t)).dueCount).toBe(1);
+    const after = await queue(t);
+    expect(after.dueCount).toBe(1);
+    // The cascade takes the card off the enrolled count too — otherwise deleting
+    // your way back to an empty library would still claim you had enrolled cards.
+    expect(after.enrolledCount).toBe(1);
   });
 
   it("rejects a card for an entry that does not exist", async () => {

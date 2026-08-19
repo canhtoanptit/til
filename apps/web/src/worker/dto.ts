@@ -90,6 +90,11 @@ export function toFeedbackDTO(row: Feedback): FeedbackDTO {
   };
 }
 
+/** A slice of the append-only log, oldest-first. */
+export interface FeedbackListDTO {
+  items: FeedbackDTO[];
+}
+
 export interface RelatedEntryDTO {
   id: string;
   title: string | null;
@@ -247,6 +252,13 @@ export interface ReviewQueueDTO {
   items: ReviewQueueItemDTO[];
   /** Every card due at request time, not just the ones inside `limit`. */
   dueCount: number;
+  /**
+   * Every enrolled card, due or not. WHY it is worth a second count: `dueCount:
+   * 0` alone cannot tell "you are caught up" from "you have never enrolled
+   * anything", and congratulating a first-time reader for finishing a queue they
+   * never had is the one thing the empty state must not do.
+   */
+  enrolledCount: number;
 }
 
 export interface ReviewScheduleDTO {

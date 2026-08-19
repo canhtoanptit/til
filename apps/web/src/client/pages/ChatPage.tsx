@@ -20,6 +20,7 @@ import {
   canVoteOnTurn,
   pendingVote,
   recordedVote,
+  seedVotes,
   voteActionFor,
   voteFailed,
   voteStarted,
@@ -181,6 +182,26 @@ function Conversation({
   const bottomRef = useRef<HTMLDivElement>(null);
   const seeded = useRef(false);
   const [votes, setVotes] = useState(NO_VOTES);
+  const votesSeeded = useRef(false);
+
+  // The thumbs the reader has already pressed, restored from the log. A nicety,
+  // not data: `retry: false` and no error surface anywhere — if this fetch fails
+  // the page shows unvoted thumbs, which costs at worst a duplicate row in an
+  // append-only log. Breaking the chat over it would be absurd.
+  const loggedVotes = useQuery({
+    queryKey: ["feedback", conversationId] as const,
+    queryFn: ({ signal }) => api.listFeedback(conversationId, signal),
+    retry: false,
+  });
+
+  // Applied once. A refetch must not re-seed: by then the reader may have voted,
+  // and re-folding a stale response over that would rewind their own thumb.
+  useEffect(() => {
+    const rows = loggedVotes.data?.items;
+    if (votesSeeded.current || rows === undefined) return;
+    votesSeeded.current = true;
+    setVotes((state) => seedVotes(state, rows));
+  }, [loggedVotes.data]);
 
   // WHY swallow instead of reject: `useAgent` resolves this with React `use()`,
   // so a rejection would throw during render. `request` has already cleared the

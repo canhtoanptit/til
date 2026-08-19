@@ -244,6 +244,9 @@ export interface ReviewQueueItemDTO {
 export interface ReviewQueueResponse {
   items: ReviewQueueItemDTO[];
   dueCount: number;
+  /** Every enrolled card, due or not — 0 means the reader has never enrolled
+   * anything, which is a different empty state from "caught up". */
+  enrolledCount: number;
 }
 
 export interface ReviewScheduleDTO {
@@ -282,6 +285,12 @@ export interface FeedbackDTO {
   kind: FeedbackKind;
   comment: string | null;
   createdAt: number;
+}
+
+/** One conversation's votes, oldest-first — so a fold over them ends on the
+ * latest vote per message. */
+export interface FeedbackListResponse {
+  items: FeedbackDTO[];
 }
 
 export type LLMProvider = "openai" | "anthropic" | "groq";
@@ -640,6 +649,12 @@ export const api = {
   },
   submitFeedback(input: FeedbackInput): Promise<FeedbackDTO> {
     return request("/api/feedback", { method: "POST", body: input });
+  },
+  listFeedback(
+    conversationId: string,
+    signal?: AbortSignal,
+  ): Promise<FeedbackListResponse> {
+    return request("/api/feedback", { query: { conversationId }, signal });
   },
   listChats(
     params: { limit?: number; signal?: AbortSignal } = {},

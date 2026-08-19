@@ -15,6 +15,7 @@ import { ChatMessageView, type ChatMessageLike } from "./ChatMessageView";
 
 const mocks = vi.hoisted(() => ({
   submitFeedback: vi.fn(),
+  listFeedback: vi.fn(),
   listChats: vi.fn(),
   getEntry: vi.fn(),
   deleteChat: vi.fn(),
@@ -37,6 +38,7 @@ vi.mock("../api", async (importOriginal) => {
     ...actual,
     api: {
       submitFeedback: mocks.submitFeedback,
+      listFeedback: mocks.listFeedback,
       listChats: mocks.listChats,
       getEntry: mocks.getEntry,
       deleteChat: mocks.deleteChat,
@@ -97,9 +99,27 @@ function renderChat(
   );
 }
 
+/** One row of the append-only log, as GET /api/feedback returns it. */
+function logged(
+  messageId: string | null,
+  kind: FeedbackKind,
+  over: { id?: string; createdAt?: number } = {},
+) {
+  return {
+    id: over.id ?? `f-${messageId ?? "none"}-${kind}`,
+    conversationId: "c1",
+    messageId,
+    entryId: null,
+    kind,
+    comment: null,
+    createdAt: over.createdAt ?? 0,
+  };
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.listChats.mockResolvedValue({ items: [] });
+  mocks.listFeedback.mockResolvedValue({ items: [] });
   mocks.submitFeedback.mockResolvedValue({
     id: "f1",
     conversationId: "c1",
@@ -332,5 +352,120 @@ describe("chat feedback wiring", () => {
     });
     // Only one turn is marked.
     expect(screen.getAllByText("Noted as helpful")).toHaveLength(1);
+  });
+});
+
+describe("chat feedback seeded from the log", () => {
+  it("lights the thumbs the log already has, per message", async () => {
+    mocks.listFeedback.mockResolvedValue({
+      items: [logged("m2", "up"), logged("m4", "down")],
+    });
+    renderChat([
+      assistant("m2", "First answer."),
+      assistant("m4", "Second answer."),
+      assistant("m6", "Third answer."),
+    ]);
+
+    // The pressed state survives a reload because it is read back, not remembered.
+    await waitFor(() =>
+      expect(screen.getByText("Noted as helpful")).toBeTruthy(),
+    );
+    expect(mocks.listFeedback).toHaveBeenCalledWith("c1", expect.anything());
+    expect(screen.getByText("Noted as unhelpful")).toBeTruthy();
+
+    const ups = screen.getAllByRole("button", { name: UP });
+    const downs = screen.getAllByRole("button", { name: DOWN });
+    expect(ups.map((b) => b.getAttribute("aria-pressed"))).toEqual([
+      "true",
+      "false",
+      "false",
+    ]);
+    expect(downs.map((b) => b.getAttribute("aria-pressed"))).toEqual([
+      "false",
+      "true",
+      "false",
+    ]);
+    // Nothing was posted to paint any of that.
+    expect(mocks.submitFeedback).not.toHaveBeenCalled();
+  });
+
+  it("shows the latest vote when the log holds a correction", async () => {
+    mocks.listFeedback.mockResolvedValue({
+      items: [
+        logged("m2", "up", { id: "f1", createdAt: 1 }),
+        logged("m2", "down", { id: "f2", createdAt: 2 }),
+      ],
+    });
+    renderChat([assistant("m2", "Because of X.")]);
+
+    await waitFor(() =>
+      expect(screen.getByText("Noted as unhelpful")).toBeTruthy(),
+    );
+    expect(screen.queryByText("Noted as helpful")).toBeNull();
+  });
+
+  it("does not re-post a vote that came from the log", async () => {
+    mocks.listFeedback.mockResolvedValue({ items: [logged("m2", "up")] });
+    const u = userEvent.setup();
+    renderChat([assistant("m2", "Because of X.")]);
+
+    await waitFor(() =>
+      expect(screen.getByText("Noted as helpful")).toBeTruthy(),
+    );
+    await u.click(screen.getByRole("button", { name: UP }));
+
+    // A seeded thumb is real state, not paint: clicking it would only append a
+    // duplicate row.
+    expect(mocks.submitFeedback).not.toHaveBeenCalled();
+
+    // The opposite thumb is still a correction, and still posts.
+    await u.click(screen.getByRole("button", { name: DOWN }));
+    await waitFor(() =>
+      expect(mocks.submitFeedback).toHaveBeenCalledWith({
+        conversationId: "c1",
+        messageId: "m2",
+        kind: "down",
+      }),
+    );
+  });
+
+  it("falls back to unvoted, silently, when the log cannot be read", async () => {
+    mocks.listFeedback.mockRejectedValue(
+      new ApiError("network_error", "offline", 0),
+    );
+    const u = userEvent.setup();
+    renderChat([assistant("m2", "Because of X.")]);
+
+    const up = await screen.findByRole("button", { name: UP });
+    // Restoring the thumbs is a nicety; failing at it must not become the
+    // reader's problem, and must not stop them voting.
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(mocks.toastError).not.toHaveBeenCalled();
+    expect(screen.queryByText("Noted as helpful")).toBeNull();
+    expect(up.getAttribute("aria-pressed")).toBe("false");
+
+    await u.click(up);
+    await waitFor(() =>
+      expect(mocks.submitFeedback).toHaveBeenCalledWith({
+        conversationId: "c1",
+        messageId: "m2",
+        kind: "up",
+      }),
+    );
+    expect(await screen.findByText("Noted as helpful")).toBeTruthy();
+  });
+
+  it("ignores logged rows that belong to no message", async () => {
+    mocks.listFeedback.mockResolvedValue({
+      items: [logged(null, "down"), logged("m2", "up")],
+    });
+    renderChat([assistant("m2", "Because of X.")]);
+
+    // An entry vote cast during this conversation is in the log, but it is not a
+    // vote about any turn — it must not light a thumb.
+    await waitFor(() =>
+      expect(screen.getByText("Noted as helpful")).toBeTruthy(),
+    );
+    expect(screen.queryByText("Noted as unhelpful")).toBeNull();
   });
 });

@@ -134,11 +134,24 @@ function entry(over: Partial<EntryDetailDTO> = {}): EntryDetailDTO {
  * The queue endpoint is stateful in the app's terms: grading a card removes it.
  * A fixed mock response would make the graded card reappear on the invalidation
  * that `onSuccess` fires, so the fake keeps the same invariant the server does.
+ *
+ * `enrolledCount` defaults to the number of cards handed in, or 1 when that is
+ * zero: an empty queue means "caught up" unless a test says otherwise, which is
+ * what every case written before the first-run state assumed.
  */
-function statefulQueue(items: ReviewQueueItemDTO[]) {
+function statefulQueue(
+  items: ReviewQueueItemDTO[],
+  over: { enrolledCount?: number } = {},
+) {
   let remaining = [...items];
+  const enrolledCount = over.enrolledCount ?? Math.max(1, items.length);
   mocks.reviewQueue.mockImplementation((): Promise<ReviewQueueResponse> =>
-    Promise.resolve({ items: remaining, dueCount: remaining.length }),
+    Promise.resolve({
+      items: remaining,
+      dueCount: remaining.length,
+      // Grading never un-enrolls a card, so this does not shrink with `remaining`.
+      enrolledCount,
+    }),
   );
   mocks.gradeReview.mockImplementation((entryId: string) => {
     remaining = remaining.filter((i) => i.entryId !== entryId);
@@ -256,7 +269,7 @@ describe("ReviewPage", () => {
   });
 
   it("explains what review is when nothing is due", async () => {
-    statefulQueue([]);
+    statefulQueue([], { enrolledCount: 4 });
 
     renderWithProviders(<ReviewPage />, { route: "/review" });
 
@@ -269,5 +282,37 @@ describe("ReviewPage", () => {
     ).toBeTruthy();
     expect(screen.getByText("all caught up")).toBeTruthy();
     expect(mocks.getEntry).not.toHaveBeenCalled();
+  });
+
+  it("does not congratulate a reader who has never enrolled anything", async () => {
+    statefulQueue([], { enrolledCount: 0 });
+
+    renderWithProviders(<ReviewPage />, { route: "/review" });
+
+    expect(
+      await screen.findByText("Start reviewing what you save"),
+    ).toBeTruthy();
+    // The whole point: no "nice work" for a queue that was never worked through.
+    expect(screen.queryByText("Nothing due. Nice work.")).toBeNull();
+    expect(screen.queryByText("all caught up")).toBeNull();
+    expect(screen.getByText("nothing enrolled yet")).toBeTruthy();
+    // The way out is still one click, and the explainer still explains.
+    expect(
+      screen.getByRole("button", { name: "Add my saved entries" }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("heading", { name: "What is review?" }),
+    ).toBeTruthy();
+  });
+
+  it("keeps the caught-up copy once at least one card is enrolled", async () => {
+    // The boundary: one enrolled card, none due, is an achievement again.
+    statefulQueue([], { enrolledCount: 1 });
+
+    renderWithProviders(<ReviewPage />, { route: "/review" });
+
+    expect(await screen.findByText("Nothing due. Nice work.")).toBeTruthy();
+    expect(screen.queryByText("Start reviewing what you save")).toBeNull();
+    expect(screen.getByText("all caught up")).toBeTruthy();
   });
 });

@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import {
   digestHeading,
+  digestRunCopy,
   formatItemCount,
   formatRunDateTime,
   formatScore,
@@ -44,24 +45,19 @@ export function DigestDetailPage() {
   const rerunKind: DigestKind = query.data?.kind ?? "weekly";
   const isReport = rerunKind === "monthly-report";
 
+  const rerunCopy = digestRunCopy(rerunKind);
+
   const rerun = useMutation({
     mutationFn: () => api.runDigest({ kind: rerunKind }),
     onSuccess: (data) => {
-      toast.success(isReport ? "Report run started" : "Digest run started", {
-        description: isReport
-          ? "Reading back over the month — this takes a minute or two."
-          : "Gathering and ranking candidates — this takes a minute or two.",
+      toast.success(rerunCopy.startedTitle, {
+        description: rerunCopy.startedDescription,
       });
       void qc.invalidateQueries({ queryKey: ["digests"] });
       void navigate(`/digests/${encodeURIComponent(data.id)}`);
     },
     onError: (e) => {
-      toast.error(
-        isReport
-          ? "Could not start a report run"
-          : "Could not start a digest run",
-        { description: friendlyMessage(e) },
-      );
+      toast.error(rerunCopy.failedTitle, { description: friendlyMessage(e) });
     },
   });
 

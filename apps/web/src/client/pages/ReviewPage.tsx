@@ -52,6 +52,7 @@ export function ReviewPage() {
 
   const card: ReviewQueueItemDTO | null = queue.data?.items[0] ?? null;
   const dueCount = queue.data?.dueCount ?? 0;
+  const enrolledCount = queue.data?.enrolledCount ?? 0;
 
   // The answer is a separate request made only once the user asks to see it —
   // that is what keeps the reveal out of the queue payload entirely.
@@ -71,8 +72,11 @@ export function ReviewPage() {
       qc.setQueryData<ReviewQueueResponse>(REVIEW_QUEUE_KEY, (prev) =>
         prev
           ? {
+              ...prev,
               items: prev.items.filter((i) => i.entryId !== vars.entryId),
               dueCount: Math.max(0, prev.dueCount - 1),
+              // enrolledCount is untouched on purpose: grading a card schedules it
+              // for later, it does not un-enroll it.
             }
           : prev,
       );
@@ -151,18 +155,29 @@ export function ReviewPage() {
   }
 
   if (card === null) {
+    // Two very different empty queues. `enrolledCount === 0` is a first run: there
+    // is no achievement to congratulate, and telling someone who has never
+    // enrolled a card to "check in again tomorrow" sends them away from the one
+    // button that would start anything.
+    const firstRun = enrolledCount === 0;
     return (
       <div className="space-y-4">
-        <Header dueCount={0} />
+        <Header dueCount={0} enrolledCount={enrolledCount} />
         <Card className="gap-0 border-dashed bg-transparent p-8 text-center shadow-none">
-          <p className="text-base font-medium">Nothing due. Nice work.</p>
+          <p className="text-base font-medium">
+            {firstRun
+              ? "Start reviewing what you save"
+              : "Nothing due. Nice work."}
+          </p>
           <p className="mt-1 text-sm text-muted-foreground">
-            Cards come back on their own schedule — check in again tomorrow.
+            {firstRun
+              ? "Nothing is enrolled yet. Add your saved entries and the first cards are due right away."
+              : "Cards come back on their own schedule — check in again tomorrow."}
           </p>
           <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
             <Button
               type="button"
-              variant="outline"
+              variant={firstRun ? "default" : "outline"}
               onClick={() => enrollAll.mutate()}
               disabled={enrollAll.isPending}
             >
@@ -291,14 +306,25 @@ export function ReviewPage() {
   );
 }
 
-function Header({ dueCount }: { dueCount: number }) {
+function Header({
+  dueCount,
+  enrolledCount,
+}: {
+  dueCount: number;
+  /** Omitted where a card is on screen — something is enrolled by definition. */
+  enrolledCount?: number;
+}) {
+  const status =
+    dueCount > 0
+      ? `${dueCount} due`
+      : enrolledCount === 0
+        ? "nothing enrolled yet"
+        : "all caught up";
   return (
     <div className="space-y-1">
       <div className="flex items-baseline justify-between">
         <h2 className="text-sm font-medium text-muted-foreground">Review</h2>
-        <span className="text-sm text-muted-foreground">
-          {dueCount === 0 ? "all caught up" : `${dueCount} due`}
-        </span>
+        <span className="text-sm text-muted-foreground">{status}</span>
       </div>
       <p className="text-xs text-muted-foreground">
         A quick self-quiz over what you&rsquo;ve saved, timed so each entry
@@ -309,9 +335,10 @@ function Header({ dueCount }: { dueCount: number }) {
 }
 
 /**
- * Shown on the empty queue — which is also the first thing a new user sees,
- * since the queue API can't distinguish "all caught up" from "never enrolled".
- * The copy has to work for both readers.
+ * Shown under either empty state. The headline above it now says which one the
+ * reader is in (`enrolledCount` tells "caught up" from "never enrolled"), but
+ * this explainer answers "what is this page for?" — a question both readers can
+ * still have, so the copy stays shared.
  */
 function ReviewExplainer() {
   return (
