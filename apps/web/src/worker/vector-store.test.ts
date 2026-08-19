@@ -139,7 +139,9 @@ describe("D1VectorStore", () => {
     await store.upsert([record("a", [1, 2, 3, 4]), record("b", [0, 1, 0, 0])]);
     const values = await store.getVector("a");
     expect(values).toHaveLength(DIMS);
-    values?.forEach((value, i) => expect(value).toBeCloseTo(stored[i] ?? 0, 10));
+    values?.forEach((value, i) =>
+      expect(value).toBeCloseTo(stored[i] ?? 0, 10),
+    );
   });
 
   it("getVector returns null for an id with no vector, and for the empty id", async () => {

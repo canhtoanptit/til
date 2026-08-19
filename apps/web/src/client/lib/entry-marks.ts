@@ -37,7 +37,9 @@ export function favoriteVars(id: string, next: boolean): EntryPatchVars {
     id,
     patch: { favorite: next },
     success: next ? "Added to favorites" : "Removed from favorites",
-    failure: next ? "Could not favorite that entry" : "Could not unfavorite that entry",
+    failure: next
+      ? "Could not favorite that entry"
+      : "Could not unfavorite that entry",
   };
 }
 
@@ -46,6 +48,8 @@ export function archiveVars(id: string, next: boolean): EntryPatchVars {
     id,
     patch: { archived: next },
     success: next ? "Archived" : "Restored to your feed",
-    failure: next ? "Could not archive that entry" : "Could not restore that entry",
+    failure: next
+      ? "Could not archive that entry"
+      : "Could not restore that entry",
   };
 }

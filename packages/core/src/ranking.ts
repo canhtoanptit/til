@@ -100,7 +100,8 @@ export function clusterCandidates(candidates: Candidate[]): EvidenceCluster[] {
 
   clusters.sort(
     (a, b) =>
-      b.publishedAt - a.publishedAt || compareText(a.canonicalUrl, b.canonicalUrl),
+      b.publishedAt - a.publishedAt ||
+      compareText(a.canonicalUrl, b.canonicalUrl),
   );
   return clusters;
 }
@@ -131,8 +132,7 @@ export function scoreClusters(
   });
 
   scored.sort(
-    (a, b) =>
-      b.score - a.score || compareText(a.canonicalUrl, b.canonicalUrl),
+    (a, b) => b.score - a.score || compareText(a.canonicalUrl, b.canonicalUrl),
   );
   return scored;
 }
@@ -203,7 +203,8 @@ function toCluster(members: Candidate[]): EvidenceCluster | undefined {
   );
   let publishedAt = candidates[0]?.publishedAt ?? 0;
   for (const candidate of candidates) {
-    if (candidate.publishedAt < publishedAt) publishedAt = candidate.publishedAt;
+    if (candidate.publishedAt < publishedAt)
+      publishedAt = candidate.publishedAt;
   }
 
   return {

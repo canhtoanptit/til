@@ -33,7 +33,10 @@ function timingSafeEqual(a: string, b: string): boolean {
 function base64url(bytes: ArrayBuffer): string {
   let binary = "";
   for (const byte of new Uint8Array(bytes)) binary += String.fromCharCode(byte);
-  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  return btoa(binary)
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
 }
 
 async function sign(appToken: string, expiresAt: number): Promise<string> {
@@ -62,7 +65,10 @@ export async function mintChatTicket(
   now: number,
 ): Promise<ChatTicket> {
   const expiresAt = now + CHAT_TICKET_TTL_MS;
-  return { ticket: `${expiresAt}.${await sign(appToken, expiresAt)}`, expiresAt };
+  return {
+    ticket: `${expiresAt}.${await sign(appToken, expiresAt)}`,
+    expiresAt,
+  };
 }
 
 /**
@@ -80,7 +86,10 @@ export async function verifyChatTicket(
   const expiresAt = Number(ticket.slice(0, dot));
   if (!Number.isSafeInteger(expiresAt) || expiresAt <= now) return false;
   if (expiresAt > now + CHAT_TICKET_TTL_MS) return false;
-  return timingSafeEqual(ticket.slice(dot + 1), await sign(appToken, expiresAt));
+  return timingSafeEqual(
+    ticket.slice(dot + 1),
+    await sign(appToken, expiresAt),
+  );
 }
 
 export function bearerToken(req: {
@@ -103,9 +112,9 @@ export function authClock(c: Context): number {
   return deps?.now?.() ?? Date.now();
 }
 
-export function createBearerAuth<
-  E extends { Bindings: { APP_TOKEN: string } },
->(opts: { exempt?: readonly string[] } = {}): MiddlewareHandler<E> {
+export function createBearerAuth<E extends { Bindings: { APP_TOKEN: string } }>(
+  opts: { exempt?: readonly string[] } = {},
+): MiddlewareHandler<E> {
   const exempt = new Set(opts.exempt ?? [HEALTH_PATH]);
   return async (c, next) => {
     const url = new URL(c.req.url);
@@ -128,7 +137,10 @@ export function createBearerAuth<
 
     // Tickets are accepted only on the chat WebSocket handshake — never for the
     // REST API, so a URL is never a credential for anything else.
-    if (url.pathname.startsWith(CHAT_TICKET_PATH_PREFIX) && isWebSocketUpgrade(req)) {
+    if (
+      url.pathname.startsWith(CHAT_TICKET_PATH_PREFIX) &&
+      isWebSocketUpgrade(req)
+    ) {
       const ticket = url.searchParams.get(CHAT_TICKET_PARAM);
       if (
         ticket &&

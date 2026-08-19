@@ -7,3 +7,8 @@ coverage
 pnpm-lock.yaml
 *.tsbuildinfo
 README.md
+
+# drizzle-kit's own snapshot state. Generated, and frozen on purpose — see
+# packages/db/migrations/README.md. Formatting it would only create diffs that
+# the generator undoes the next time anyone runs it.
+packages/db/migrations/meta

@@ -190,7 +190,8 @@ export function scheduleReview(
     state = "learning";
     intervalDays = LEARNING_STEPS_DAYS[0] ?? 1;
   } else if (card.state === "review") {
-    const factor = grade === 2 ? HARD_FACTOR : grade === 3 ? ease : ease * EASY_BONUS;
+    const factor =
+      grade === 2 ? HARD_FACTOR : grade === 3 ? ease : ease * EASY_BONUS;
     const previous = clampIntervalDays(card.intervalDays ?? lastStepDays());
     state = "review";
     intervalDays = clampIntervalDays(Math.round(previous * factor));
@@ -204,7 +205,9 @@ export function scheduleReview(
       // Ladder exhausted: graduate onto an ease-driven interval.
       state = "review";
       const bonus = grade === 4 ? EASY_BONUS : 1;
-      intervalDays = clampIntervalDays(Math.round(lastStepDays() * ease * bonus));
+      intervalDays = clampIntervalDays(
+        Math.round(lastStepDays() * ease * bonus),
+      );
     }
   }
 

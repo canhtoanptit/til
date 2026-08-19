@@ -4,7 +4,11 @@ import { fetchPage, MAX_FETCH_BYTES } from "./fetch-page.js";
 
 function reply(
   body: string | Uint8Array,
-  init: { status?: number; headers?: Record<string, string>; url?: string } = {},
+  init: {
+    status?: number;
+    headers?: Record<string, string>;
+    url?: string;
+  } = {},
 ): typeof fetch {
   return (async () => {
     const response = new Response(body as BodyInit, {
@@ -45,7 +49,9 @@ describe("fetchPage", () => {
     await expect(
       fetchPage(
         "https://example.test/redirect",
-        reply("<html>x</html>", { url: "http://169.254.169.254/latest/meta-data" }),
+        reply("<html>x</html>", {
+          url: "http://169.254.169.254/latest/meta-data",
+        }),
       ),
     ).rejects.toBeInstanceOf(UnsafeUrlError);
   });
@@ -61,7 +67,9 @@ describe("fetchPage", () => {
 
   it("returns bytes, not text, for an application/pdf response", async () => {
     // A real PDF starts %PDF-; decoding those bytes as UTF-8 is what we avoid.
-    const pdf = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x37, 0x00, 0xff]);
+    const pdf = new Uint8Array([
+      0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x37, 0x00, 0xff,
+    ]);
     const out = await fetchPage(
       "https://example.test/paper",
       reply(pdf, { headers: { "content-type": "application/pdf" } }),
@@ -140,12 +148,14 @@ describe("fetchPage", () => {
       const response = new Response(stream, {
         headers: { "content-type": "text/html", "content-length": "10" },
       });
-      Object.defineProperty(response, "url", { value: "https://example.test/lie" });
+      Object.defineProperty(response, "url", {
+        value: "https://example.test/lie",
+      });
       return response;
     }) as unknown as typeof fetch;
 
-    await expect(fetchPage("https://example.test/lie", fetchImpl)).rejects.toBeInstanceOf(
-      ExtractionError,
-    );
+    await expect(
+      fetchPage("https://example.test/lie", fetchImpl),
+    ).rejects.toBeInstanceOf(ExtractionError);
   });
 });

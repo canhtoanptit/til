@@ -1,16 +1,13 @@
 import type { FeedbackKind } from "../api";
 
 /**
- * Which assistant turns have been voted on, for the lifetime of this mounted
- * conversation — deliberately not persisted.
+ * Which assistant turns have been voted on.
  *
- * WHY not persisted: the pressed state means "the server has this row", and the
- * only honest way to restore it after a reload would be to read the votes back
- * from the server, which needs a GET the C20 contract does not include (the log
- * is append-only and write-only for now). A remembered-in-localStorage thumb
- * would claim a row exists without ever having checked. So a reload shows the
- * unvoted state, and a second vote appends a second row — which is exactly what
- * an append-only signal log should record.
+ * The pressed state means "the server has this row", so it is only ever restored
+ * by asking the server: `GET /api/feedback?conversationId=…` (P28c) reads the
+ * conversation's votes back and `seedVotes` folds them into this shape. That is
+ * the one honest way to persist it — a remembered-in-localStorage thumb would
+ * claim a row exists without ever having checked.
  */
 export interface VoteState {
   /** messageId → the vote the server has confirmed. */
@@ -20,6 +17,41 @@ export interface VoteState {
 }
 
 export const NO_VOTES: VoteState = { recorded: {}, pending: {} };
+
+/** The one thing seeding needs from a logged row. */
+export interface LoggedVote {
+  messageId: string | null;
+  kind: FeedbackKind;
+}
+
+/**
+ * Fold one conversation's log into pressed thumbs.
+ *
+ * WHY the reduction is here and not in SQL: the log arrives oldest-first, so
+ * "latest vote per message" is a plain last-write-wins loop over it — no
+ * `GROUP BY … max(created_at)`, and none of SQLite's bare-column rules about
+ * which row a `max()` aggregate drags along. It is also the only form that is
+ * unit-testable without a database.
+ *
+ * Rows with no messageId (entry votes, or a vote about the conversation itself)
+ * light no thumb and are skipped. Anything the reader has already done in this
+ * session wins over the seed: a vote recorded or in flight locally is newer than
+ * whatever the fetch was told, and must not be rewound by a late response.
+ */
+export function seedVotes(
+  state: VoteState,
+  rows: readonly LoggedVote[],
+): VoteState {
+  const seeded: Record<string, FeedbackKind> = {};
+  for (const row of rows) {
+    if (row.messageId === null || row.messageId === "") continue;
+    seeded[row.messageId] = row.kind;
+  }
+  return {
+    recorded: { ...seeded, ...state.recorded },
+    pending: state.pending,
+  };
+}
 
 /**
  * What a click should do.

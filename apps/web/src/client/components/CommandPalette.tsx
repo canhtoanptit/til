@@ -142,7 +142,9 @@ export function CommandPalette({
                 <CommandItem
                   key={entry.id}
                   value={entry.id}
-                  onSelect={() => go(`/entries/${encodeURIComponent(entry.id)}`)}
+                  onSelect={() =>
+                    go(`/entries/${encodeURIComponent(entry.id)}`)
+                  }
                 >
                   <FileTextIcon />
                   <span className="truncate">

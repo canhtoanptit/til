@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   digestHeading,
   digestKindLabel,
+  digestRunCopy,
   formatItemCount,
   formatScore,
   matchesYourReading,
@@ -66,6 +67,39 @@ describe("digestKindLabel", () => {
   it("names both flavours", () => {
     expect(digestKindLabel("weekly")).toBe("Weekly digest");
     expect(digestKindLabel("monthly-report")).toBe("Monthly report");
+  });
+});
+
+describe("digestRunCopy", () => {
+  it("says what each kind is actually doing", () => {
+    expect(digestRunCopy("weekly")).toEqual({
+      startedTitle: "Digest run started",
+      startedDescription:
+        "Gathering and ranking candidates — this takes a minute or two.",
+      failedTitle: "Could not start a digest run",
+    });
+    expect(digestRunCopy("monthly-report")).toEqual({
+      startedTitle: "Report run started",
+      startedDescription:
+        "Reading back over the month — this takes a minute or two.",
+      failedTitle: "Could not start a report run",
+    });
+  });
+
+  it("never describes a report as a digest, or the reverse", () => {
+    // The two runs read different sources; a toast that named the wrong one would
+    // be the reader's only clue that the wrong kind was started.
+    const weekly = digestRunCopy("weekly");
+    const report = digestRunCopy("monthly-report");
+    for (const key of [
+      "startedTitle",
+      "startedDescription",
+      "failedTitle",
+    ] as const) {
+      expect(weekly[key]).not.toBe(report[key]);
+    }
+    expect(report.startedTitle).not.toMatch(/digest/i);
+    expect(weekly.startedTitle).not.toMatch(/report/i);
   });
 });
 

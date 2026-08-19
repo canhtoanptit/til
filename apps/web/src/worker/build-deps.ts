@@ -19,9 +19,9 @@ export function buildDeps(env: Env, ctx: ExecCtx): Deps {
   const chatAgents = resolveChatAgents(env);
   const db = createDb(env.DB);
   const now = () => Date.now();
-  const fetchImpl = (typeof fetch === "function"
-    ? fetch.bind(globalThis)
-    : globalThis.fetch) as typeof fetch;
+  const fetchImpl = (
+    typeof fetch === "function" ? fetch.bind(globalThis) : globalThis.fetch
+  ) as typeof fetch;
   // WHY: `env.AI`/`env.VECTORIZE` are typed as always present, but their
   // bindings stay commented out in wrangler.jsonc — resolveStack guards at
   // runtime and leaves the corresponding adapter null.

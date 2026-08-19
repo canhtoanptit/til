@@ -190,7 +190,12 @@ export function clampWindowDays(
   raw: number | undefined,
   kind: DigestKind = "weekly",
 ): number {
-  return clampInt(raw, defaultWindowDays(kind), MIN_WINDOW_DAYS, MAX_WINDOW_DAYS);
+  return clampInt(
+    raw,
+    defaultWindowDays(kind),
+    MIN_WINDOW_DAYS,
+    MAX_WINDOW_DAYS,
+  );
 }
 
 export function clampMaxItems(raw: number | undefined): number {
@@ -344,7 +349,7 @@ function toEvidence(candidates: readonly Candidate[]): DigestEvidenceDTO[] {
   const out: DigestEvidenceDTO[] = [];
   for (const candidate of candidates) {
     if (out.length >= MAX_EVIDENCE_PER_ITEM) break;
-    const key = `${candidate.sourceName} ${candidate.url}`;
+    const key = `${candidate.sourceName}\u0000${candidate.url}`;
     if (seen.has(key)) continue;
     seen.add(key);
     out.push({

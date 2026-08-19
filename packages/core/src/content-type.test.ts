@@ -81,7 +81,10 @@ describe("youtubeVideoId", () => {
     ["https://www.youtube.com/embed/abcdefghijk", "abcdefghijk"],
     ["http://www.youtube.com/watch?v=dQw4w9WgXcQ", "dQw4w9WgXcQ"],
     // Extra params, and v= not first.
-    ["https://www.youtube.com/watch?list=PL1&v=dQw4w9WgXcQ&index=2", "dQw4w9WgXcQ"],
+    [
+      "https://www.youtube.com/watch?list=PL1&v=dQw4w9WgXcQ&index=2",
+      "dQw4w9WgXcQ",
+    ],
     // Ids carry - and _.
     ["https://www.youtube.com/watch?v=a-b_c-d_e-f", "a-b_c-d_e-f"],
   ])("reads %s", (url, expected) => {
@@ -195,7 +198,9 @@ describe("refineContentType", () => {
 
   it("demotes a pdf guess when the server serves html", () => {
     // A `.pdf` link behind a landing page or a consent interstitial.
-    expect(refineContentType("pdf", "text/html; charset=utf-8")).toBe("article");
+    expect(refineContentType("pdf", "text/html; charset=utf-8")).toBe(
+      "article",
+    );
   });
 
   it("keeps a pdf guess the server confirms", () => {

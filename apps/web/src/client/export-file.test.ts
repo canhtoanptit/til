@@ -13,13 +13,17 @@ describe("filenameFromDisposition", () => {
       ),
     ).toBe("til-export-2026-08-13.json");
     expect(
-      filenameFromDisposition('attachment; filename="til-export-2026-08-13.md"'),
+      filenameFromDisposition(
+        'attachment; filename="til-export-2026-08-13.md"',
+      ),
     ).toBe("til-export-2026-08-13.md");
   });
 
   it("reads the unquoted and RFC 5987 forms too", () => {
     expect(
-      filenameFromDisposition("attachment; filename=til-export-2026-08-13.json"),
+      filenameFromDisposition(
+        "attachment; filename=til-export-2026-08-13.json",
+      ),
     ).toBe("til-export-2026-08-13.json");
     expect(
       filenameFromDisposition(

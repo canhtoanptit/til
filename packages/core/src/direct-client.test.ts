@@ -9,9 +9,10 @@ interface Captured {
   body: unknown;
 }
 
-function makeFetch(
-  respond: (req: Captured) => Response | Promise<Response>,
-): { fetchImpl: typeof fetch; captured: Captured[] } {
+function makeFetch(respond: (req: Captured) => Response | Promise<Response>): {
+  fetchImpl: typeof fetch;
+  captured: Captured[];
+} {
   const captured: Captured[] = [];
   const fetchImpl = (async (
     input: Request | string | URL,
@@ -84,9 +85,7 @@ function openaiOk(digest: unknown): Response {
 
 function anthropicOk(digest: unknown): Response {
   return jsonResponse({
-    content: [
-      { type: "tool_use", name: "record_digest", input: digest },
-    ],
+    content: [{ type: "tool_use", name: "record_digest", input: digest }],
   });
 }
 
@@ -130,7 +129,9 @@ describe("DirectLLMClient — OpenAI", () => {
       fetchImpl,
     );
     await client.digest("hello", { url: "https://example.com" });
-    expect(captured[0]!.headers["cf-aig-authorization"]).toBe("Bearer gw-token");
+    expect(captured[0]!.headers["cf-aig-authorization"]).toBe(
+      "Bearer gw-token",
+    );
   });
 
   it("throws DigestError on malformed response (missing choices)", async () => {
@@ -241,7 +242,9 @@ describe("DirectLLMClient — Anthropic", () => {
       fetchImpl,
     );
     await client.digest("hello", { url: "https://example.com" });
-    expect(captured[0]!.headers["cf-aig-authorization"]).toBe("Bearer gw-token");
+    expect(captured[0]!.headers["cf-aig-authorization"]).toBe(
+      "Bearer gw-token",
+    );
   });
 
   it("throws DigestError when tool_use block is missing", async () => {
@@ -315,7 +318,9 @@ describe("DirectLLMClient — Groq", () => {
       fetchImpl,
     );
     await client.digest("hello", { url: "https://example.com" });
-    expect(captured[0]!.headers["cf-aig-authorization"]).toBe("Bearer gw-token");
+    expect(captured[0]!.headers["cf-aig-authorization"]).toBe(
+      "Bearer gw-token",
+    );
   });
 
   it("throws DigestError on malformed response (missing choices)", async () => {
@@ -463,7 +468,9 @@ describe("DirectLLMClient — OpenAI synthesis", () => {
       fetchImpl,
     );
     await client.synthesizeDigest(synthesisInputs, synthesisOpts);
-    expect(captured[0]!.headers["cf-aig-authorization"]).toBe("Bearer gw-token");
+    expect(captured[0]!.headers["cf-aig-authorization"]).toBe(
+      "Bearer gw-token",
+    );
   });
 
   it("throws DigestError on HTTP error", async () => {
@@ -519,7 +526,9 @@ describe("DirectLLMClient — Anthropic synthesis", () => {
       fetchImpl,
     );
     await client.synthesizeDigest(synthesisInputs, synthesisOpts);
-    expect(captured[0]!.headers["cf-aig-authorization"]).toBe("Bearer gw-token");
+    expect(captured[0]!.headers["cf-aig-authorization"]).toBe(
+      "Bearer gw-token",
+    );
   });
 
   it("throws DigestError when the synthesis tool_use block is missing", async () => {
@@ -580,7 +589,9 @@ describe("DirectLLMClient — Groq synthesis", () => {
       fetchImpl,
     );
     await client.synthesizeDigest(synthesisInputs, synthesisOpts);
-    expect(captured[0]!.headers["cf-aig-authorization"]).toBe("Bearer gw-token");
+    expect(captured[0]!.headers["cf-aig-authorization"]).toBe(
+      "Bearer gw-token",
+    );
   });
 
   it("throws DigestError on HTTP error", async () => {

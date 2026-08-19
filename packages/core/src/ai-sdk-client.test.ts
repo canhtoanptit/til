@@ -9,9 +9,10 @@ interface Captured {
   body: unknown;
 }
 
-function makeFetch(
-  respond: (req: Captured) => Response | Promise<Response>,
-): { fetchImpl: typeof fetch; captured: Captured[] } {
+function makeFetch(respond: (req: Captured) => Response | Promise<Response>): {
+  fetchImpl: typeof fetch;
+  captured: Captured[];
+} {
   const captured: Captured[] = [];
   const fetchImpl = (async (
     input: Request | string | URL,
@@ -155,7 +156,9 @@ describe("AISDKClient — OpenAI", () => {
       fetchImpl,
     );
     await client.digest("hi", { url: "https://example.com" });
-    expect(captured[0]!.headers["cf-aig-authorization"]).toBe("Bearer gw-token");
+    expect(captured[0]!.headers["cf-aig-authorization"]).toBe(
+      "Bearer gw-token",
+    );
   });
 
   it("throws DigestError on malformed digest (bad tags)", async () => {
@@ -170,13 +173,10 @@ describe("AISDKClient — OpenAI", () => {
   it("ping returns ok:false on 401 without throwing", async () => {
     const { fetchImpl } = makeFetch(
       () =>
-        new Response(
-          JSON.stringify({ error: { message: "Unauthorized" } }),
-          {
-            status: 401,
-            headers: { "content-type": "application/json" },
-          },
-        ),
+        new Response(JSON.stringify({ error: { message: "Unauthorized" } }), {
+          status: 401,
+          headers: { "content-type": "application/json" },
+        }),
     );
     const client = new AISDKClient(openaiSettings, fetchImpl);
     const result = await client.ping();
@@ -216,7 +216,9 @@ describe("AISDKClient — Anthropic", () => {
       fetchImpl,
     );
     await client.digest("hi", { url: "https://example.com" });
-    expect(captured[0]!.headers["cf-aig-authorization"]).toBe("Bearer gw-token");
+    expect(captured[0]!.headers["cf-aig-authorization"]).toBe(
+      "Bearer gw-token",
+    );
   });
 
   it("throws DigestError when tool input is missing a required field", async () => {
@@ -281,7 +283,9 @@ describe("AISDKClient — Groq", () => {
       fetchImpl,
     );
     await client.digest("hi", { url: "https://example.com" });
-    expect(captured[0]!.headers["cf-aig-authorization"]).toBe("Bearer gw-token");
+    expect(captured[0]!.headers["cf-aig-authorization"]).toBe(
+      "Bearer gw-token",
+    );
   });
 
   it("uses json_object mode with the schema in the prompt, never json_schema", async () => {
@@ -291,8 +295,7 @@ describe("AISDKClient — Groq", () => {
 
     const body = captured[0]!.body as Record<string, unknown>;
     const responseFormat = body.response_format as
-      | { type?: string }
-      | undefined;
+      { type?: string } | undefined;
     expect(responseFormat?.type).not.toBe("json_schema");
     const messages = body.messages as Array<{ role: string; content: string }>;
     expect(messages[0]!.content).toContain("JSON");
@@ -311,13 +314,10 @@ describe("AISDKClient — Groq", () => {
   it("ping returns ok:false on 401 without throwing", async () => {
     const { fetchImpl } = makeFetch(
       () =>
-        new Response(
-          JSON.stringify({ error: { message: "Unauthorized" } }),
-          {
-            status: 401,
-            headers: { "content-type": "application/json" },
-          },
-        ),
+        new Response(JSON.stringify({ error: { message: "Unauthorized" } }), {
+          status: 401,
+          headers: { "content-type": "application/json" },
+        }),
     );
     const client = new AISDKClient(groqSettings, fetchImpl);
     const result = await client.ping();
@@ -401,7 +401,9 @@ describe("AISDKClient — OpenAI synthesis", () => {
       fetchImpl,
     );
     await client.synthesizeDigest(synthesisInputs, synthesisOpts);
-    expect(captured[0]!.headers["cf-aig-authorization"]).toBe("Bearer gw-token");
+    expect(captured[0]!.headers["cf-aig-authorization"]).toBe(
+      "Bearer gw-token",
+    );
   });
 });
 
@@ -440,7 +442,9 @@ describe("AISDKClient — Anthropic synthesis", () => {
       fetchImpl,
     );
     await client.synthesizeDigest(synthesisInputs, synthesisOpts);
-    expect(captured[0]!.headers["cf-aig-authorization"]).toBe("Bearer gw-token");
+    expect(captured[0]!.headers["cf-aig-authorization"]).toBe(
+      "Bearer gw-token",
+    );
   });
 });
 
@@ -481,7 +485,9 @@ describe("AISDKClient — Groq synthesis", () => {
       fetchImpl,
     );
     await client.synthesizeDigest(synthesisInputs, synthesisOpts);
-    expect(captured[0]!.headers["cf-aig-authorization"]).toBe("Bearer gw-token");
+    expect(captured[0]!.headers["cf-aig-authorization"]).toBe(
+      "Bearer gw-token",
+    );
   });
 });
 

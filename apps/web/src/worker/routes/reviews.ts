@@ -33,6 +33,16 @@ async function countDue(deps: Deps, now: number): Promise<number> {
   return Number(rows[0]?.n ?? 0);
 }
 
+/**
+ * Every enrolled card, due or not — what tells a first run apart from a finished
+ * one. Unfiltered `count(*)` over the primary-key index, so it stays a cheap
+ * lookup no matter how big the library gets.
+ */
+async function countEnrolled(deps: Deps): Promise<number> {
+  const rows = await deps.db.select({ n: count() }).from(reviews);
+  return Number(rows[0]?.n ?? 0);
+}
+
 export function createReviewsRouter() {
   const router = new Hono<AppContextEnv>();
 
@@ -42,7 +52,10 @@ export function createReviewsRouter() {
     const limitRaw = Number(url.searchParams.get("limit") ?? DEFAULT_LIMIT);
     const limit = Math.min(
       MAX_LIMIT,
-      Math.max(1, Number.isFinite(limitRaw) ? Math.trunc(limitRaw) : DEFAULT_LIMIT),
+      Math.max(
+        1,
+        Number.isFinite(limitRaw) ? Math.trunc(limitRaw) : DEFAULT_LIMIT,
+      ),
     );
     const now = deps.now();
 
@@ -71,6 +84,7 @@ export function createReviewsRouter() {
     return c.json({
       items: rows.map(toReviewQueueItemDTO),
       dueCount: await countDue(deps, now),
+      enrolledCount: await countEnrolled(deps),
     });
   });
 

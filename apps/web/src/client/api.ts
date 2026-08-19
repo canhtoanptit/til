@@ -244,6 +244,9 @@ export interface ReviewQueueItemDTO {
 export interface ReviewQueueResponse {
   items: ReviewQueueItemDTO[];
   dueCount: number;
+  /** Every enrolled card, due or not — 0 means the reader has never enrolled
+   * anything, which is a different empty state from "caught up". */
+  enrolledCount: number;
 }
 
 export interface ReviewScheduleDTO {
@@ -282,6 +285,12 @@ export interface FeedbackDTO {
   kind: FeedbackKind;
   comment: string | null;
   createdAt: number;
+}
+
+/** One conversation's votes, oldest-first — so a fold over them ends on the
+ * latest vote per message. */
+export interface FeedbackListResponse {
+  items: FeedbackDTO[];
 }
 
 export type LLMProvider = "openai" | "anthropic" | "groq";
@@ -385,7 +394,8 @@ export function subscribeToken(fn: TokenListener): () => void {
   return () => listeners.delete(fn);
 }
 
-const BASE: string = (import.meta.env.VITE_API_BASE as string | undefined) ?? "";
+const BASE: string =
+  (import.meta.env.VITE_API_BASE as string | undefined) ?? "";
 
 interface ErrorEnvelope {
   error?: { code?: string; message?: string };
@@ -407,7 +417,12 @@ async function toApiError(res: Response): Promise<ApiError> {
   if (code === "duplicate_url" && typeof env.existingId === "string") {
     return new DuplicateUrlError(message, env.existingId);
   }
-  return new ApiError(code, message, res.status, env as Record<string, unknown>);
+  return new ApiError(
+    code,
+    message,
+    res.status,
+    env as Record<string, unknown>,
+  );
 }
 
 interface RequestOpts {
@@ -423,7 +438,8 @@ async function request<T>(path: string, opts: RequestOpts = {}): Promise<T> {
   const url = new URL(BASE + path, window.location.origin);
   if (query) {
     for (const [k, v] of Object.entries(query)) {
-      if (v !== undefined && v !== null && v !== "") url.searchParams.set(k, String(v));
+      if (v !== undefined && v !== null && v !== "")
+        url.searchParams.set(k, String(v));
     }
   }
   const headers: Record<string, string> = {};
@@ -563,7 +579,9 @@ export const api = {
     });
   },
   deleteEntry(id: string): Promise<void> {
-    return request(`/api/entries/${encodeURIComponent(id)}`, { method: "DELETE" });
+    return request(`/api/entries/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    });
   },
   reingestEntry(id: string): Promise<CreateEntryResponse> {
     return request(`/api/entries/${encodeURIComponent(id)}/reingest`, {
@@ -589,7 +607,9 @@ export const api = {
     return request("/api/digests/run", { method: "POST", body: input });
   },
   deleteDigest(id: string): Promise<void> {
-    return request(`/api/digests/${encodeURIComponent(id)}`, { method: "DELETE" });
+    return request(`/api/digests/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    });
   },
   listFeeds(signal?: AbortSignal): Promise<FeedListResponse> {
     return request("/api/feeds", { signal });
@@ -604,7 +624,9 @@ export const api = {
     });
   },
   deleteFeed(id: string): Promise<void> {
-    return request(`/api/feeds/${encodeURIComponent(id)}`, { method: "DELETE" });
+    return request(`/api/feeds/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    });
   },
   reviewQueue(
     params: { limit?: number; signal?: AbortSignal } = {},
@@ -628,6 +650,12 @@ export const api = {
   submitFeedback(input: FeedbackInput): Promise<FeedbackDTO> {
     return request("/api/feedback", { method: "POST", body: input });
   },
+  listFeedback(
+    conversationId: string,
+    signal?: AbortSignal,
+  ): Promise<FeedbackListResponse> {
+    return request("/api/feedback", { query: { conversationId }, signal });
+  },
   listChats(
     params: { limit?: number; signal?: AbortSignal } = {},
   ): Promise<ChatListResponse> {
@@ -636,7 +664,10 @@ export const api = {
       signal: params.signal,
     });
   },
-  getChatMessages(id: string, signal?: AbortSignal): Promise<ChatMessagesResponse> {
+  getChatMessages(
+    id: string,
+    signal?: AbortSignal,
+  ): Promise<ChatMessagesResponse> {
     return request(`/api/chat/${encodeURIComponent(id)}/messages`, { signal });
   },
   deleteChat(id: string): Promise<void> {
@@ -649,10 +680,12 @@ export const api = {
     return request("/api/chat/ticket", { method: "POST" });
   },
   getSettings(signal?: AbortSignal): Promise<SettingsDTO | null> {
-    return request<SettingsDTO>("/api/settings", { signal }).catch((e: unknown) => {
-      if (e instanceof ApiError && e.status === 404) return null;
-      throw e;
-    });
+    return request<SettingsDTO>("/api/settings", { signal }).catch(
+      (e: unknown) => {
+        if (e instanceof ApiError && e.status === 404) return null;
+        throw e;
+      },
+    );
   },
   putSettings(input: SettingsInput): Promise<SettingsDTO> {
     return request("/api/settings", { method: "PUT", body: input });

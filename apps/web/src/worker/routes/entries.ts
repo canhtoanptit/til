@@ -49,7 +49,9 @@ function filterPredicates(filter: EntryFilter): SQL[] {
   }
 }
 
-function parseCursor(raw: string | undefined): { createdAt: number; id: string } | null {
+function parseCursor(
+  raw: string | undefined,
+): { createdAt: number; id: string } | null {
   if (!raw) return null;
   const idx = raw.indexOf("_");
   if (idx <= 0) return null;
@@ -104,12 +106,9 @@ export function createEntriesRouter() {
         .limit(1);
       const dup = existing[0];
       if (dup) {
-        throw new HttpError(
-          409,
-          "duplicate_url",
-          "URL already exists.",
-          { existingId: dup.id },
-        );
+        throw new HttpError(409, "duplicate_url", "URL already exists.", {
+          existingId: dup.id,
+        });
       }
 
       const id = crypto.randomUUID();
@@ -147,7 +146,9 @@ export function createEntriesRouter() {
     await deps.db
       .update(entries)
       .set({ status: "failed", error: "ingest timed out", updatedAt: now })
-      .where(and(eq(entries.status, "pending"), lt(entries.updatedAt, staleBefore)));
+      .where(
+        and(eq(entries.status, "pending"), lt(entries.updatedAt, staleBefore)),
+      );
 
     const limitRaw = Number(url.searchParams.get("limit") ?? DEFAULT_LIMIT);
     const limit = Math.min(

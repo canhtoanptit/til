@@ -70,7 +70,8 @@ export class ArxivAdapter implements SourceAdapter {
     for (const entry of asArray(child(feed, "entry"))) {
       const candidate = toCandidate(entry);
       if (candidate === undefined) continue;
-      if (!isWithinWindow(candidate.publishedAt, now, opts.windowDays)) continue;
+      if (!isWithinWindow(candidate.publishedAt, now, opts.windowDays))
+        continue;
       candidates.push(candidate);
       if (candidates.length >= opts.limit) break;
     }

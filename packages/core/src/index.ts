@@ -106,7 +106,12 @@ export {
   REVIEW_GRADES,
   scheduleReview,
 } from "./review.js";
-export type { ReviewCard, ReviewCardState, ReviewGrade, ReviewSchedule } from "./review.js";
+export type {
+  ReviewCard,
+  ReviewCardState,
+  ReviewGrade,
+  ReviewSchedule,
+} from "./review.js";
 export {
   createOllamaEmbedder,
   EMBEDDING_DIMENSIONS,

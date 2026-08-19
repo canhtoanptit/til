@@ -80,9 +80,9 @@ describe("readAddParam", () => {
   });
 
   it("ignores other parameters alongside add", () => {
-    expect(readAddParam("?utm_source=x&add=https%3A%2F%2Fa.example.com")).toEqual(
-      { url: "https://a.example.com", autoSubmit: true },
-    );
+    expect(
+      readAddParam("?utm_source=x&add=https%3A%2F%2Fa.example.com"),
+    ).toEqual({ url: "https://a.example.com", autoSubmit: true });
   });
 
   it("pre-fills without submitting when the value is not an http(s) url", () => {

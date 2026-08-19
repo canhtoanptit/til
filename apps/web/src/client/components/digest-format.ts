@@ -16,6 +16,31 @@ export function digestKindLabel(kind: DigestKind): string {
   return kind === "monthly-report" ? "Monthly report" : "Weekly digest";
 }
 
+/**
+ * What to say when a run is requested. Shared by the list page's two buttons and
+ * the detail page's "Run again", so the same kind never gets two different
+ * descriptions of what it is doing.
+ */
+export function digestRunCopy(kind: DigestKind): {
+  startedTitle: string;
+  startedDescription: string;
+  failedTitle: string;
+} {
+  return kind === "monthly-report"
+    ? {
+        startedTitle: "Report run started",
+        startedDescription:
+          "Reading back over the month — this takes a minute or two.",
+        failedTitle: "Could not start a report run",
+      }
+    : {
+        startedTitle: "Digest run started",
+        startedDescription:
+          "Gathering and ranking candidates — this takes a minute or two.",
+        failedTitle: "Could not start a digest run",
+      };
+}
+
 export function formatRunDate(ms: number): string {
   if (!Number.isFinite(ms)) return "";
   try {

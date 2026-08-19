@@ -14,7 +14,9 @@ import { createSearchRouter } from "./routes/search.js";
 import { createSettingsRouter } from "./routes/settings.js";
 import { createTagsRouter } from "./routes/tags.js";
 
-export function createApp(depsFor: (c: { env: unknown; executionCtx: unknown }) => Deps) {
+export function createApp(
+  depsFor: (c: { env: unknown; executionCtx: unknown }) => Deps,
+) {
   const app = new Hono<AppContextEnv>();
 
   app.use("*", async (c, next) => {
@@ -71,10 +73,7 @@ export function createApp(depsFor: (c: { env: unknown; executionCtx: unknown }) 
     }
     console.error("[worker] unhandled error:", err);
     const message = err instanceof Error ? err.message : String(err);
-    return c.json(
-      { error: { code: "llm_error" as const, message } },
-      500,
-    );
+    return c.json({ error: { code: "llm_error" as const, message } }, 500);
   });
 
   return app;

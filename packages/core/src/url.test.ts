@@ -156,9 +156,9 @@ describe("assertSafeUrl", () => {
   });
 
   it("rejects link-local 169.254.169.254 (metadata IP)", () => {
-    expect(() => assertSafeUrl("http://169.254.169.254/latest/meta-data")).toThrow(
-      UnsafeUrlError,
-    );
+    expect(() =>
+      assertSafeUrl("http://169.254.169.254/latest/meta-data"),
+    ).toThrow(UnsafeUrlError);
   });
 
   it("rejects IPv6 loopback [::1]", () => {

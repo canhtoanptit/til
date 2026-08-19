@@ -5,7 +5,11 @@
  */
 export type ContentType = "article" | "pdf" | "video";
 
-export const CONTENT_TYPES: readonly ContentType[] = ["article", "pdf", "video"];
+export const CONTENT_TYPES: readonly ContentType[] = [
+  "article",
+  "pdf",
+  "video",
+];
 
 export const DEFAULT_CONTENT_TYPE: ContentType = "article";
 
@@ -48,7 +52,9 @@ const YOUTUBE_HOSTS = new Set([
 export function isYoutubeHost(hostname: string): boolean {
   const host = hostname.toLowerCase();
   if (YOUTUBE_HOSTS.has(host)) return true;
-  return host.endsWith(".youtube.com") || host.endsWith(".youtube-nocookie.com");
+  return (
+    host.endsWith(".youtube.com") || host.endsWith(".youtube-nocookie.com")
+  );
 }
 
 const YOUTUBE_ID = /^[A-Za-z0-9_-]{5,64}$/;

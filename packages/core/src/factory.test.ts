@@ -12,8 +12,7 @@ const settings: LLMSettings = {
   cfGatewayId: "gw",
 };
 
-const noopFetch = (async () =>
-  new Response("{}")) as unknown as typeof fetch;
+const noopFetch = (async () => new Response("{}")) as unknown as typeof fetch;
 
 describe("createLLMClient", () => {
   it("returns an AISDKClient by default", () => {

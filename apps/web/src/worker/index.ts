@@ -6,7 +6,9 @@ import type { Env } from "./env.js";
 export { TilChatAgent } from "./chat-agent.js";
 export { DigestWorkflow } from "./digest-workflow.js";
 
-const app = createApp((c) => buildDeps(c.env as Env, c.executionCtx as ExecCtx));
+const app = createApp((c) =>
+  buildDeps(c.env as Env, c.executionCtx as ExecCtx),
+);
 
 export default {
   fetch: app.fetch,

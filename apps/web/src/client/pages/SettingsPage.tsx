@@ -103,7 +103,9 @@ export function SettingsPage() {
       void qc.invalidateQueries({ queryKey: ["settings"] });
     },
     onError: (e) => {
-      toast.error("Could not save settings", { description: friendlyMessage(e) });
+      toast.error("Could not save settings", {
+        description: friendlyMessage(e),
+      });
     },
   });
 
@@ -223,7 +225,9 @@ export function SettingsPage() {
                 type="text"
                 required
                 value={form.model}
-                onChange={(e) => setForm((f) => ({ ...f, model: e.target.value }))}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, model: e.target.value }))
+                }
                 placeholder={providerPlaceholder(form.provider)}
                 className="mt-1"
               />
@@ -239,7 +243,9 @@ export function SettingsPage() {
                 required={apiKeyRequired}
                 autoComplete="off"
                 value={form.apiKey}
-                onChange={(e) => setForm((f) => ({ ...f, apiKey: e.target.value }))}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, apiKey: e.target.value }))
+                }
                 placeholder={hasSaved ? maskedKey || "•••• saved" : "sk-…"}
                 className="mt-1"
               />
@@ -251,8 +257,8 @@ export function SettingsPage() {
               )}
               {routingChanged && (
                 <p className="mt-1 text-xs text-warning">
-                  Provider, account ID, or gateway ID changed — re-enter the full
-                  API key to save.
+                  Provider, account ID, or gateway ID changed — re-enter the
+                  full API key to save.
                 </p>
               )}
             </div>
@@ -303,8 +309,8 @@ export function SettingsPage() {
                 className="mt-1"
               />
               <p className="mt-1 text-xs text-muted-foreground">
-                Required if your gateway has Authenticated Gateway enabled. Leave
-                blank to keep the saved token.
+                Required if your gateway has Authenticated Gateway enabled.
+                Leave blank to keep the saved token.
               </p>
               {hasAigToken && (
                 <Label
@@ -353,7 +359,9 @@ export function SettingsPage() {
               >
                 {testMutation.data.ok ? "Connection OK." : "Connection failed."}
                 {testMutation.data.detail && (
-                  <span className="ml-1 italic">{testMutation.data.detail}</span>
+                  <span className="ml-1 italic">
+                    {testMutation.data.detail}
+                  </span>
                 )}
               </div>
             )}
