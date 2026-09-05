@@ -13,10 +13,10 @@ something drizzle-kit cannot generate ([ADR-0009](../../../docs/adr/0009-retriev
 
 Naming: `NNNN_short_name.sql`, four digits, zero-padded, no gaps.
 
-- **Next free number: `0012`** — but see the reservation below.
-- **Reserved: `0012_email`** for P27 (email delivery + email-in capture), deferred by the owner
+- **Next free number: `0013`** — but see the reservation below.
+- **Reserved: `0013_email`** for P27 (email delivery + email-in capture), deferred by the owner
   pending a custom domain for Cloudflare Email Routing. If you ship an unrelated migration before
-  P27 ever lands, take `0012` and let P27 take the next number — the reservation is a courtesy, not
+  P27 ever lands, take `0013` and let P27 take the next number — the reservation is a courtesy, not
   a constraint.
 
 ## How migrations are applied
