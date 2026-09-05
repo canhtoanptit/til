@@ -1,10 +1,9 @@
+import { hashKey, type QueryClient } from "@tanstack/react-query";
 import {
   fallbackExportFilename,
   filenameFromDisposition,
   type ExportFormat,
 } from "./export-file";
-
-const TOKEN_KEY = "til:token";
 
 export type EntryStatus = "pending" | "ready" | "failed";
 
@@ -214,11 +213,6 @@ export interface ChatMessagesResponse {
   messages: ChatMessageDTO[];
 }
 
-export interface ChatTicketDTO {
-  ticket: string;
-  expiresAt: number;
-}
-
 export type ReviewCardState = "new" | "learning" | "review";
 
 /** 1 Again · 2 Hard · 3 Good · 4 Easy. */
@@ -320,8 +314,17 @@ export interface TestConnectionResult {
   detail?: string;
 }
 
+/** The signed-in person, exactly as `GET /api/auth/me` returns them. */
+export interface MeDTO {
+  id: string;
+  email: string;
+  name: string | null;
+  picture: string | null;
+}
+
 export type ApiErrorCode =
   | "unauthorized"
+  | "auth_failed"
   | "invalid_url"
   | "unsafe_url"
   | "duplicate_url"
@@ -360,39 +363,46 @@ export class DuplicateUrlError extends ApiError {
   }
 }
 
-// Token store — single source; 401 anywhere clears and notifies subscribers.
-type TokenListener = (token: string | null) => void;
-const listeners = new Set<TokenListener>();
+/**
+ * The query key holding the signed-in user. It lives in this module rather than
+ * in `App.tsx` so that `LoginPage` and `Shell` can seed and read the same cache
+ * entry without importing `App` — which imports them, and would be a cycle.
+ */
+export const AUTH_ME_KEY = ["auth", "me"] as const;
 
-export function getToken(): string | null {
-  try {
-    return localStorage.getItem(TOKEN_KEY);
-  } catch {
-    return null;
-  }
+/**
+ * Drop every trace of the signed-in session: sign-out, and any 401 that says the
+ * cookie died under us. Purging the cache is the point — the next person to sign
+ * in on this browser must not inherit the previous one's entries.
+ *
+ * WHY not `queryClient.clear()`: that removes the session entry too, and a
+ * removed query never notifies the observer still bound to it. The app gate
+ * watches exactly that entry, so clearing it would strand the gate on its
+ * "Checking your session…" spinner instead of showing the sign-in page. So:
+ * remove everything else, then write `null` into the live session entry, which
+ * both notifies the gate and pins it shut without a second spinner.
+ */
+export function endSession(queryClient: QueryClient): void {
+  const sessionHash = hashKey(AUTH_ME_KEY);
+  queryClient.removeQueries({
+    predicate: (query) => query.queryHash !== sessionHash,
+  });
+  queryClient.setQueryData(AUTH_ME_KEY, null);
 }
 
-export function setToken(token: string): void {
-  try {
-    localStorage.setItem(TOKEN_KEY, token);
-  } catch {
-    // no-op — storage may be blocked
-  }
-  for (const l of listeners) l(token);
+// Session store — the cookie itself is HttpOnly and invisible here, so the one
+// thing the client tracks is "the server just told us we are signed out". A 401
+// from any call fires this once, in one place, and the app gate reacts.
+type UnauthorizedListener = () => void;
+const unauthorizedListeners = new Set<UnauthorizedListener>();
+
+export function onUnauthorized(fn: UnauthorizedListener): () => void {
+  unauthorizedListeners.add(fn);
+  return () => unauthorizedListeners.delete(fn);
 }
 
-export function clearToken(): void {
-  try {
-    localStorage.removeItem(TOKEN_KEY);
-  } catch {
-    // no-op
-  }
-  for (const l of listeners) l(null);
-}
-
-export function subscribeToken(fn: TokenListener): () => void {
-  listeners.add(fn);
-  return () => listeners.delete(fn);
+function notifyUnauthorized(): void {
+  for (const l of unauthorizedListeners) l();
 }
 
 const BASE: string =
@@ -430,12 +440,16 @@ interface RequestOpts {
   method?: string;
   body?: unknown;
   query?: Record<string, string | number | undefined>;
-  skipAuth?: boolean;
   signal?: AbortSignal;
 }
 
+/**
+ * Every call is authenticated by the `til_session` cookie the worker set at
+ * sign-in. It is HttpOnly, so nothing here reads or attaches it — the browser
+ * does, on every same-origin request, including the chat WebSocket upgrade.
+ */
 async function request<T>(path: string, opts: RequestOpts = {}): Promise<T> {
-  const { method = "GET", body, query, skipAuth = false, signal } = opts;
+  const { method = "GET", body, query, signal } = opts;
   const url = new URL(BASE + path, window.location.origin);
   if (query) {
     for (const [k, v] of Object.entries(query)) {
@@ -445,10 +459,6 @@ async function request<T>(path: string, opts: RequestOpts = {}): Promise<T> {
   }
   const headers: Record<string, string> = {};
   if (body !== undefined) headers["Content-Type"] = "application/json";
-  if (!skipAuth) {
-    const token = getToken();
-    if (token) headers.Authorization = `Bearer ${token}`;
-  }
   let res: Response;
   try {
     res = await fetch(url.toString(), {
@@ -465,7 +475,7 @@ async function request<T>(path: string, opts: RequestOpts = {}): Promise<T> {
     );
   }
   if (res.status === 401) {
-    clearToken();
+    notifyUnauthorized();
     throw new ApiError("unauthorized", "unauthorized", 401);
   }
   if (res.status === 204) {
@@ -487,28 +497,25 @@ export interface DownloadedFile {
 }
 
 /**
- * A file download that goes through the same auth and 401 handling as every other
- * call. Deliberately NOT `request`: that helper ends in `res.json()`, and this body
- * is an attachment — sometimes markdown, always something to hand to the browser's
+ * A file download that goes through the same 401 handling as every other call.
+ * Deliberately NOT `request`: that helper ends in `res.json()`, and this body is
+ * an attachment — sometimes markdown, always something to hand to the browser's
  * downloader rather than to parse.
  *
- * The whole body is read into a Blob here. That is the price of authenticating with
- * a header instead of putting the app token in a URL (see `saveBlob`), and it is
- * paid on the side that can afford it: the worker still streams, so its memory
- * ceiling does not move with the size of the library.
+ * The whole body is read into a Blob here rather than pointing a link at the URL,
+ * because the 401 path and the `Content-Disposition` name both need the response
+ * object. The cost is paid on the side that can afford it: the worker still
+ * streams, so its memory ceiling does not move with the size of the library.
  */
 async function download(
   path: string,
   opts: { fallbackFilename: string; signal?: AbortSignal },
 ): Promise<DownloadedFile> {
   const url = new URL(BASE + path, window.location.origin);
-  const headers: Record<string, string> = {};
-  const token = getToken();
-  if (token) headers.Authorization = `Bearer ${token}`;
 
   let res: Response;
   try {
-    res = await fetch(url.toString(), { headers, signal: opts.signal });
+    res = await fetch(url.toString(), { signal: opts.signal });
   } catch (e) {
     throw new ApiError(
       "network_error",
@@ -517,7 +524,7 @@ async function download(
     );
   }
   if (res.status === 401) {
-    clearToken();
+    notifyUnauthorized();
     throw new ApiError("unauthorized", "unauthorized", 401);
   }
   if (!res.ok) {
@@ -532,8 +539,30 @@ async function download(
 }
 
 export const api = {
-  health(): Promise<{ ok: boolean }> {
-    return request("/api/health", { skipAuth: true });
+  /** Unauthenticated. `stack` is what tells the sign-in page whether the
+   * local-only dev-login endpoint exists. */
+  health(): Promise<{
+    ok: boolean;
+    stack: "local" | "cloud";
+    embedder: "ok" | "unavailable";
+  }> {
+    return request("/api/health");
+  },
+  /** null means "not signed in" — the 401 is the answer, not a failure, so it
+   * is caught here and never reaches the caller as an error. */
+  me(): Promise<MeDTO | null> {
+    return request<MeDTO>("/api/auth/me").catch((e: unknown) => {
+      if (e instanceof ApiError && e.status === 401) return null;
+      throw e;
+    });
+  },
+  logout(): Promise<void> {
+    return request("/api/auth/logout", { method: "POST" });
+  },
+  /** Only exists when the worker runs with TIL_STACK=local; anywhere else the
+   * endpoint 404s. */
+  devLogin(email: string): Promise<MeDTO> {
+    return request("/api/auth/dev-login", { method: "POST", body: { email } });
   },
   listEntries(params: {
     cursor?: string | null;
@@ -673,12 +702,6 @@ export const api = {
   },
   deleteChat(id: string): Promise<void> {
     return request(`/api/chat/${encodeURIComponent(id)}`, { method: "DELETE" });
-  },
-  // The chat WebSocket handshake cannot carry an Authorization header, so it
-  // carries a short-lived ticket minted here instead — routed through `request`
-  // so a stale token still clears the session exactly once, in one place.
-  mintChatTicket(): Promise<ChatTicketDTO> {
-    return request("/api/chat/ticket", { method: "POST" });
   },
   getSettings(signal?: AbortSignal): Promise<SettingsDTO | null> {
     return request<SettingsDTO>("/api/settings", { signal }).catch(

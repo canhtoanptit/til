@@ -1,5 +1,5 @@
 import { NavLink, Outlet } from "react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   LogOutIcon,
   MonitorIcon,
@@ -7,7 +7,7 @@ import {
   SearchIcon,
   SunIcon,
 } from "lucide-react";
-import { api, clearToken } from "../api";
+import { AUTH_ME_KEY, api, endSession } from "../api";
 import { HealthDot } from "./HealthDot";
 import { CommandPalette, useCommandPalette } from "./CommandPalette";
 import { useTheme, type Theme } from "./theme-provider";
@@ -34,6 +34,16 @@ const NAV = [
 
 export function Shell() {
   const palette = useCommandPalette();
+  const qc = useQueryClient();
+
+  // `onSettled`, not `onSuccess`: the point of the button is to end the session
+  // here. If the POST never lands the cookie may survive on the server, but the
+  // cache is still wiped and the gate still closes — a failed sign-out that left
+  // the reader looking at their library would be the worse outcome.
+  const logout = useMutation({
+    mutationFn: () => api.logout(),
+    onSettled: () => endSession(qc),
+  });
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -72,11 +82,13 @@ export function Shell() {
               <SearchIcon />
             </Button>
             <ThemeToggle />
+            <IdentityChip />
             <Button
               type="button"
               variant="ghost"
               size="icon-sm"
-              onClick={() => clearToken()}
+              onClick={() => logout.mutate()}
+              disabled={logout.isPending}
               aria-label="Sign out"
               title="Sign out"
             >
@@ -93,6 +105,42 @@ export function Shell() {
       </footer>
       <CommandPalette open={palette.open} onOpenChange={palette.setOpen} />
     </div>
+  );
+}
+
+/**
+ * Who is signed in — the one place a multi-user app has to say so, because the
+ * data on every other page looks identical no matter whose account it is. Reads
+ * the same cache entry `App` already filled, so it costs no extra request; the
+ * email is the title rather than visible text to keep it out of screenshots.
+ * Deliberately not a menu: sign-out is the button beside it.
+ */
+function IdentityChip() {
+  const { data } = useQuery({
+    queryKey: AUTH_ME_KEY,
+    queryFn: () => api.me(),
+    staleTime: Infinity,
+  });
+  if (!data) return null;
+  const label = data.name ?? data.email;
+  if (data.picture !== null) {
+    return (
+      <img
+        src={data.picture}
+        alt={label}
+        title={data.email}
+        className="ml-1 size-6 rounded-full"
+      />
+    );
+  }
+  return (
+    <span
+      title={data.email}
+      aria-label={label}
+      className="ml-1 inline-flex size-6 items-center justify-center rounded-full bg-muted text-xs font-medium uppercase text-muted-foreground"
+    >
+      {label.slice(0, 1)}
+    </span>
   );
 }
 

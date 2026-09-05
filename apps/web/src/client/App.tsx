@@ -1,9 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { Route, Routes } from "react-router";
-import { useQueryClient } from "@tanstack/react-query";
-import { getToken, subscribeToken } from "./api";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { AUTH_ME_KEY, api, endSession, onUnauthorized } from "./api";
 import { Shell } from "./components/Shell";
-import { TokenGate } from "./components/TokenGate";
+import { LoginPage } from "./components/LoginPage";
+import { Spinner } from "./components/Spinner";
 import { FeedPage } from "./pages/FeedPage";
 import { EntryDetailPage } from "./pages/EntryDetailPage";
 import { ChatListPage } from "./pages/ChatListPage";
@@ -18,21 +19,33 @@ import { Card } from "@/components/ui/card";
 
 export function App() {
   const qc = useQueryClient();
-  const [token, setTokenState] = useState<string | null>(() => getToken());
 
-  useEffect(
-    () =>
-      subscribeToken((t) => {
-        setTokenState(t);
-        if (t === null) {
-          // Purge cached data so a new session doesn't inherit stale state.
-          qc.clear();
-        }
-      }),
-    [qc],
-  );
+  // The session cookie is HttpOnly, so "am I signed in?" is a question only the
+  // server can answer. Asked once per load and never refetched on its own
+  // (`staleTime: Infinity`); `retry: false` because a 401 is already folded into
+  // `api.me()` as null, so a rejection here is a real outage, not a logged-out
+  // state worth three attempts.
+  const me = useQuery({
+    queryKey: AUTH_ME_KEY,
+    queryFn: () => api.me(),
+    staleTime: Infinity,
+    retry: false,
+  });
 
-  if (!token) return <TokenGate />;
+  // A 401 from any call means the cookie died under us. On first load that call
+  // is this very query — harmless, `endSession` only pins the answer it is about
+  // to get anyway — and mid-session it is whatever page the reader was on.
+  useEffect(() => onUnauthorized(() => endSession(qc)), [qc]);
+
+  if (me.isPending) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background px-4">
+        <Spinner label="Checking your session…" />
+      </div>
+    );
+  }
+
+  if (!me.data) return <LoginPage />;
 
   return (
     <Routes>
