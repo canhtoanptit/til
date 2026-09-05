@@ -10,6 +10,7 @@ import {
 import {
   CHAT_LIST_DEFAULT_LIMIT,
   CHAT_LIST_MAX_LIMIT,
+  chatOwnerId,
   clampLimit,
   indexConversation,
   listConversations,
@@ -28,11 +29,12 @@ import {
 } from "./chat-tools.js";
 import { CHAT_NO_SETTINGS_NOTICE, chatTurnResponse } from "./chat-turn.js";
 import type { ChatTool } from "@til/core";
-import type { Deps } from "./deps.js";
+import { USER_ID_HEADER, type Deps } from "./deps.js";
 import {
   buildTestApp,
   createRecordingChatAgents,
   insertEntry,
+  insertSettings,
 } from "./test-harness.js";
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -512,6 +514,76 @@ describe("chat turn", () => {
     ).text();
     expect(bodies).toHaveLength(2);
   });
+
+  it("pays for the turn with the asking user's own settings row", async () => {
+    const t = buildTestApp({ now: () => NOW });
+    await insertSettings(t.deps.db, {
+      userId: "alice",
+      provider: "openai",
+      // A model nobody else in this test file uses, so the recorded request body
+      // can only have come from alice's row.
+      model: "gpt-4.1-nano",
+    });
+    const { fetchImpl, bodies } = recordingFetch(() =>
+      sse([
+        {
+          id: "c1",
+          object: "chat.completion.chunk",
+          created: 0,
+          model: "gpt-4.1-nano",
+          choices: [{ index: 0, delta: { content: "hello alice" } }],
+        },
+        {
+          id: "c1",
+          object: "chat.completion.chunk",
+          created: 0,
+          model: "gpt-4.1-nano",
+          choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
+        },
+      ]),
+    );
+    const withFetch: Deps = { ...t.deps, fetchImpl };
+    const body = await (
+      await chatTurnResponse(withFetch, {
+        userId: "alice",
+        conversationId: "c1",
+        messages: userTurn,
+      })
+    ).text();
+
+    expect(bodies).toHaveLength(1);
+    expect(bodies[0]!.model).toBe("gpt-4.1-nano");
+    expect(body).toContain("hello alice");
+
+    // …and the conversation is indexed under alice, not the owner tenant.
+    const rows = await t.deps.db.select().from(chats);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ id: "c1", userId: "alice" });
+  });
+
+  it("never lends one user's provider settings to another", async () => {
+    const t = buildTestApp({ now: () => NOW });
+    await insertSettings(t.deps.db, {
+      userId: "alice",
+      provider: "openai",
+      model: "gpt-4.1-nano",
+    });
+    const { fetchImpl, bodies } = recordingFetch(() => sse([]));
+    const withFetch: Deps = { ...t.deps, fetchImpl };
+    const body = await (
+      await chatTurnResponse(withFetch, {
+        userId: "bob",
+        conversationId: "c2",
+        messages: userTurn,
+      })
+    ).text();
+
+    expect(body).toContain("no LLM provider is configured");
+    // Bob's turn must not reach a provider at all — alice's key pays for nobody.
+    expect(bodies).toEqual([]);
+    const rows = await t.deps.db.select().from(chats);
+    expect(rows.map((row) => [row.id, row.userId])).toEqual([["c2", "bob"]]);
+  });
 });
 
 describe("ChatMessageDTO mapping", () => {
@@ -700,6 +772,22 @@ describe("conversation index", () => {
       messageCount: 6,
     });
   });
+
+  it("names the tenant that opened a conversation", async () => {
+    const t = buildTestApp({ now: () => NOW });
+    await indexConversation(t.deps, "alice", "c1", {
+      title: "About css",
+      messageCount: 1,
+    });
+    expect(await chatOwnerId(t.deps.db, "c1")).toBe("alice");
+  });
+
+  it("has no owner for an id the index has never seen", async () => {
+    const t = buildTestApp({ now: () => NOW });
+    // The brand-new-conversation case: null means "nobody owns this yet", which
+    // is what lets the first turn claim it.
+    expect(await chatOwnerId(t.deps.db, "never-existed")).toBeNull();
+  });
 });
 
 describe("chat REST routes", () => {
@@ -812,5 +900,105 @@ describe("chat REST routes", () => {
     expect(removed.status).toBe(503);
     const body = (await removed.json()) as { error: { code: string } };
     expect(body.error.code).toBe("chat_unavailable");
+  });
+});
+
+describe("chat routes — cross-tenant isolation", () => {
+  /** One conversation, `c1`, owned by alice; bob is a signed-in stranger. */
+  async function aliceOwns(id = "c1") {
+    const chatAgents = createRecordingChatAgents({
+      route: () => new Response("[]", { status: 200 }),
+    });
+    const t = buildTestApp({ now: () => NOW, chatAgents: chatAgents.binding });
+    await indexConversation(t.deps, "alice", id, {
+      title: "About css",
+      messageCount: 3,
+    });
+    return { t, chatAgents };
+  }
+
+  it("404s the transcript of someone else's conversation", async () => {
+    const { t, chatAgents } = await aliceOwns();
+    const res = await t.request("/api/chat/c1/messages", { user: "bob" });
+    expect(res.status).toBe(404);
+    const body = (await res.json()) as {
+      error: { code: string; message: string };
+    };
+    // Byte-for-byte what a genuinely missing conversation answers, so the 404
+    // cannot be used to probe which ids exist.
+    expect(body.error).toEqual({
+      code: "not_found",
+      message: "Conversation not found.",
+    });
+    expect(chatAgents.opened).toEqual([]);
+  });
+
+  it("404s a foreign delete without clearing the transcript or the row", async () => {
+    const { t, chatAgents } = await aliceOwns();
+    const res = await t.request("/api/chat/c1", {
+      method: "DELETE",
+      user: "bob",
+    });
+    expect(res.status).toBe(404);
+    expect(chatAgents.cleared).toEqual([]);
+    const rows = await t.deps.db.select({ id: chats.id }).from(chats);
+    expect(rows.map((row) => row.id)).toEqual(["c1"]);
+  });
+
+  it("404s the agent proxy before the request reaches the binding", async () => {
+    const { t, chatAgents } = await aliceOwns();
+    const turn = await t.request("/api/chat/c1", {
+      method: "POST",
+      user: "bob",
+    });
+    expect(turn.status).toBe(404);
+    const upgrade = await t.request("/api/chat/c1", {
+      user: "bob",
+      headers: { upgrade: "websocket" },
+    });
+    expect(upgrade.status).toBe(404);
+    const fetched = await t.request("/api/chat/c1/get-messages", {
+      user: "bob",
+    });
+    expect(fetched.status).toBe(404);
+    // Nothing was forwarded: the Durable Object never even wakes up.
+    expect(chatAgents.routed).toEqual([]);
+  });
+
+  it("stamps the forwarded request with the owner's id", async () => {
+    const { t, chatAgents } = await aliceOwns();
+    const res = await t.request("/api/chat/c1", {
+      method: "POST",
+      user: "alice",
+    });
+    expect(res.status).toBe(200);
+    expect(chatAgents.routed).toHaveLength(1);
+    expect(chatAgents.routed[0]!.headers.get(USER_ID_HEADER)).toBe("alice");
+  });
+
+  it("lets an unknown id through as a brand-new conversation, claimed by the caller", async () => {
+    const { t, chatAgents } = await aliceOwns();
+    const res = await t.request("/api/chat/brand-new", {
+      method: "POST",
+      user: "bob",
+    });
+    expect(res.status).toBe(200);
+    expect(chatAgents.routed.map((req) => new URL(req.url).pathname)).toEqual([
+      "/api/chat/brand-new",
+    ]);
+    expect(chatAgents.routed[0]!.headers.get(USER_ID_HEADER)).toBe("bob");
+  });
+
+  it("overwrites a user id the client tried to smuggle in", async () => {
+    const { t, chatAgents } = await aliceOwns();
+    const res = await t.request("/api/chat/brand-new", {
+      method: "POST",
+      user: "bob",
+      headers: { [USER_ID_HEADER]: "alice" },
+    });
+    expect(res.status).toBe(200);
+    // `set`, not `append`: the header the DO reads is the session's, and there
+    // is exactly one of it.
+    expect(chatAgents.routed[0]!.headers.get(USER_ID_HEADER)).toBe("bob");
   });
 });

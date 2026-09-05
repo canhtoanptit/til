@@ -22,6 +22,15 @@ export interface FetchPageFn {
  */
 export const CHAT_AGENT_PREFIX = "api";
 
+/**
+ * Set by the chat proxy on requests forwarded into the CHAT Durable Object.
+ * The DO has no session cookie of its own, so this header is how it learns who
+ * it belongs to — and it is only ever stamped after `routes/chat.ts` has
+ * checked the conversation against the `chats` index. Always `set`, never
+ * appended, so a value a client tried to smuggle in is overwritten.
+ */
+export const USER_ID_HEADER = "x-til-user-id";
+
 /** The subset of the chat Durable Object the REST routes need, over DO RPC. */
 export interface ChatConversationStub {
   chatMessages(): Promise<ChatMessageDTO[]>;
