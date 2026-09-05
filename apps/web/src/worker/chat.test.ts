@@ -52,6 +52,7 @@ function toolNamed(tools: ChatTool[], name: string): ChatTool {
 async function seedSettings(deps: Deps): Promise<void> {
   await deps.db.insert(settingsTable).values({
     id: 1,
+    userId: "owner",
     provider: "openai",
     model: "gpt-4o-mini",
     apiKey: "sk-test",
@@ -392,7 +393,7 @@ describe("chat tool wiring", () => {
 
   it("clamps topK all the way through to searchEntries", async () => {
     const t = await seedCorpus();
-    const tools = buildChatTools(t.deps);
+    const tools = buildChatTools(t.deps, "owner");
     const out = (await toolNamed(tools, "search_entries").execute({
       query: "kubernetes",
       topK: 999,
@@ -402,7 +403,7 @@ describe("chat tool wiring", () => {
 
   it("passes the recency window through to searchEntries", async () => {
     const t = await seedCorpus();
-    const tools = buildChatTools(t.deps);
+    const tools = buildChatTools(t.deps, "owner");
     const out = (await toolNamed(tools, "search_entries").execute({
       query: "kubernetes",
       topK: 20,
@@ -424,7 +425,7 @@ describe("chat tool wiring", () => {
       takeaway: `kubernetes ${"z".repeat(5000)}`,
       createdAt: NOW,
     });
-    const tools = buildChatTools(t.deps);
+    const tools = buildChatTools(t.deps, "owner");
     const out = (await toolNamed(tools, "search_entries").execute({
       query: "kubernetes",
     })) as { items: { takeaway: string }[] };
@@ -434,7 +435,7 @@ describe("chat tool wiring", () => {
   it("returns one entry by id and null for an unknown id", async () => {
     const t = buildTestApp({ now: () => NOW });
     await insertEntry(t.deps.db, { id: "e1", title: "Known", createdAt: NOW });
-    const tools = buildChatTools(t.deps);
+    const tools = buildChatTools(t.deps, "owner");
     const found = (await toolNamed(tools, "get_entry").execute({
       id: "e1",
     })) as { entry: { id: string; title: string } | null };
@@ -454,7 +455,7 @@ describe("chat tool wiring", () => {
       canonicalUrl: "https://example.com/b",
       createdAt: NOW,
     });
-    const tools = buildChatTools(t.deps);
+    const tools = buildChatTools(t.deps, "owner");
     const out = (await toolNamed(tools, "stats").execute({
       kind: "totals",
     })) as { kind: string; rows: { entries: number }[] };
@@ -464,7 +465,7 @@ describe("chat tool wiring", () => {
 
   it("rejects a bogus stats kind before touching the database", async () => {
     const t = buildTestApp({ now: () => NOW });
-    const tools = buildChatTools(t.deps);
+    const tools = buildChatTools(t.deps, "owner");
     await expect(
       toolNamed(tools, "stats").execute({ kind: "vibes" }),
     ).rejects.toThrow();
@@ -472,7 +473,7 @@ describe("chat tool wiring", () => {
 
   it("exposes exactly the three read-only tools with their JSON Schemas", () => {
     const t = buildTestApp();
-    const tools = buildChatTools(t.deps);
+    const tools = buildChatTools(t.deps, "owner");
     expect(tools.map((tool) => tool.name)).toEqual([
       "search_entries",
       "get_entry",
@@ -489,6 +490,7 @@ describe("chat turn", () => {
   it("answers with a readable notice when no settings are saved", async () => {
     const t = buildTestApp({ now: () => NOW });
     const res = await chatTurnResponse(t.deps, {
+      userId: "owner",
       conversationId: "c1",
       messages: userTurn,
     });
@@ -502,6 +504,7 @@ describe("chat turn", () => {
     const t = buildTestApp({ now: () => NOW });
     await (
       await chatTurnResponse(t.deps, {
+        userId: "owner",
         conversationId: "c1",
         messages: userTurn,
       })
@@ -539,6 +542,7 @@ describe("chat turn", () => {
     const withFetch: Deps = { ...t.deps, fetchImpl };
     const body = await (
       await chatTurnResponse(withFetch, {
+        userId: "owner",
         conversationId: "c1",
         messages: userTurn,
       })
@@ -568,6 +572,7 @@ describe("chat turn", () => {
     const withFetch: Deps = { ...t.deps, fetchImpl };
     await (
       await chatTurnResponse(withFetch, {
+        userId: "owner",
         conversationId: "c1",
         messages: userTurn,
       })
@@ -584,6 +589,7 @@ describe("chat turn", () => {
     const withFetch: Deps = { ...t.deps, fetchImpl };
     await (
       await chatTurnResponse(withFetch, {
+        userId: "owner",
         conversationId: "c1",
         messages: userTurn,
         maxSteps: 2,
@@ -729,12 +735,12 @@ describe("conversation index", () => {
   it("keeps the first title and refreshes count and updatedAt", async () => {
     let clock = NOW;
     const t = buildTestApp({ now: () => clock });
-    await indexConversation(t.deps, "c1", {
+    await indexConversation(t.deps, "owner", "c1", {
       title: "First question",
       messageCount: 1,
     });
     clock = NOW + 60_000;
-    await indexConversation(t.deps, "c1", {
+    await indexConversation(t.deps, "owner", "c1", {
       title: "Later question",
       messageCount: 4,
     });
@@ -760,11 +766,17 @@ describe("conversation index", () => {
   it("lists conversations newest-updated first", async () => {
     let clock = NOW;
     const t = buildTestApp({ now: () => clock });
-    await indexConversation(t.deps, "old", { title: "old", messageCount: 2 });
+    await indexConversation(t.deps, "owner", "old", {
+      title: "old",
+      messageCount: 2,
+    });
     clock = NOW + 1000;
-    await indexConversation(t.deps, "new", { title: "new", messageCount: 6 });
+    await indexConversation(t.deps, "owner", "new", {
+      title: "new",
+      messageCount: 6,
+    });
 
-    const listed = await listConversations(t.deps);
+    const listed = await listConversations(t.deps, "owner");
     expect(listed.map((row) => row.id)).toEqual(["new", "old"]);
     expect(listed[0]).toEqual({
       id: "new",
@@ -778,7 +790,7 @@ describe("conversation index", () => {
 describe("chat REST routes", () => {
   it("lists conversations", async () => {
     const t = buildTestApp({ now: () => NOW });
-    await indexConversation(t.deps, "c1", {
+    await indexConversation(t.deps, "owner", "c1", {
       title: "About css",
       messageCount: 3,
     });
@@ -794,7 +806,7 @@ describe("chat REST routes", () => {
   it("honours the list limit", async () => {
     const t = buildTestApp({ now: () => NOW });
     for (let i = 0; i < 5; i += 1) {
-      await indexConversation(t.deps, `c${i}`, {
+      await indexConversation(t.deps, "owner", `c${i}`, {
         title: `c${i}`,
         messageCount: 1,
       });
@@ -833,11 +845,14 @@ describe("chat REST routes", () => {
   it("deletes the transcript and the index row", async () => {
     const chatAgents = createRecordingChatAgents();
     const t = buildTestApp({ now: () => NOW, chatAgents: chatAgents.binding });
-    await indexConversation(t.deps, "c1", {
+    await indexConversation(t.deps, "owner", "c1", {
       title: "About css",
       messageCount: 3,
     });
-    await indexConversation(t.deps, "c2", { title: "Other", messageCount: 1 });
+    await indexConversation(t.deps, "owner", "c2", {
+      title: "Other",
+      messageCount: 1,
+    });
 
     const res = await t.request("/api/chat/c1", { method: "DELETE" });
     expect(res.status).toBe(204);

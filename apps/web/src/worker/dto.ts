@@ -310,7 +310,13 @@ export function toReviewQueueItemDTO(row: ReviewQueueRow): ReviewQueueItemDTO {
   };
 }
 
-export function toReviewScheduleDTO(row: Review): ReviewScheduleDTO {
+/**
+ * `Omit<Review, "userId">`: the grade handler builds its argument from the
+ * scheduler's output, which has no tenant, and the DTO never emits one anyway.
+ */
+export function toReviewScheduleDTO(
+  row: Omit<Review, "userId">,
+): ReviewScheduleDTO {
   return {
     entryId: row.entryId,
     state: normalizeReviewState(row.state),
@@ -348,8 +354,13 @@ export function parseEvidence(
   return out;
 }
 
+/**
+ * `Omit<DigestRun, "userId">`: the list route projects only the columns it
+ * renders, and the DTO never emits a tenant — same stance as
+ * `toReviewScheduleDTO`. A full row still satisfies this.
+ */
 export function toDigestSummaryDTO(
-  row: DigestRun,
+  row: Omit<DigestRun, "userId">,
   itemCount: number,
 ): DigestSummaryDTO {
   return {

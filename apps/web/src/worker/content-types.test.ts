@@ -16,6 +16,7 @@ const LONG_LINE =
 async function withSettings(t: ReturnType<typeof buildTestApp>): Promise<void> {
   await t.deps.db.insert(settings).values({
     id: 1,
+    userId: "owner",
     provider: "openai",
     model: "gpt-4o-mini",
     apiKey: "sk-live-1234",

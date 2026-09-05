@@ -4,7 +4,14 @@ import { fileURLToPath } from "node:url";
 import Database from "better-sqlite3";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import * as schema from "@til/db";
-import { digestItems, digests, entries, feeds } from "@til/db";
+import {
+  OWNER_USER_ID,
+  digestItems,
+  digests,
+  entries,
+  feeds,
+  settings,
+} from "@til/db";
 import { createApp } from "./app.js";
 import type { ChatMessageDTO } from "./chat-dto.js";
 import type {
@@ -314,15 +321,23 @@ export function buildTestApp(overrides: TestOverrides = {}) {
   };
 
   const env = { APP_TOKEN: overrides.appToken ?? "dev-token" };
-  const app = createApp(() => deps);
+  // Phase-2 stopgap identity: a request acts as `x-til-test-user`, defaulting to
+  // the owner tenant every legacy fixture row is backfilled to. Phase 3 replaces
+  // the header with a real session cookie.
+  const app = createApp(() => deps, {
+    resolveUser: (c) => ({
+      id: c.req.header("x-til-test-user") ?? OWNER_USER_ID,
+    }),
+  });
   const request = async (
     path: string,
-    init?: RequestInit & { auth?: boolean },
+    init?: RequestInit & { auth?: boolean; user?: string },
   ) => {
     const headers = new Headers(init?.headers ?? {});
     if (init?.auth !== false) {
       headers.set("authorization", `Bearer ${env.APP_TOKEN}`);
     }
+    if (init?.user !== undefined) headers.set("x-til-test-user", init.user);
     const res = await app.fetch(
       new Request(`http://test.local${path}`, {
         method: init?.method,
@@ -346,6 +361,7 @@ export async function insertDigest(
   db: Deps["db"],
   overrides: {
     id?: string;
+    userId?: string;
     runAt?: number;
     windowDays?: number;
     kind?: DigestKind;
@@ -361,6 +377,7 @@ export async function insertDigest(
   const runAt = overrides.runAt ?? Date.now();
   await db.insert(digests).values({
     id,
+    userId: overrides.userId ?? OWNER_USER_ID,
     runAt,
     windowDays: overrides.windowDays ?? 7,
     kind: overrides.kind ?? "weekly",
@@ -419,6 +436,7 @@ export async function insertFeed(
   db: Deps["db"],
   overrides: {
     id?: string;
+    userId?: string;
     url?: string;
     title?: string | null;
     enabled?: boolean;
@@ -430,6 +448,7 @@ export async function insertFeed(
   const now = overrides.createdAt ?? Date.now();
   await db.insert(feeds).values({
     id,
+    userId: overrides.userId ?? OWNER_USER_ID,
     url: overrides.url ?? `https://example.com/${id}/atom.xml`,
     title: overrides.title ?? null,
     enabled: overrides.enabled ?? true,
@@ -437,6 +456,38 @@ export async function insertFeed(
     updatedAt: overrides.updatedAt ?? now,
   });
   return id;
+}
+
+/**
+ * One user's BYOK row. No `id`: the rowid self-assigns, so several users can
+ * hold settings side by side under `settings_user_uq` (migration 0012).
+ */
+export async function insertSettings(
+  db: Deps["db"],
+  overrides: {
+    userId?: string;
+    provider?: string;
+    model?: string;
+    apiKey?: string;
+    cfAccountId?: string;
+    cfGatewayId?: string;
+    cfAigToken?: string | null;
+    createdAt?: number;
+    updatedAt?: number;
+  } = {},
+) {
+  const now = overrides.createdAt ?? Date.now();
+  await db.insert(settings).values({
+    userId: overrides.userId ?? OWNER_USER_ID,
+    provider: overrides.provider ?? "anthropic",
+    model: overrides.model ?? "claude-3-5-haiku",
+    apiKey: overrides.apiKey ?? "sk-test",
+    cfAccountId: overrides.cfAccountId ?? "acct",
+    cfGatewayId: overrides.cfGatewayId ?? "gw",
+    cfAigToken: overrides.cfAigToken ?? null,
+    createdAt: now,
+    updatedAt: overrides.updatedAt ?? now,
+  });
 }
 
 export function makeCandidate(overrides: Partial<Candidate> = {}): Candidate {
@@ -456,6 +507,7 @@ export async function insertEntry(
   db: Deps["db"],
   overrides: {
     id?: string;
+    userId?: string;
     url?: string;
     canonicalUrl?: string;
     status?: "pending" | "ready" | "failed";
@@ -479,6 +531,7 @@ export async function insertEntry(
   const now = overrides.createdAt ?? Date.now();
   await db.insert(entries).values({
     id,
+    userId: overrides.userId ?? OWNER_USER_ID,
     url: overrides.url ?? "https://example.com/a",
     canonicalUrl: overrides.canonicalUrl ?? "https://example.com/a",
     title: overrides.title ?? "T",

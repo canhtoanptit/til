@@ -104,6 +104,7 @@ export function clampRelatedLimit(raw: number | undefined): number {
  */
 export async function relatedEntryRows(
   deps: Deps,
+  userId: string,
   opts: { id: string; limit?: number },
 ): Promise<RelatedResult> {
   const limit = clampRelatedLimit(opts.limit);
@@ -115,7 +116,7 @@ export async function relatedEntryRows(
     const values = await vectorStore.getVector(opts.id);
     if (values === null) return { available: false, items: [] };
     // +1: the entry is its own nearest neighbour and gets dropped below.
-    matches = await vectorStore.query(values, { topK: limit + 1 });
+    matches = await vectorStore.query(values, { topK: limit + 1, userId });
   } catch (err) {
     console.warn(
       `[related ${opts.id}] vector lookup failed (non-fatal):`,
@@ -128,10 +129,11 @@ export async function relatedEntryRows(
   const ids = neighbours.map((match) => match.id);
   if (ids.length === 0) return { available: true, items: [] };
 
+  // The user predicate is defense in depth: the vector query was already scoped.
   const rows = await deps.db
     .select()
     .from(entries)
-    .where(inArray(entries.id, ids));
+    .where(and(inArray(entries.id, ids), eq(entries.userId, userId)));
   const byId = new Map(rows.map((row) => [row.id, row]));
 
   const items: ScoredEntry[] = [];
@@ -155,14 +157,15 @@ export async function relatedEntryRows(
  */
 export async function searchEntryRows(
   deps: Deps,
+  userId: string,
   opts: SearchOptions,
 ): Promise<ScoredEntry[]> {
   const topK = clampTopK(opts.topK);
   const pool = topK * CANDIDATE_POOL_MULTIPLIER;
 
   const [semantic, keyword] = await Promise.all([
-    semanticRanks(deps, opts.query, pool),
-    keywordRanks(deps, opts.query, pool, ftsFilters(deps, opts)),
+    semanticRanks(deps, userId, opts.query, pool),
+    keywordRanks(deps, opts.query, pool, ftsFilters(deps, userId, opts)),
   ]);
   if (semantic.length === 0 && keyword.length === 0) return [];
 
@@ -172,7 +175,7 @@ export async function searchEntryRows(
 
   // The filters are re-applied here because the semantic leg cannot pre-filter:
   // VectorStore.query takes no metadata predicate.
-  const filters = hydrationFilters(deps, opts);
+  const filters = hydrationFilters(deps, userId, opts);
   const where =
     filters.length > 0
       ? and(inArray(entries.id, ids), ...filters)
@@ -192,9 +195,10 @@ export async function searchEntryRows(
 
 export async function searchEntries(
   deps: Deps,
+  userId: string,
   opts: SearchOptions,
 ): Promise<{ items: SearchResultItem[] }> {
-  const scored = await searchEntryRows(deps, opts);
+  const scored = await searchEntryRows(deps, userId, opts);
   return {
     items: scored.map(({ row, score }) => ({
       id: row.id,
@@ -212,6 +216,7 @@ export async function searchEntries(
 /** Deliberately omits `contentMarkdown`: whole articles blow the chat budget. */
 export async function getEntryForTool(
   deps: Deps,
+  userId: string,
   opts: { id: string },
 ): Promise<EntryForTool | null> {
   const rows = await deps.db
@@ -226,7 +231,7 @@ export async function getEntryForTool(
       createdAt: entries.createdAt,
     })
     .from(entries)
-    .where(eq(entries.id, opts.id))
+    .where(and(eq(entries.id, opts.id), eq(entries.userId, userId)))
     .limit(1);
   const row = rows[0];
   if (!row) return null;
@@ -244,25 +249,30 @@ export async function getEntryForTool(
 
 export async function stats(
   deps: Deps,
+  userId: string,
   opts: StatsOptions,
 ): Promise<StatsResult> {
   const since = sinceCutoff(deps, opts.sinceDays);
   switch (opts.kind) {
     case "totals":
-      return { kind: opts.kind, rows: await totalsRows(deps, since) };
+      return { kind: opts.kind, rows: await totalsRows(deps, userId, since) };
     case "per_week":
-      return { kind: opts.kind, rows: await perWeekRows(deps, since) };
+      return { kind: opts.kind, rows: await perWeekRows(deps, userId, since) };
     case "top_tags":
-      return { kind: opts.kind, rows: await topTagRows(deps, since) };
+      return { kind: opts.kind, rows: await topTagRows(deps, userId, since) };
     case "top_domains":
-      return { kind: opts.kind, rows: await topDomainRows(deps, since) };
+      return {
+        kind: opts.kind,
+        rows: await topDomainRows(deps, userId, since),
+      };
     case "streak":
-      return { kind: opts.kind, rows: await streakRows(deps, since) };
+      return { kind: opts.kind, rows: await streakRows(deps, userId, since) };
   }
 }
 
 async function semanticRanks(
   deps: Deps,
+  userId: string,
   query: string,
   pool: number,
 ): Promise<{ id: string; rank: number }[]> {
@@ -272,7 +282,7 @@ async function semanticRanks(
   try {
     const [values] = await embedder.embed([query]);
     if (!values) return [];
-    const matches = await vectorStore.query(values, { topK: pool });
+    const matches = await vectorStore.query(values, { topK: pool, userId });
     return matches.map((match, index) => ({ id: match.id, rank: index + 1 }));
   } catch (err) {
     // WHY: a missing embedder must not fail search — hybrid degrades to FTS-only.
@@ -309,8 +319,8 @@ async function keywordRanks(
 
 // Spelled with the FTS leg's `e.` alias so nothing can resolve against
 // entries_fts, which exposes columns of the same name.
-function ftsFilters(deps: Deps, opts: SearchOptions): SQL[] {
-  const filters: SQL[] = [];
+function ftsFilters(deps: Deps, userId: string, opts: SearchOptions): SQL[] {
+  const filters: SQL[] = [sql`e.user_id = ${userId}`];
   const since = sinceCutoff(deps, opts.sinceDays);
   if (since !== null) filters.push(sql`e.created_at >= ${since}`);
   const tag = normalizeTag(opts.tag);
@@ -320,8 +330,12 @@ function ftsFilters(deps: Deps, opts: SearchOptions): SQL[] {
 
 // Drizzle operators rather than raw `sql` here: raw columns render unqualified,
 // which is the shape that silently mis-resolved in M2.
-function hydrationFilters(deps: Deps, opts: SearchOptions): SQL[] {
-  const filters: SQL[] = [];
+function hydrationFilters(
+  deps: Deps,
+  userId: string,
+  opts: SearchOptions,
+): SQL[] {
+  const filters: SQL[] = [eq(entries.userId, userId)];
   const since = sinceCutoff(deps, opts.sinceDays);
   if (since !== null) filters.push(gte(entries.createdAt, since));
   const tag = normalizeTag(opts.tag);
@@ -359,6 +373,7 @@ function sinceCutoff(deps: Deps, sinceDays: number | undefined): number | null {
 
 async function totalsRows(
   deps: Deps,
+  userId: string,
   since: number | null,
 ): Promise<StatsRow[]> {
   // WHY (M2 trap): a raw correlated `count(*)` renders unqualified in a
@@ -366,7 +381,12 @@ async function totalsRows(
   const rows = await deps.db
     .select({ status: entries.status, n: count() })
     .from(entries)
-    .where(since === null ? undefined : gte(entries.createdAt, since))
+    .where(
+      and(
+        eq(entries.userId, userId),
+        since === null ? undefined : gte(entries.createdAt, since),
+      ),
+    )
     .groupBy(entries.status);
 
   const byStatus = new Map<string, number>();
@@ -387,12 +407,18 @@ async function totalsRows(
 
 async function perWeekRows(
   deps: Deps,
+  userId: string,
   since: number | null,
 ): Promise<StatsRow[]> {
   const rows = await deps.db
     .select({ createdAt: entries.createdAt })
     .from(entries)
-    .where(since === null ? undefined : gte(entries.createdAt, since));
+    .where(
+      and(
+        eq(entries.userId, userId),
+        since === null ? undefined : gte(entries.createdAt, since),
+      ),
+    );
 
   const counts = new Map<string, number>();
   for (const row of rows) {
@@ -408,6 +434,7 @@ async function perWeekRows(
 
 async function topTagRows(
   deps: Deps,
+  userId: string,
   since: number | null,
 ): Promise<StatsRow[]> {
   // WHY TS and not `json_each`: `parseTags` is already the single definition of
@@ -416,7 +443,12 @@ async function topTagRows(
   const rows = await deps.db
     .select({ tags: entries.tags })
     .from(entries)
-    .where(since === null ? undefined : gte(entries.createdAt, since));
+    .where(
+      and(
+        eq(entries.userId, userId),
+        since === null ? undefined : gte(entries.createdAt, since),
+      ),
+    );
 
   const counts = new Map<string, number>();
   for (const row of rows) {
@@ -436,12 +468,18 @@ async function topTagRows(
 
 async function topDomainRows(
   deps: Deps,
+  userId: string,
   since: number | null,
 ): Promise<StatsRow[]> {
   const rows = await deps.db
     .select({ domain: entries.sourceDomain, n: count() })
     .from(entries)
-    .where(since === null ? undefined : gte(entries.createdAt, since))
+    .where(
+      and(
+        eq(entries.userId, userId),
+        since === null ? undefined : gte(entries.createdAt, since),
+      ),
+    )
     .groupBy(entries.sourceDomain);
 
   const out: StatsRow[] = [];
@@ -460,12 +498,18 @@ async function topDomainRows(
 
 async function streakRows(
   deps: Deps,
+  userId: string,
   since: number | null,
 ): Promise<StatsRow[]> {
   const rows = await deps.db
     .select({ createdAt: entries.createdAt })
     .from(entries)
-    .where(since === null ? undefined : gte(entries.createdAt, since));
+    .where(
+      and(
+        eq(entries.userId, userId),
+        since === null ? undefined : gte(entries.createdAt, since),
+      ),
+    );
 
   const days = new Set<number>();
   for (const row of rows) days.add(utcDayIndex(row.createdAt));

@@ -6,7 +6,7 @@ import { drizzle } from "drizzle-orm/better-sqlite3";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import { eq, inArray } from "drizzle-orm";
 import * as schema from "@til/db";
-import { entries, entryVectors } from "@til/db";
+import { OWNER_USER_ID, entries, entryVectors } from "@til/db";
 import { cosineSimilarity, embeddingTextFor } from "@til/core";
 import type { VectorMatch, VectorRecord, VectorStore } from "@til/core";
 import type { CorpusEntry } from "./datasets.js";
@@ -62,6 +62,8 @@ export async function buildEvalStack(
     db.insert(entries)
       .values({
         id: entry.id,
+        // Single-tenant benchmark corpus: everything is the owner's (0012).
+        userId: OWNER_USER_ID,
         url: entry.url,
         canonicalUrl: entry.url,
         title: entry.title,
@@ -92,6 +94,7 @@ export async function buildEvalStack(
     if (values === undefined) return;
     records.push({
       id: entry.id,
+      userId: OWNER_USER_ID,
       values,
       metadata: {
         domain: domainOf(entry.url),
@@ -123,6 +126,7 @@ export async function seedExtraEntry(
     .insert(entries)
     .values({
       id: entry.id,
+      userId: OWNER_USER_ID,
       url: entry.url,
       canonicalUrl: entry.url,
       title: entry.title,
@@ -143,6 +147,7 @@ export async function seedExtraEntry(
   await stack.vectorStore.upsert([
     {
       id: entry.id,
+      userId: OWNER_USER_ID,
       values,
       metadata: {
         domain: domainOf(entry.url),

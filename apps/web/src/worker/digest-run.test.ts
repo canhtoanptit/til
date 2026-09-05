@@ -112,6 +112,7 @@ async function saveRead(deps: Deps, id: string, text: string): Promise<void> {
   await store.upsert([
     {
       id,
+      userId: "owner",
       values,
       metadata: {
         domain: "example.com",
@@ -125,6 +126,7 @@ async function saveRead(deps: Deps, id: string, text: string): Promise<void> {
 async function insertSettings(db: Deps["db"]): Promise<void> {
   await db.insert(settingsTable).values({
     id: 1,
+    userId: "owner",
     provider: "groq",
     model: "llama-3.3-70b",
     apiKey: "test-key",

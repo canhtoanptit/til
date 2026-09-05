@@ -41,6 +41,7 @@ async function seed(deps: Deps, entries: Seed[]): Promise<void> {
       sourceDomain: entry.domain ?? "example.com",
     });
     await indexEntry(deps, {
+      userId: "owner",
       id: entry.id,
       title: entry.title,
       summary: entry.summary,

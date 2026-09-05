@@ -1,4 +1,5 @@
 import { sql } from "drizzle-orm";
+import { OWNER_USER_ID } from "@til/db";
 import { fuseHybrid, HYBRID_DEFAULTS, sanitizeFtsQuery } from "@til/core";
 import type {
   HybridTiebreak,
@@ -175,7 +176,10 @@ export async function vectorRanks(
   limit: number,
 ): Promise<RankedId[]> {
   if (limit <= 0) return [];
-  const matches = await stack.vectorStore.query(queryVector, { topK: limit });
+  const matches = await stack.vectorStore.query(queryVector, {
+    topK: limit,
+    userId: OWNER_USER_ID,
+  });
   return matches.map((match, index) => ({ id: match.id, rank: index + 1 }));
 }
 

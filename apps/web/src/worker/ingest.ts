@@ -126,7 +126,13 @@ export async function ingestEntry(deps: Deps, entryId: string): Promise<void> {
   try {
     const source = await readSource(deps, entry.url, slot);
 
-    const settingsRows = await deps.db.select().from(settingsTable).limit(1);
+    // The entry's own owner decides which BYOK row pays for this ingest — the
+    // job is fire-and-forget, so there is no request user to read it from.
+    const settingsRows = await deps.db
+      .select()
+      .from(settingsTable)
+      .where(eq(settingsTable.userId, entry.userId))
+      .limit(1);
     const settingsRow = settingsRows[0];
     if (!settingsRow) {
       throw new Error("settings not configured");
@@ -160,6 +166,7 @@ export async function ingestEntry(deps: Deps, entryId: string): Promise<void> {
     // an unindexed entry is a search gap, not a failed capture (ADR-0010).
     await indexEntry(deps, {
       id: entryId,
+      userId: entry.userId,
       title: digest.title,
       summary: digest.summary,
       takeaway: digest.takeaway,

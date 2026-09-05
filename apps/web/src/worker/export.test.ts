@@ -114,6 +114,7 @@ async function seedEverything(db: Deps["db"]) {
 
   // A review card needs the entry to exist (FK cascade), which it does.
   await db.insert(reviewsTable).values({
+    userId: "owner",
     entryId,
     state: "review",
     dueAt: NOW + 86_400_000,
@@ -133,6 +134,7 @@ async function seedEverything(db: Deps["db"]) {
 
   await db.insert(feedbackTable).values({
     id: "fb-1",
+    userId: "owner",
     conversationId: "conv-1",
     messageId: "msg-1",
     entryId,
@@ -144,6 +146,7 @@ async function seedEverything(db: Deps["db"]) {
   // EXCLUDED tables — populated so their absence from the export is provable.
   await db.insert(settingsTable).values({
     id: 1,
+    userId: "owner",
     provider: "groq",
     model: "openai/gpt-oss-20b",
     apiKey: SECRET_API_KEY,
@@ -550,7 +553,7 @@ describe("writeJsonExport streams instead of buffering", () => {
     }
 
     const chunks: string[] = [];
-    const counts = await writeJsonExport(t.deps.db, NOW, {
+    const counts = await writeJsonExport(t.deps.db, "owner", NOW, {
       write: async (chunk) => {
         chunks.push(chunk);
         return undefined;

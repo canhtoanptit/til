@@ -16,8 +16,9 @@ export function createChatRouter() {
 
   router.get("/", async (c) => {
     const deps = c.get("deps");
+    const userId = c.get("user").id;
     const raw = new URL(c.req.url).searchParams.get("limit");
-    const items = await listConversations(deps, {
+    const items = await listConversations(deps, userId, {
       ...(raw === null ? {} : { limit: Number(raw) }),
     });
     return c.json({ items });
@@ -33,10 +34,11 @@ export function createChatRouter() {
 
   router.delete("/:id", async (c) => {
     const deps = c.get("deps");
+    const userId = c.get("user").id;
     const id = c.req.param("id");
     const stub = await requireConversation(deps.chatAgents, id);
     await stub.clearChat();
-    await deleteConversationIndex(deps, id);
+    await deleteConversationIndex(deps, userId, id);
     return c.body(null, 204);
   });
 

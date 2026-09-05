@@ -41,6 +41,7 @@ describe("POST /api/digests/run", () => {
     expect(workflow.created[0]?.id).toBe(body.id);
     expect(workflow.created[0]?.params).toEqual({
       digestId: body.id,
+      userId: "owner",
       windowDays: 7,
       maxItems: 10,
       kind: "weekly",

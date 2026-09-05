@@ -1,4 +1,5 @@
 import { AIChatAgent } from "@cloudflare/ai-chat";
+import { OWNER_USER_ID } from "@til/db";
 import { buildDeps } from "./build-deps.js";
 import {
   parseStamp,
@@ -28,6 +29,8 @@ export class TilChatAgent extends AIChatAgent<Env> {
     options?: TurnOptions,
   ): Promise<Response | undefined> {
     return chatTurnResponse(this.deps(), {
+      // Stopgap until Phase 4 gives the Durable Object a real identity.
+      userId: OWNER_USER_ID,
       conversationId: this.name,
       messages: this.messages,
       ...(options?.abortSignal ? { abortSignal: options.abortSignal } : {}),
@@ -57,7 +60,12 @@ export class TilChatAgent extends AIChatAgent<Env> {
   }
 
   protected override async onChatResponse(): Promise<void> {
-    await touchConversation(this.deps(), this.name, this.messages);
+    await touchConversation(
+      this.deps(),
+      OWNER_USER_ID,
+      this.name,
+      this.messages,
+    );
   }
 
   private deps(): Deps {

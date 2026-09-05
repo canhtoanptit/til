@@ -67,6 +67,7 @@ async function saveRead(
   await store.upsert([
     {
       id: opts.id,
+      userId: "owner",
       values,
       metadata: {
         domain: "example.com",
@@ -88,7 +89,7 @@ describe("loadInterestProfile", () => {
     });
     await saveRead(t.deps, { id: "new", text: "kafka", createdAt: NOW - 1000 });
 
-    const profile = await loadInterestProfile(t.deps);
+    const profile = await loadInterestProfile(t.deps, "owner");
 
     expect(profile).toHaveLength(3);
     // kafka is axis 2, sqlite axis 1, rust axis 0 — newest first.
@@ -102,7 +103,7 @@ describe("loadInterestProfile", () => {
     await saveRead(t.deps, { id: "old", text: "rust", createdAt: NOW - 3000 });
     await saveRead(t.deps, { id: "new", text: "kafka", createdAt: NOW - 1000 });
 
-    const profile = await loadInterestProfile(t.deps, 1);
+    const profile = await loadInterestProfile(t.deps, "owner", 1);
 
     expect(profile).toHaveLength(1);
     expect(profile[0]?.[2]).toBe(1);
@@ -129,7 +130,7 @@ describe("loadInterestProfile", () => {
       createdAt: NOW - 1000,
     });
 
-    const profile = await loadInterestProfile(t.deps);
+    const profile = await loadInterestProfile(t.deps, "owner");
 
     expect(profile).toHaveLength(1);
     expect(profile[0]?.[2]).toBe(1);
@@ -137,7 +138,7 @@ describe("loadInterestProfile", () => {
 
   it("is empty when nothing is saved", async () => {
     const t = buildTestApp({ now: () => NOW, embedder: stubEmbedder() });
-    expect(await loadInterestProfile(t.deps)).toEqual([]);
+    expect(await loadInterestProfile(t.deps, "owner")).toEqual([]);
   });
 
   it("is empty when there is no vector store to read", async () => {
@@ -152,7 +153,7 @@ describe("loadInterestProfile", () => {
       createdAt: NOW,
       indexed: false,
     });
-    expect(await loadInterestProfile(t.deps)).toEqual([]);
+    expect(await loadInterestProfile(t.deps, "owner")).toEqual([]);
   });
 });
 
@@ -162,7 +163,7 @@ describe("personalizeRanked", () => {
     await saveRead(t.deps, { id: "a", text: "rust", createdAt: NOW - 2000 });
     await saveRead(t.deps, { id: "b", text: "kafka", createdAt: NOW - 1000 });
 
-    const result = await personalizeRanked(t.deps, [
+    const result = await personalizeRanked(t.deps, "owner", [
       item({ canonicalUrl: "r", title: "rust release notes", score: 0.5 }),
       item({ canonicalUrl: "z", title: "something unrelated", score: 0.5 }),
     ]);
@@ -195,7 +196,7 @@ describe("personalizeRanked", () => {
       });
     }
 
-    const result = await personalizeRanked(t.deps, [
+    const result = await personalizeRanked(t.deps, "owner", [
       item({ title: "rust release notes" }),
     ]);
 
@@ -204,7 +205,7 @@ describe("personalizeRanked", () => {
 
     // Control: put the rust entry inside the newest 200 and the match comes back.
     await saveRead(t.deps, { id: "fresh-rust", text: "rust", createdAt: NOW });
-    const after = await personalizeRanked(t.deps, [
+    const after = await personalizeRanked(t.deps, "owner", [
       item({ title: "rust release notes" }),
     ]);
     expect(after?.profileSize).toBe(MAX_INTEREST_VECTORS);
@@ -218,24 +219,26 @@ describe("personalizeRanked", () => {
       embedder: stubEmbedder((texts) => embedded.push(texts)),
     });
 
-    expect(await personalizeRanked(t.deps, [item()])).toBeNull();
+    expect(await personalizeRanked(t.deps, "owner", [item()])).toBeNull();
     expect(embedded).toEqual([]);
   });
 
   it("returns null when there is no embedder, no vector store, or nothing ranked", async () => {
     const noEmbedder = buildTestApp({ now: () => NOW });
-    expect(await personalizeRanked(noEmbedder.deps, [item()])).toBeNull();
+    expect(
+      await personalizeRanked(noEmbedder.deps, "owner", [item()]),
+    ).toBeNull();
 
     const noStore = buildTestApp({
       now: () => NOW,
       embedder: stubEmbedder(),
       vectorStore: null,
     });
-    expect(await personalizeRanked(noStore.deps, [item()])).toBeNull();
+    expect(await personalizeRanked(noStore.deps, "owner", [item()])).toBeNull();
 
     const t = buildTestApp({ now: () => NOW, embedder: stubEmbedder() });
     await saveRead(t.deps, { id: "a", text: "rust", createdAt: NOW });
-    expect(await personalizeRanked(t.deps, [])).toBeNull();
+    expect(await personalizeRanked(t.deps, "owner", [])).toBeNull();
   });
 
   it("embeds title and snippet for every item in one batch", async () => {
@@ -246,7 +249,7 @@ describe("personalizeRanked", () => {
     });
     await saveRead(t.deps, { id: "a", text: "rust", createdAt: NOW });
 
-    await personalizeRanked(t.deps, [
+    await personalizeRanked(t.deps, "owner", [
       item({ canonicalUrl: "1", title: "one", snippet: "first snippet" }),
       item({ canonicalUrl: "2", title: "two" }),
     ]);
@@ -265,7 +268,7 @@ describe("personalizeRanked", () => {
     const t = buildTestApp({ now: () => NOW, embedder: throwing });
     await saveRead(t.deps, { id: "a", text: "rust", createdAt: NOW });
 
-    await expect(personalizeRanked(t.deps, [item()])).rejects.toThrow(
+    await expect(personalizeRanked(t.deps, "owner", [item()])).rejects.toThrow(
       "ollama unreachable",
     );
   });
@@ -279,7 +282,7 @@ describe("personalizeRanked", () => {
     const t = buildTestApp({ now: () => NOW, embedder: short });
     await saveRead(t.deps, { id: "a", text: "rust", createdAt: NOW });
 
-    await expect(personalizeRanked(t.deps, [item()])).rejects.toThrow(
+    await expect(personalizeRanked(t.deps, "owner", [item()])).rejects.toThrow(
       "embedder returned 0 vector(s) for 1 item(s)",
     );
   });
@@ -297,7 +300,7 @@ describe("personalizeRanked", () => {
     });
 
     await expect(
-      personalizeRanked({ ...t.deps, vectorStore: broken }, [item()]),
+      personalizeRanked({ ...t.deps, vectorStore: broken }, "owner", [item()]),
     ).rejects.toThrow("vectorize is down");
   });
 
@@ -311,9 +314,11 @@ describe("personalizeRanked", () => {
     });
     const stale = fakeStore(async () => [1, 0, 0]);
 
-    const result = await personalizeRanked({ ...t.deps, vectorStore: stale }, [
-      item({ title: "rust release notes", score: 0.5 }),
-    ]);
+    const result = await personalizeRanked(
+      { ...t.deps, vectorStore: stale },
+      "owner",
+      [item({ title: "rust release notes", score: 0.5 })],
+    );
 
     expect(result?.profileSize).toBe(1);
     expect(result?.items[0]?.interestScore).toBe(0);

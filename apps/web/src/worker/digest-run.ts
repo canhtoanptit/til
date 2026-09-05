@@ -6,7 +6,12 @@ import {
   type DigestSynthesis,
   type LLMClient,
 } from "@til/core";
-import { digestItems, digests, settings as settingsTable } from "@til/db";
+import {
+  OWNER_USER_ID,
+  digestItems,
+  digests,
+  settings as settingsTable,
+} from "@til/db";
 import type { NewDigestItem } from "@til/db";
 import { eq } from "drizzle-orm";
 import type { Deps } from "./deps.js";
@@ -100,6 +105,8 @@ const MARK_FAILED: DigestStepConfig = {
 
 export interface DigestPlan {
   digestId: string;
+  /** Whose run this is; resolved once in `planRun` and read by every step. */
+  userId: string;
   runAt: number;
   windowDays: number;
   maxItems: number;
@@ -127,6 +134,7 @@ export interface StartDigestInput {
 
 export interface StartedDigestRun {
   id: string;
+  userId: string;
   runAt: number;
   windowDays: number;
   maxItems: number;
@@ -140,6 +148,7 @@ export interface StartedDigestRun {
  */
 export async function startDigestRun(
   deps: Deps,
+  userId: string,
   input: StartDigestInput = {},
 ): Promise<StartedDigestRun> {
   const workflow = deps.digestWorkflow;
@@ -159,6 +168,7 @@ export async function startDigestRun(
 
   await deps.db.insert(digests).values({
     id,
+    userId,
     runAt,
     windowDays,
     kind,
@@ -170,7 +180,7 @@ export async function startDigestRun(
   try {
     await workflow.create({
       id,
-      params: { digestId: id, windowDays, maxItems, kind, now: runAt },
+      params: { digestId: id, userId, windowDays, maxItems, kind, now: runAt },
     });
   } catch (err) {
     const message = describeError(err);
@@ -189,7 +199,7 @@ export async function startDigestRun(
     );
   }
 
-  return { id, runAt, windowDays, maxItems, kind };
+  return { id, userId, runAt, windowDays, maxItems, kind };
 }
 
 /**
@@ -201,7 +211,8 @@ export async function startScheduledRun(
   deps: Deps,
   cron: string,
 ): Promise<StartedDigestRun> {
-  return startDigestRun(deps, { kind: digestKindForCron(cron) });
+  // Still one global run as the owner; Phase 5 fans this out over every user.
+  return startDigestRun(deps, OWNER_USER_ID, { kind: digestKindForCron(cron) });
 }
 
 export async function runDigest(
@@ -280,7 +291,7 @@ async function runMonthlyReport(
   step: DigestStep,
 ): Promise<{ itemCount: number }> {
   const snapshot = await step.do("collect-entries", COLLECT, () =>
-    collectReportSnapshot(deps, {
+    collectReportSnapshot(deps, plan.userId, {
       runAt: plan.runAt,
       windowDays: plan.windowDays,
     }),
@@ -323,10 +334,12 @@ async function planRun(
   const kind = normalizeDigestKind(params.kind);
   const windowDays = clampWindowDays(params.windowDays, kind);
   const maxItems = clampMaxItems(params.maxItems);
+  // Optional on the payload so a pre-0012 instance mid-flight replays as owner.
+  const userId = params.userId ?? OWNER_USER_ID;
   // A monthly report reads no external sources, so it neither needs the feed list
   // nor should pay a D1 read for one.
   const feeds =
-    kind === "monthly-report" ? [] : await listEnabledFeedUrls(deps.db);
+    kind === "monthly-report" ? [] : await listEnabledFeedUrls(deps.db, userId);
 
   const existing = await deps.db
     .select({ id: digests.id })
@@ -348,6 +361,7 @@ async function planRun(
   } else {
     await deps.db.insert(digests).values({
       id: params.digestId,
+      userId,
       runAt,
       windowDays,
       kind,
@@ -359,6 +373,7 @@ async function planRun(
 
   return {
     digestId: params.digestId,
+    userId,
     runAt,
     windowDays,
     maxItems,
@@ -453,7 +468,7 @@ async function personalize(
 
   try {
     const result = await step.do("personalize", PERSONALIZE, () =>
-      personalizeRanked(deps, ranked),
+      personalizeRanked(deps, plan.userId, ranked),
     );
     if (result === null) return null;
     console.log(
@@ -483,7 +498,11 @@ async function synthesize(
     "windowDays" | "maxItems"
   >,
 ) {
-  const rows = await deps.db.select().from(settingsTable).limit(1);
+  const rows = await deps.db
+    .select()
+    .from(settingsTable)
+    .where(eq(settingsTable.userId, plan.userId))
+    .limit(1);
   const row = rows[0];
   if (!row) {
     throw new Error(

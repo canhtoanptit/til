@@ -11,6 +11,7 @@ export function createSearchRouter() {
 
   router.get("/", async (c) => {
     const deps = c.get("deps");
+    const userId = c.get("user").id;
     const url = new URL(c.req.url);
     const q = url.searchParams.get("q") ?? "";
     if (q.trim().length === 0) {
@@ -25,7 +26,10 @@ export function createSearchRouter() {
       Math.max(1, Number.isFinite(limitRaw) ? limitRaw : DEFAULT_LIMIT),
     );
 
-    const scored = await searchEntryRows(deps, { query: q, topK: limit });
+    const scored = await searchEntryRows(deps, userId, {
+      query: q,
+      topK: limit,
+    });
     return c.json({ items: scored.map(({ row }) => toEntryDTO(row)) });
   });
 

@@ -92,6 +92,7 @@ describe("POST /api/entries", () => {
     const { settings } = await import("@til/db");
     await t.deps.db.insert(settings).values({
       id: 1,
+      userId: "owner",
       provider: "openai",
       model: "gpt-4o-mini",
       apiKey: "sk-live-1234",
@@ -284,6 +285,7 @@ describe("POST /api/entries/:id/reingest", () => {
     const { settings } = await import("@til/db");
     await t.deps.db.insert(settings).values({
       id: 1,
+      userId: "owner",
       provider: "openai",
       model: "gpt-4o-mini",
       apiKey: "sk-live-1234",

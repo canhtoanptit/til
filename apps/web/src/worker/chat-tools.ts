@@ -108,7 +108,7 @@ export function capStatsRows(rows: StatsRow[]): StatsRow[] {
  * clamps what the model asked for, and every result is capped before it goes
  * back into the transcript.
  */
-export function buildChatTools(deps: Deps): ChatTool[] {
+export function buildChatTools(deps: Deps, userId: string): ChatTool[] {
   return [
     {
       name: "search_entries",
@@ -116,7 +116,7 @@ export function buildChatTools(deps: Deps): ChatTool[] {
       inputSchema: CHAT_TOOL_SCHEMAS.search_entries,
       execute: async (raw) => {
         const args = parseSearchArgs(raw);
-        const { items } = await searchEntries(deps, args);
+        const { items } = await searchEntries(deps, userId, args);
         return { items: items.map(capSearchItem) };
       },
     },
@@ -126,7 +126,7 @@ export function buildChatTools(deps: Deps): ChatTool[] {
       inputSchema: CHAT_TOOL_SCHEMAS.get_entry,
       execute: async (raw) => {
         const args = entryArgs.parse(raw);
-        const entry = await getEntryForTool(deps, args);
+        const entry = await getEntryForTool(deps, userId, args);
         if (!entry) return { entry: null };
         return { entry: capEntry(entry) };
       },
@@ -137,7 +137,7 @@ export function buildChatTools(deps: Deps): ChatTool[] {
       inputSchema: CHAT_TOOL_SCHEMAS.stats,
       execute: async (raw) => {
         const args = parseStatsArgs(raw);
-        const result = await stats(deps, args);
+        const result = await stats(deps, userId, args);
         return { kind: result.kind, rows: capStatsRows(result.rows) };
       },
     },

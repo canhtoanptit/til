@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { entries } from "@til/db";
 import type { AppContextEnv } from "../deps.js";
 import type { Deps } from "../deps.js";
@@ -28,11 +28,14 @@ import { parseTags, type TagCountDTO } from "../dto.js";
  * Deliberately uncapped, unlike the chat `top_tags` aggregate: this is a browse
  * page, and truncating it would silently hide tags the owner is looking for.
  */
-export async function tagCountRows(deps: Deps): Promise<TagCountDTO[]> {
+export async function tagCountRows(
+  deps: Deps,
+  userId: string,
+): Promise<TagCountDTO[]> {
   const rows = await deps.db
     .select({ tags: entries.tags })
     .from(entries)
-    .where(eq(entries.archived, false));
+    .where(and(eq(entries.archived, false), eq(entries.userId, userId)));
 
   const counts = new Map<string, number>();
   for (const row of rows) {
@@ -52,7 +55,8 @@ export function createTagsRouter() {
 
   router.get("/", async (c) => {
     const deps = c.get("deps");
-    return c.json({ items: await tagCountRows(deps) });
+    const userId = c.get("user").id;
+    return c.json({ items: await tagCountRows(deps, userId) });
   });
 
   return router;

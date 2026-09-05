@@ -63,7 +63,15 @@ export interface AppToken {
   APP_TOKEN: string;
 }
 
+/** Minimal identity routes need; Phase 3 replaces the stopgap producer with real sessions. */
+export interface SessionUser {
+  id: string;
+  email?: string;
+  name?: string | null;
+  picture?: string | null;
+}
+
 export interface AppContextEnv {
   Bindings: AppToken;
-  Variables: { deps: Deps };
+  Variables: { deps: Deps; user: SessionUser };
 }

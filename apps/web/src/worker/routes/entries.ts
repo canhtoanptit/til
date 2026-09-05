@@ -81,6 +81,7 @@ export function createEntriesRouter() {
     }),
     async (c) => {
       const deps = c.get("deps");
+      const userId = c.get("user").id;
       const { url: raw } = c.req.valid("json");
 
       let normalized;
@@ -102,7 +103,12 @@ export function createEntriesRouter() {
       const existing = await deps.db
         .select({ id: entries.id })
         .from(entries)
-        .where(eq(entries.canonicalUrl, normalized.canonicalUrl))
+        .where(
+          and(
+            eq(entries.userId, userId),
+            eq(entries.canonicalUrl, normalized.canonicalUrl),
+          ),
+        )
         .limit(1);
       const dup = existing[0];
       if (dup) {
@@ -116,6 +122,7 @@ export function createEntriesRouter() {
       const contentType = detectContentTypeFromUrl(normalized.url);
       await deps.db.insert(entries).values({
         id,
+        userId,
         url: normalized.url,
         canonicalUrl: normalized.canonicalUrl,
         sourceDomain: normalized.sourceDomain,
@@ -139,6 +146,7 @@ export function createEntriesRouter() {
 
   router.get("/", async (c) => {
     const deps = c.get("deps");
+    const userId = c.get("user").id;
     const url = new URL(c.req.url);
 
     const now = deps.now();
@@ -147,7 +155,11 @@ export function createEntriesRouter() {
       .update(entries)
       .set({ status: "failed", error: "ingest timed out", updatedAt: now })
       .where(
-        and(eq(entries.status, "pending"), lt(entries.updatedAt, staleBefore)),
+        and(
+          eq(entries.userId, userId),
+          eq(entries.status, "pending"),
+          lt(entries.updatedAt, staleBefore),
+        ),
       );
 
     const limitRaw = Number(url.searchParams.get("limit") ?? DEFAULT_LIMIT);
@@ -172,6 +184,7 @@ export function createEntriesRouter() {
     const filter = parseEntryFilter(url.searchParams.get("filter"));
     const tag = normalizeTag(url.searchParams.get("tag") ?? undefined);
     const where = and(
+      eq(entries.userId, userId),
       ...filterPredicates(filter),
       tag === null ? undefined : like(entries.tags, tagPattern(tag)),
       keyset,
@@ -196,6 +209,7 @@ export function createEntriesRouter() {
 
   router.get("/:id", async (c) => {
     const deps = c.get("deps");
+    const userId = c.get("user").id;
     const id = c.req.param("id");
     // WHY: without this the detail page polls a zombie ingest forever, since the
     // client only stops polling when status leaves 'pending'.
@@ -206,6 +220,7 @@ export function createEntriesRouter() {
       .where(
         and(
           eq(entries.id, id),
+          eq(entries.userId, userId),
           eq(entries.status, "pending"),
           lt(entries.updatedAt, sweepNow - STALE_PENDING_MS),
         ),
@@ -213,7 +228,7 @@ export function createEntriesRouter() {
     const rows = await deps.db
       .select()
       .from(entries)
-      .where(eq(entries.id, id))
+      .where(and(eq(entries.id, id), eq(entries.userId, userId)))
       .limit(1);
     const row = rows[0];
     if (!row) {
@@ -224,18 +239,19 @@ export function createEntriesRouter() {
 
   router.get("/:id/related", async (c) => {
     const deps = c.get("deps");
+    const userId = c.get("user").id;
     const id = c.req.param("id");
     const rows = await deps.db
       .select({ id: entries.id })
       .from(entries)
-      .where(eq(entries.id, id))
+      .where(and(eq(entries.id, id), eq(entries.userId, userId)))
       .limit(1);
     if (!rows[0]) {
       throw new HttpError(404, "not_found", "Entry not found.");
     }
     const url = new URL(c.req.url);
     const limitRaw = url.searchParams.get("limit");
-    const related = await relatedEntryRows(deps, {
+    const related = await relatedEntryRows(deps, userId, {
       id,
       ...(limitRaw === null ? {} : { limit: Number(limitRaw) }),
     });
@@ -269,13 +285,14 @@ export function createEntriesRouter() {
     }),
     async (c) => {
       const deps = c.get("deps");
+      const userId = c.get("user").id;
       const id = c.req.param("id");
       const body = c.req.valid("json");
 
       const rows = await deps.db
         .select()
         .from(entries)
-        .where(eq(entries.id, id))
+        .where(and(eq(entries.id, id), eq(entries.userId, userId)))
         .limit(1);
       const row = rows[0];
       if (!row) {
@@ -297,7 +314,7 @@ export function createEntriesRouter() {
       await deps.db
         .update(entries)
         .set({ ...changes, updatedAt })
-        .where(eq(entries.id, id));
+        .where(and(eq(entries.id, id), eq(entries.userId, userId)));
       // The detail shape, a superset of EntryDTO: the detail page is the only
       // caller that owns a cached entry, and it must not lose contentMarkdown to
       // the response of a star click.
@@ -307,18 +324,22 @@ export function createEntriesRouter() {
 
   router.delete("/:id", async (c) => {
     const deps = c.get("deps");
+    const userId = c.get("user").id;
     const id = c.req.param("id");
     const existing = await deps.db
       .select({ id: entries.id })
       .from(entries)
-      .where(eq(entries.id, id))
+      .where(and(eq(entries.id, id), eq(entries.userId, userId)))
       .limit(1);
     if (!existing[0]) {
       throw new HttpError(404, "not_found", "Entry not found.");
     }
-    await deps.db.delete(entries).where(eq(entries.id, id));
+    await deps.db
+      .delete(entries)
+      .where(and(eq(entries.id, id), eq(entries.userId, userId)));
     // WHY: `entry_vectors` rows also cascade off entries.id, but Vectorize has no
     // foreign keys — the explicit delete is what keeps `cloud` mode consistent.
+    // `deleteByIds` takes no user: ownership was just verified against D1.
     if (deps.vectorStore) {
       try {
         await deps.vectorStore.deleteByIds([id]);
@@ -336,17 +357,19 @@ export function createEntriesRouter() {
   // before "/:id/reingest" only for readability; the paths cannot collide.
   router.post("/reembed", async (c) => {
     const deps = c.get("deps");
-    const result = await reembedEntries(deps, {});
+    const userId = c.get("user").id;
+    const result = await reembedEntries(deps, userId, {});
     return c.json(result);
   });
 
   router.post("/:id/reingest", async (c) => {
     const deps = c.get("deps");
+    const userId = c.get("user").id;
     const id = c.req.param("id");
     const rows = await deps.db
       .select({ id: entries.id })
       .from(entries)
-      .where(eq(entries.id, id))
+      .where(and(eq(entries.id, id), eq(entries.userId, userId)))
       .limit(1);
     if (!rows[0]) {
       throw new HttpError(404, "not_found", "Entry not found.");
@@ -355,7 +378,7 @@ export function createEntriesRouter() {
     await deps.db
       .update(entries)
       .set({ status: "pending", error: null, updatedAt: now })
-      .where(eq(entries.id, id));
+      .where(and(eq(entries.id, id), eq(entries.userId, userId)));
     deps.waitUntil(ingestEntry(deps, id));
     return c.json({ id, status: "pending" as const }, 202);
   });

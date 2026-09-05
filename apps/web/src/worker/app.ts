@@ -1,8 +1,10 @@
+import { OWNER_USER_ID } from "@til/db";
 import { Hono } from "hono";
+import type { Context } from "hono";
 import { ZodError } from "zod";
 import { createBearerAuth } from "./auth.js";
 import { HttpError } from "./http-error.js";
-import type { AppContextEnv, Deps } from "./deps.js";
+import type { AppContextEnv, Deps, SessionUser } from "./deps.js";
 import { createChatRouter } from "./routes/chat.js";
 import { createDigestsRouter } from "./routes/digests.js";
 import { createEntriesRouter } from "./routes/entries.js";
@@ -16,6 +18,11 @@ import { createTagsRouter } from "./routes/tags.js";
 
 export function createApp(
   depsFor: (c: { env: unknown; executionCtx: unknown }) => Deps,
+  opts: {
+    resolveUser?: (
+      c: Context<AppContextEnv>,
+    ) => SessionUser | Promise<SessionUser>;
+  } = {},
 ) {
   const app = new Hono<AppContextEnv>();
 
@@ -31,6 +38,13 @@ export function createApp(
   });
 
   app.use("*", createBearerAuth<AppContextEnv>());
+
+  // Stopgap until Phase 3: bearer-authenticated requests act as the owner.
+  const resolveUser = opts.resolveUser ?? (() => ({ id: OWNER_USER_ID }));
+  app.use("*", async (c, next) => {
+    c.set("user", await resolveUser(c));
+    await next();
+  });
 
   app.get("/api/health", async (c) => {
     const deps = c.get("deps");

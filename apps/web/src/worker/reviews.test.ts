@@ -76,6 +76,7 @@ async function seedCard(
       `https://example.com/${overrides.entryId ?? crypto.randomUUID()}`,
   });
   await t.deps.db.insert(reviews).values({
+    userId: "owner",
     entryId,
     state: overrides.state ?? "new",
     dueAt: overrides.dueAt === undefined ? NOW : overrides.dueAt,
@@ -608,7 +609,7 @@ describe("reviews schema, against the real migration", () => {
     const t = buildTestApp({ now: () => NOW });
     const id = await insertEntry(t.deps.db, { id: "defaults" });
     // Omit every defaulted column so SQLite, not drizzle, supplies the values.
-    await t.deps.db.insert(reviews).values({ entryId: id });
+    await t.deps.db.insert(reviews).values({ userId: "owner", entryId: id });
     const rows = await t.deps.db
       .select()
       .from(reviews)
@@ -644,7 +645,7 @@ describe("reviews schema, against the real migration", () => {
   it("rejects a card for an entry that does not exist", async () => {
     const t = buildTestApp({ now: () => NOW });
     await expect(
-      t.deps.db.insert(reviews).values({ entryId: "ghost" }),
+      t.deps.db.insert(reviews).values({ userId: "owner", entryId: "ghost" }),
     ).rejects.toThrow(/FOREIGN KEY constraint failed/i);
   });
 
@@ -652,7 +653,7 @@ describe("reviews schema, against the real migration", () => {
     const t = buildTestApp({ now: () => NOW });
     const id = await seedCard(t, { entryId: "solo" });
     await expect(
-      t.deps.db.insert(reviews).values({ entryId: id }),
+      t.deps.db.insert(reviews).values({ userId: "owner", entryId: id }),
     ).rejects.toThrow(/UNIQUE|constraint/i);
   });
 });

@@ -48,6 +48,7 @@ describe("POST /api/feedback", () => {
     // The response must be exactly what was written, not a hopeful echo.
     expect(rows[0]).toEqual({
       id: body.id,
+      userId: "owner",
       conversationId: "conv-1",
       messageId: "msg-1",
       entryId: null,
@@ -294,6 +295,7 @@ describe("GET /api/feedback", () => {
           { length: Math.min(20, overflow - i) },
           (_unused, offset) => ({
             id: `f-${String(i + offset).padStart(4, "0")}`,
+            userId: "owner",
             conversationId: "c1",
             messageId: `m-${i + offset}`,
             entryId: null,

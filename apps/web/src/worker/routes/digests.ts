@@ -21,10 +21,12 @@ const itemCountSql = sql<number>`count(${digestItems.id})`;
 
 async function sweepStalePending(
   deps: { db: AppContextEnv["Variables"]["deps"]["db"]; now: () => number },
+  userId: string,
   id?: string,
 ): Promise<void> {
   const now = deps.now();
   const stale = and(
+    eq(digests.userId, userId),
     eq(digests.status, "pending"),
     lt(digests.updatedAt, now - STALE_PENDING_MS),
   );
@@ -39,16 +41,18 @@ export function createDigestsRouter() {
 
   router.post("/run", async (c) => {
     const deps = c.get("deps");
+    const userId = c.get("user").id;
     const body = await readRunBody(c.req.raw);
-    const started = await startDigestRun(deps, body);
+    const started = await startDigestRun(deps, userId, body);
     return c.json({ id: started.id }, 202);
   });
 
   router.get("/", async (c) => {
     const deps = c.get("deps");
+    const userId = c.get("user").id;
     const url = new URL(c.req.url);
 
-    await sweepStalePending(deps);
+    await sweepStalePending(deps, userId);
 
     const limitRaw = Number(url.searchParams.get("limit") ?? DEFAULT_LIMIT);
     const limit = Math.min(
@@ -72,6 +76,7 @@ export function createDigestsRouter() {
       })
       .from(digests)
       .leftJoin(digestItems, eq(digestItems.digestId, digests.id))
+      .where(eq(digests.userId, userId))
       .groupBy(digests.id)
       .orderBy(desc(digests.runAt), desc(digests.id))
       .limit(limit);
@@ -84,19 +89,22 @@ export function createDigestsRouter() {
 
   router.get("/:id", async (c) => {
     const deps = c.get("deps");
+    const userId = c.get("user").id;
     const id = c.req.param("id");
     // WHY: without this the detail page polls a zombie run forever, since the
     // client only stops when status leaves 'pending'.
-    await sweepStalePending(deps, id);
+    await sweepStalePending(deps, userId, id);
     const rows = await deps.db
       .select()
       .from(digests)
-      .where(eq(digests.id, id))
+      .where(and(eq(digests.id, id), eq(digests.userId, userId)))
       .limit(1);
     const row = rows[0];
     if (!row) {
       throw new HttpError(404, "not_found", "Digest not found.");
     }
+    // `digest_items` carries no user column: the parent digest was just verified
+    // to be this user's, and every item hangs off it (migration 0012).
     const items = await deps.db
       .select()
       .from(digestItems)
@@ -107,16 +115,20 @@ export function createDigestsRouter() {
 
   router.delete("/:id", async (c) => {
     const deps = c.get("deps");
+    const userId = c.get("user").id;
     const id = c.req.param("id");
     const existing = await deps.db
       .select({ id: digests.id })
       .from(digests)
-      .where(eq(digests.id, id))
+      .where(and(eq(digests.id, id), eq(digests.userId, userId)))
       .limit(1);
     if (!existing[0]) {
       throw new HttpError(404, "not_found", "Digest not found.");
     }
-    await deps.db.delete(digests).where(eq(digests.id, id));
+    // The items cascade off the digest row (FK, migration 0003).
+    await deps.db
+      .delete(digests)
+      .where(and(eq(digests.id, id), eq(digests.userId, userId)));
     return c.body(null, 204);
   });
 
