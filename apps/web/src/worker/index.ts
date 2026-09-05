@@ -20,6 +20,11 @@ export default {
    * alone, in `startScheduledRun`. Keeping the routing there and not here is what
    * makes it testable: this module imports the Workflow and the chat agent, so it
    * cannot be loaded outside workerd.
+   *
+   * One firing fans out over every eligible user, so the result is a list: each
+   * started run gets its own line (a per-user failure was already logged and
+   * skipped inside `startScheduledRun`), and an empty list is logged too — "no
+   * eligible users" is a very different diagnosis from "the cron never fired".
    */
   async scheduled(
     controller: { cron: string; scheduledTime: number },
@@ -29,9 +34,16 @@ export default {
     const deps = buildDeps(env, ctx);
     try {
       const started = await startScheduledRun(deps, controller.cron);
-      console.log(
-        `[cron ${controller.cron}] ${started.kind} run ${started.id} started (window ${started.windowDays}d)`,
-      );
+      if (started.length === 0) {
+        console.log(
+          `[cron ${controller.cron}] no eligible users — nothing started`,
+        );
+      }
+      for (const run of started) {
+        console.log(
+          `[cron ${controller.cron}] ${run.kind} run ${run.id} started for user ${run.userId} (window ${run.windowDays}d)`,
+        );
+      }
     } catch (err) {
       console.error(
         `[cron ${controller.cron}] could not start scheduled run:`,

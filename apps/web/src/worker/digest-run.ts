@@ -10,13 +10,16 @@ import {
   OWNER_USER_ID,
   digestItems,
   digests,
+  entries,
+  feeds,
   settings as settingsTable,
 } from "@til/db";
 import type { NewDigestItem } from "@til/db";
-import { eq } from "drizzle-orm";
+import { and, asc, eq, gte } from "drizzle-orm";
 import type { Deps } from "./deps.js";
 import {
   CANDIDATES_PER_SOURCE,
+  MONTHLY_REPORT_WINDOW_DAYS,
   clampMaxItems,
   clampWindowDays,
   digestKindForCron,
@@ -39,6 +42,8 @@ import {
 import { listEnabledFeedUrls } from "./feeds.js";
 import { HttpError } from "./http-error.js";
 import { toLLMSettings } from "./settings.js";
+
+const DAY_MS = 86_400_000;
 
 const PLAN: DigestStepConfig = {
   retries: { limit: 2, delay: "1 second", backoff: "exponential" },
@@ -203,16 +208,73 @@ export async function startDigestRun(
 }
 
 /**
- * The cron entry point. Which flavour a schedule asks for is decided from the cron
- * expression alone (see `digestKindForCron`), so this is the whole of the routing
- * and it is testable without a Workers runtime.
+ * The cron entry point: one run per eligible user. Which flavour a schedule asks
+ * for is decided from the cron expression alone (see `digestKindForCron`), so
+ * this is the whole of the routing and it is testable without a Workers runtime.
+ *
+ * Sequential on purpose — the runs share one D1, and each becomes its own
+ * Workflow instance (instance id = digest row id, so ids stay unique per
+ * user-run). Weekly eligibility is "≥1 enabled feed AND a settings row": the LLM
+ * is hard-required by `synthesize`, and although HN/Lobsters/arXiv would happily
+ * run feedless, a user who configured nothing must not receive unsolicited runs.
+ * Monthly eligibility is "≥1 ready entry in the 30-day window" — the exact pool
+ * the report reads. One user's failure logs and moves on, so a broken tenant can
+ * never cost everybody else their digest.
  */
 export async function startScheduledRun(
   deps: Deps,
   cron: string,
-): Promise<StartedDigestRun> {
-  // Still one global run as the owner; Phase 5 fans this out over every user.
-  return startDigestRun(deps, OWNER_USER_ID, { kind: digestKindForCron(cron) });
+): Promise<StartedDigestRun[]> {
+  const kind = digestKindForCron(cron);
+  const userIds =
+    kind === "monthly-report"
+      ? await reportRecipientIds(
+          deps,
+          deps.now() - MONTHLY_REPORT_WINDOW_DAYS * DAY_MS,
+        )
+      : await weeklyRecipientIds(deps);
+
+  const started: StartedDigestRun[] = [];
+  for (const userId of userIds) {
+    try {
+      started.push(await startDigestRun(deps, userId, { kind }));
+    } catch (err) {
+      console.error(
+        `[cron ${cron}] could not start ${kind} run for user ${userId}:`,
+        describeError(err),
+      );
+    }
+  }
+  return started;
+}
+
+/** Users with at least one enabled feed AND a settings row, ordered for determinism. */
+async function weeklyRecipientIds(deps: Deps): Promise<string[]> {
+  const rows = await deps.db
+    .selectDistinct({ userId: feeds.userId })
+    .from(feeds)
+    .innerJoin(settingsTable, eq(settingsTable.userId, feeds.userId))
+    .where(eq(feeds.enabled, true))
+    .orderBy(asc(feeds.userId));
+  return rows.map((row) => row.userId);
+}
+
+/**
+ * Users with at least one `ready` entry saved since `since`. No settings join:
+ * `synthesize` still needs one, but a user with a month of reading and no LLM
+ * configured gets a failed row that says exactly that, which is the more useful
+ * signal than silence.
+ */
+async function reportRecipientIds(
+  deps: Deps,
+  since: number,
+): Promise<string[]> {
+  const rows = await deps.db
+    .selectDistinct({ userId: entries.userId })
+    .from(entries)
+    .where(and(eq(entries.status, "ready"), gte(entries.createdAt, since)))
+    .orderBy(asc(entries.userId));
+  return rows.map((row) => row.userId);
 }
 
 export async function runDigest(

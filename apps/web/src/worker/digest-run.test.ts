@@ -25,6 +25,7 @@ import {
   createRecordingWorkflow,
   inlineStep,
   insertEntry,
+  insertFeed,
   makeCandidate,
   makeStubAdapter,
   makeStubEmbedder,
@@ -123,10 +124,10 @@ async function saveRead(deps: Deps, id: string, text: string): Promise<void> {
   ]);
 }
 
-async function insertSettings(db: Deps["db"]): Promise<void> {
+/** No `id`: the rowid self-assigns, so several users can hold settings at once. */
+async function insertSettings(db: Deps["db"], userId = "owner"): Promise<void> {
   await db.insert(settingsTable).values({
-    id: 1,
-    userId: "owner",
+    userId,
     provider: "groq",
     model: "llama-3.3-70b",
     apiKey: "test-key",
@@ -911,20 +912,30 @@ describe("startScheduledRun — cron routing (P26)", () => {
       now: () => NOW,
       digestWorkflow: workflow.binding,
     });
+    // The owner already owns the three feeds migration 0005 seeded; the settings
+    // row is the other half of weekly eligibility.
+    await insertSettings(t.deps.db);
 
     const started = await startScheduledRun(t.deps, WEEKLY_CRON);
 
-    expect(started.kind).toBe("weekly");
-    expect(started.windowDays).toBe(7);
+    expect(started).toHaveLength(1);
+    expect(started[0]?.userId).toBe("owner");
+    expect(started[0]?.kind).toBe("weekly");
+    expect(started[0]?.windowDays).toBe(7);
     expect(workflow.created[0]?.params).toMatchObject({
       kind: "weekly",
       windowDays: 7,
+      userId: "owner",
     });
     const run = (
-      await t.deps.db.select().from(digests).where(eq(digests.id, started.id))
+      await t.deps.db
+        .select()
+        .from(digests)
+        .where(eq(digests.id, started[0]!.id))
     )[0];
     expect(run?.kind).toBe("weekly");
     expect(run?.status).toBe("pending");
+    expect(run?.userId).toBe("owner");
   });
 
   it("starts a monthly report for the 1st-of-the-month cron", async () => {
@@ -933,20 +944,30 @@ describe("startScheduledRun — cron routing (P26)", () => {
       now: () => NOW,
       digestWorkflow: workflow.binding,
     });
+    // Monthly eligibility is reading, not configuration: one ready save inside
+    // the 30-day window is the whole rule.
+    await insertEntry(t.deps.db, { id: "e1", createdAt: NOW - DAY });
 
     const started = await startScheduledRun(t.deps, MONTHLY_REPORT_CRON);
 
-    expect(started.kind).toBe("monthly-report");
-    expect(started.windowDays).toBe(30);
+    expect(started).toHaveLength(1);
+    expect(started[0]?.userId).toBe("owner");
+    expect(started[0]?.kind).toBe("monthly-report");
+    expect(started[0]?.windowDays).toBe(30);
     expect(workflow.created[0]?.params).toMatchObject({
       kind: "monthly-report",
       windowDays: 30,
+      userId: "owner",
     });
     const run = (
-      await t.deps.db.select().from(digests).where(eq(digests.id, started.id))
+      await t.deps.db
+        .select()
+        .from(digests)
+        .where(eq(digests.id, started[0]!.id))
     )[0];
     expect(run?.kind).toBe("monthly-report");
     expect(run?.windowDays).toBe(30);
+    expect(run?.userId).toBe("owner");
   });
 
   it("starts a weekly digest for an expression nobody claimed", async () => {
@@ -955,9 +976,218 @@ describe("startScheduledRun — cron routing (P26)", () => {
       now: () => NOW,
       digestWorkflow: workflow.binding,
     });
+    // Unrecognized expressions fall back to weekly, so weekly eligibility —
+    // feeds AND settings — is what decides who gets one.
+    await insertSettings(t.deps.db);
+
     const started = await startScheduledRun(t.deps, "0 0 * * *");
-    expect(started.kind).toBe("weekly");
+
+    expect(started).toHaveLength(1);
+    expect(started[0]?.kind).toBe("weekly");
     expect(workflow.created).toHaveLength(1);
+  });
+});
+
+describe("startScheduledRun — fan-out (P5)", () => {
+  it("starts one run per eligible user, each its own row and instance", async () => {
+    const workflow = createRecordingWorkflow();
+    const t = buildTestApp({
+      now: () => NOW,
+      digestWorkflow: workflow.binding,
+    });
+    await insertSettings(t.deps.db);
+    await insertSettings(t.deps.db, "alice");
+    await insertFeed(t.deps.db, {
+      userId: "alice",
+      url: "https://alice.example.com/atom.xml",
+    });
+
+    const started = await startScheduledRun(t.deps, WEEKLY_CRON);
+
+    // Ordered by user id, so the pairing below is stable.
+    expect(started.map((run) => run.userId)).toEqual(["alice", "owner"]);
+
+    const rows = await t.deps.db
+      .select()
+      .from(digests)
+      .orderBy(asc(digests.userId));
+    expect(rows.map((row) => row.userId)).toEqual(["alice", "owner"]);
+    expect(new Set(rows.map((row) => row.id)).size).toBe(2);
+
+    expect(workflow.created).toHaveLength(2);
+    for (const run of started) {
+      const instance = workflow.created.find((c) => c.id === run.id);
+      // Instance id IS the row id — one Workflow instance per user-run.
+      expect(instance).toBeDefined();
+      expect(instance?.params).toMatchObject({
+        digestId: run.id,
+        userId: run.userId,
+        kind: "weekly",
+      });
+    }
+  });
+
+  it("skips a user with enabled feeds but no settings row", async () => {
+    const workflow = createRecordingWorkflow();
+    const t = buildTestApp({
+      now: () => NOW,
+      digestWorkflow: workflow.binding,
+    });
+    // alice reads feeds but configured no LLM; the owner's 0005 feeds are
+    // enabled but the owner has no settings either.
+    await insertFeed(t.deps.db, {
+      userId: "alice",
+      url: "https://alice.example.com/atom.xml",
+    });
+
+    const started = await startScheduledRun(t.deps, WEEKLY_CRON);
+
+    expect(started).toEqual([]);
+    expect(workflow.created).toEqual([]);
+    expect(await t.deps.db.select().from(digests)).toEqual([]);
+  });
+
+  it("skips a user whose feeds are all disabled", async () => {
+    const workflow = createRecordingWorkflow();
+    const t = buildTestApp({
+      now: () => NOW,
+      digestWorkflow: workflow.binding,
+    });
+    await insertSettings(t.deps.db, "alice");
+    await insertFeed(t.deps.db, {
+      userId: "alice",
+      url: "https://alice.example.com/atom.xml",
+      enabled: false,
+    });
+
+    const started = await startScheduledRun(t.deps, WEEKLY_CRON);
+
+    expect(started).toEqual([]);
+    expect(workflow.created).toEqual([]);
+  });
+
+  it("skips monthly reports for users with only pending or out-of-window saves", async () => {
+    const workflow = createRecordingWorkflow();
+    const t = buildTestApp({
+      now: () => NOW,
+      digestWorkflow: workflow.binding,
+    });
+    await insertEntry(t.deps.db, {
+      id: "a-pending",
+      userId: "alice",
+      status: "pending",
+      createdAt: NOW - DAY,
+    });
+    await insertEntry(t.deps.db, {
+      id: "b-stale",
+      userId: "bob",
+      createdAt: NOW - 40 * DAY,
+    });
+
+    const started = await startScheduledRun(t.deps, MONTHLY_REPORT_CRON);
+
+    expect(started).toEqual([]);
+    expect(workflow.created).toEqual([]);
+  });
+
+  it("keeps going when one user's run cannot be started", async () => {
+    // alice sorts first, so the throwing instance is the first one created.
+    const workflow = createRecordingWorkflow((run) => {
+      if (run.params?.userId === "alice") {
+        throw new Error("workflow binding is having a day");
+      }
+    });
+    const t = buildTestApp({
+      now: () => NOW,
+      digestWorkflow: workflow.binding,
+    });
+    await insertSettings(t.deps.db);
+    await insertSettings(t.deps.db, "alice");
+    await insertFeed(t.deps.db, {
+      userId: "alice",
+      url: "https://alice.example.com/atom.xml",
+    });
+
+    const started = await startScheduledRun(t.deps, WEEKLY_CRON);
+
+    expect(started).toHaveLength(1);
+    expect(started[0]?.userId).toBe("owner");
+    const rows = await t.deps.db
+      .select()
+      .from(digests)
+      .orderBy(asc(digests.userId));
+    // alice's row still exists — marked failed by startDigestRun, not deleted.
+    expect(rows.map((row) => [row.userId, row.status])).toEqual([
+      ["alice", "failed"],
+      ["owner", "pending"],
+    ]);
+  });
+});
+
+describe("runDigest — tenancy (P5)", () => {
+  const REPORT_ID = "report-tenancy";
+
+  it("runs a monthly report over one user's saves only", async () => {
+    const t = buildTestApp({
+      now: () => NOW,
+      adapters: () => [
+        makeStubAdapter("hn", new Error("a report must not fetch candidates")),
+      ],
+    });
+    await insertSettings(t.deps.db, "alice");
+    await insertEntry(t.deps.db, {
+      id: "alice-1",
+      userId: "alice",
+      url: "https://example.com/alice-1",
+      canonicalUrl: "https://example.com/alice-1",
+      title: "Alice reads about SQLite",
+      createdAt: PINNED - DAY,
+    });
+    await insertEntry(t.deps.db, {
+      id: "owner-1",
+      userId: "owner",
+      url: "https://example.com/owner-1",
+      canonicalUrl: "https://example.com/owner-1",
+      title: "Owner reads about Rust",
+      createdAt: PINNED - DAY,
+    });
+
+    const outcome = await runDigest(
+      t.deps,
+      params({
+        digestId: REPORT_ID,
+        kind: "monthly-report",
+        windowDays: 30,
+        userId: "alice",
+      }),
+      inlineStep().step,
+    );
+
+    expect(outcome.status).toBe("ready");
+    const run = (
+      await t.deps.db.select().from(digests).where(eq(digests.id, REPORT_ID))
+    )[0];
+    expect(run?.userId).toBe("alice");
+    const items = await t.deps.db.select().from(digestItems);
+    expect(items.map((item) => item.url)).toEqual([
+      "https://example.com/alice-1",
+    ]);
+  });
+
+  it("replays a legacy payload without a userId as the owner", async () => {
+    const t = buildTestApp({
+      now: () => NOW,
+      adapters: () => [makeStubAdapter("hn", [hnCandidate()])],
+    });
+    await insertSettings(t.deps.db);
+
+    const outcome = await runDigest(t.deps, params(), inlineStep().step);
+
+    expect(outcome.status).toBe("ready");
+    const run = (
+      await t.deps.db.select().from(digests).where(eq(digests.id, DIGEST_ID))
+    )[0];
+    expect(run?.userId).toBe("owner");
   });
 });
 
