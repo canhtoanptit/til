@@ -1,5 +1,9 @@
 export type ApiErrorCode =
   | "unauthorized"
+  // Sign-in itself failed (Google unreachable/unconfigured, bad state, or an
+  // unverified account) — distinct from `unauthorized`, which means "you are
+  // simply not signed in".
+  | "auth_failed"
   | "invalid_url"
   | "unsafe_url"
   | "duplicate_url"

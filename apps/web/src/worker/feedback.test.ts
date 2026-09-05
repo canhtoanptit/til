@@ -187,7 +187,7 @@ describe("POST /api/feedback", () => {
     expect(rows[0]?.comment).toHaveLength(MAX_FEEDBACK_COMMENT);
   });
 
-  it("requires the app token", async () => {
+  it("requires a session", async () => {
     const t = buildTestApp();
     const res = await post(t, { kind: "up" }, { auth: false });
     expect(res.status).toBe(401);
@@ -319,7 +319,7 @@ describe("GET /api/feedback", () => {
     expect([...times].sort((a, b) => a - b)).toEqual(times);
   });
 
-  it("requires the app token", async () => {
+  it("requires a session", async () => {
     const t = buildTestApp({ now: () => NOW });
     await post(t, { kind: "up", conversationId: "c1", messageId: "m1" });
     const res = await list(t, "?conversationId=c1", { auth: false });

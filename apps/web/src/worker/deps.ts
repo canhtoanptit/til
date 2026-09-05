@@ -18,7 +18,7 @@ export interface FetchPageFn {
 /**
  * The Agents SDK routes `/{prefix}/{kebab-cased binding name}/{instance}`. With
  * the binding named CHAT this prefix puts the agent's own surface on the
- * contract path `/api/chat/:id`, inside the space the bearer middleware guards.
+ * contract path `/api/chat/:id`, inside the space the session middleware guards.
  */
 export const CHAT_AGENT_PREFIX = "api";
 
@@ -59,19 +59,29 @@ export interface Deps {
   chatAgents: ChatAgentBinding | null;
 }
 
-export interface AppToken {
-  APP_TOKEN: string;
+/**
+ * The plain-value bindings the request path reads. All optional: a worker with
+ * no Google client configured still serves `/api/health` and the SPA, and the
+ * auth routes fail closed with 503 rather than at startup.
+ */
+export interface AppBindings {
+  GOOGLE_CLIENT_ID?: string;
+  GOOGLE_CLIENT_SECRET?: string;
+  /** The address whose first sign-in claims the pre-seeded `owner` tenant. */
+  OWNER_EMAIL?: string;
+  /** Also gates `POST /api/auth/dev-login`, which only exists on `local`. */
+  TIL_STACK?: string;
 }
 
-/** Minimal identity routes need; Phase 3 replaces the stopgap producer with real sessions. */
+/** The signed-in person, resolved from the `til_session` cookie by session.ts. */
 export interface SessionUser {
   id: string;
-  email?: string;
-  name?: string | null;
-  picture?: string | null;
+  email: string;
+  name: string | null;
+  picture: string | null;
 }
 
 export interface AppContextEnv {
-  Bindings: AppToken;
+  Bindings: AppBindings;
   Variables: { deps: Deps; user: SessionUser };
 }

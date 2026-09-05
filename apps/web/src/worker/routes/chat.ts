@@ -1,18 +1,10 @@
 import { Hono } from "hono";
-import { mintChatTicket } from "../auth.js";
 import type { AppContextEnv, ChatAgentBinding } from "../deps.js";
 import { deleteConversationIndex, listConversations } from "../chat-index.js";
 import { HttpError } from "../http-error.js";
 
 export function createChatRouter() {
   const router = new Hono<AppContextEnv>();
-
-  // Registered before the `/:id` catch-all so it is never read as a
-  // conversation id. Conversation ids are uuids, so no collision in practice.
-  router.post("/ticket", async (c) => {
-    const deps = c.get("deps");
-    return c.json(await mintChatTicket(c.env.APP_TOKEN, deps.now()));
-  });
 
   router.get("/", async (c) => {
     const deps = c.get("deps");

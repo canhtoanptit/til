@@ -2,11 +2,6 @@ import { describe, expect, it } from "vitest";
 import { chats, settings as settingsTable } from "@til/db";
 import { CHAT_DEFAULT_MAX_STEPS, CHAT_SEARCH_MAX_TOP_K } from "@til/core";
 import {
-  CHAT_TICKET_TTL_MS,
-  mintChatTicket,
-  verifyChatTicket,
-} from "./auth.js";
-import {
   CHAT_TITLE_MAX_CHARS,
   chatTitleFrom,
   parseStamp,
@@ -141,7 +136,7 @@ describe("chat routes — auth", () => {
   ];
 
   for (const testCase of cases) {
-    it(`401s the ${testCase.name} route without a token`, async () => {
+    it(`401s the ${testCase.name} route without a session`, async () => {
       const t = buildTestApp();
       const res = await t.request(testCase.path, {
         auth: false,
@@ -153,117 +148,37 @@ describe("chat routes — auth", () => {
     });
   }
 
-  it("401s the ticket route without a token", async () => {
+  it("401s a WebSocket upgrade with no session cookie", async () => {
     const t = buildTestApp();
-    const res = await t.request("/api/chat/ticket", {
-      auth: false,
-      method: "POST",
-    });
-    expect(res.status).toBe(401);
-  });
-
-  it("401s a WebSocket upgrade with no credentials", async () => {
-    const t = buildTestApp({ appToken: "hunter2" });
     const res = await t.request("/api/chat/c1", {
       auth: false,
       headers: { upgrade: "websocket" },
     });
     expect(res.status).toBe(401);
     const body = (await res.json()) as { error: { message: string } };
-    expect(body.error.message).toContain("chat ticket");
+    expect(body.error.message).toContain("Not signed in");
   });
 
-  it("401s a WebSocket upgrade carrying APP_TOKEN as the ticket", async () => {
-    const t = buildTestApp({ appToken: "hunter2" });
-    const res = await t.request("/api/chat/c1?ticket=hunter2", {
-      auth: false,
+  // The whole reason chat tickets are gone (ADR-0013): a same-origin upgrade
+  // carries `til_session` like any other request, so the WS handshake needs no
+  // credential of its own.
+  it("accepts a WebSocket upgrade carrying the session cookie", async () => {
+    const t = buildTestApp();
+    const res = await t.request("/api/chat/c1", {
       headers: { upgrade: "websocket" },
     });
-    expect(res.status).toBe(401);
-  });
-
-  it("accepts a WebSocket upgrade with a freshly minted ticket", async () => {
-    const t = buildTestApp({ appToken: "hunter2", now: () => NOW });
-    const minted = await t.request("/api/chat/ticket", { method: "POST" });
-    expect(minted.status).toBe(200);
-    const { ticket, expiresAt } = (await minted.json()) as {
-      ticket: string;
-      expiresAt: number;
-    };
-    expect(expiresAt).toBe(NOW + CHAT_TICKET_TTL_MS);
-
-    const res = await t.request(
-      `/api/chat/c1?ticket=${encodeURIComponent(ticket)}`,
-      { auth: false, headers: { upgrade: "websocket" } },
-    );
     // Past auth; there is no Durable Object namespace in the test env.
     expect(res.status).toBe(503);
     const body = (await res.json()) as { error: { code: string } };
     expect(body.error.code).toBe("chat_unavailable");
   });
 
-  it("never accepts a ticket on a plain HTTP request", async () => {
-    const t = buildTestApp({ appToken: "hunter2", now: () => NOW });
-    const minted = await t.request("/api/chat/ticket", { method: "POST" });
-    const { ticket } = (await minted.json()) as { ticket: string };
-    const res = await t.request(
-      `/api/chat?ticket=${encodeURIComponent(ticket)}`,
-      { auth: false },
-    );
+  it("never accepts a credential from the query string", async () => {
+    const t = buildTestApp();
+    const res = await t.request(`/api/chat?token=${"0".repeat(64)}`, {
+      auth: false,
+    });
     expect(res.status).toBe(401);
-  });
-
-  it("never accepts APP_TOKEN from the query string", async () => {
-    const t = buildTestApp({ appToken: "hunter2" });
-    const res = await t.request("/api/chat?token=hunter2", { auth: false });
-    expect(res.status).toBe(401);
-  });
-
-  it("does not accept a chat ticket outside /api/chat/", async () => {
-    const t = buildTestApp({ appToken: "hunter2", now: () => NOW });
-    const minted = await t.request("/api/chat/ticket", { method: "POST" });
-    const { ticket } = (await minted.json()) as { ticket: string };
-    const res = await t.request(
-      `/api/entries?ticket=${encodeURIComponent(ticket)}`,
-      { auth: false, headers: { upgrade: "websocket" } },
-    );
-    expect(res.status).toBe(401);
-  });
-});
-
-describe("chat tickets", () => {
-  it("verifies only inside its window", async () => {
-    const { ticket, expiresAt } = await mintChatTicket("hunter2", NOW);
-    await expect(verifyChatTicket("hunter2", ticket, NOW)).resolves.toBe(true);
-    await expect(
-      verifyChatTicket("hunter2", ticket, expiresAt - 1),
-    ).resolves.toBe(true);
-    await expect(verifyChatTicket("hunter2", ticket, expiresAt)).resolves.toBe(
-      false,
-    );
-  });
-
-  it("rejects a ticket signed with another app token", async () => {
-    const { ticket } = await mintChatTicket("hunter2", NOW);
-    await expect(verifyChatTicket("other", ticket, NOW)).resolves.toBe(false);
-  });
-
-  it("rejects a tampered expiry and malformed input", async () => {
-    const { ticket } = await mintChatTicket("hunter2", NOW);
-    const signature = ticket.slice(ticket.indexOf(".") + 1);
-    // Still inside the accepted window, so only the signature can reject it.
-    const moved = NOW + CHAT_TICKET_TTL_MS - 1;
-    await expect(
-      verifyChatTicket("hunter2", `${moved}.${signature}`, NOW),
-    ).resolves.toBe(false);
-    for (const bad of ["", ".", "abc", `${NOW}.`, "999.zzz"]) {
-      await expect(verifyChatTicket("hunter2", bad, NOW)).resolves.toBe(false);
-    }
-  });
-
-  it("refuses a ticket minted against a far-future clock", async () => {
-    const { ticket } = await mintChatTicket("hunter2", NOW + 10 * 60_000);
-    await expect(verifyChatTicket("hunter2", ticket, NOW)).resolves.toBe(false);
   });
 });
 

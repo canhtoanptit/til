@@ -10,16 +10,27 @@ import {
   digests,
   entries,
   feeds,
+  sessions,
   settings,
+  users,
 } from "@til/db";
 import { createApp } from "./app.js";
 import type { ChatMessageDTO } from "./chat-dto.js";
 import type {
+  AppBindings,
   ChatAgentBinding,
   ChatConversationStub,
   Deps,
   FetchPageFn,
+  SessionUser,
 } from "./deps.js";
+import { upsertGoogleUser } from "./identity.js";
+import {
+  SESSION_COOKIE,
+  SESSION_TTL_MS,
+  createSession,
+  randomHex,
+} from "./session.js";
 import type {
   Candidate,
   ContentType,
@@ -77,7 +88,17 @@ export interface TestOverrides {
   fetchPage?: FetchPageFn;
   fetchImpl?: typeof fetch;
   waitUntil?: (p: Promise<unknown>) => void;
-  appToken?: string;
+  /**
+   * Worker bindings. Merged over the defaults below; an explicitly `undefined`
+   * value *unsets* the default, which is how a test models an unconfigured
+   * secret (e.g. `{ GOOGLE_CLIENT_ID: undefined }` → 503 from the auth routes).
+   */
+  env?: Partial<
+    Record<
+      "TIL_STACK" | "GOOGLE_CLIENT_ID" | "GOOGLE_CLIENT_SECRET" | "OWNER_EMAIL",
+      string | undefined
+    >
+  >;
   adapters?: Deps["adapters"];
   digestWorkflow?: DigestWorkflowBinding | null;
   chatAgents?: ChatAgentBinding | null;
@@ -274,8 +295,38 @@ export function makeStubExtractor(): Extractor {
   };
 }
 
-export function buildTestApp(overrides: TestOverrides = {}) {
-  const { db } = createTestDb();
+/** The tenant every legacy fixture row is backfilled to (migration 0012). */
+export const TEST_USER_ID = OWNER_USER_ID;
+
+/** The session `request()` sends when a test does not ask for anyone else. */
+export const TEST_SESSION_ID = "0".repeat(64);
+
+export interface TestSignIn {
+  user: SessionUser;
+  sessionId: string;
+  cookie: string;
+}
+
+/**
+ * Written out rather than inferred: `sqlite` is a better-sqlite3 handle, and
+ * declaration emit cannot synthesise a name for that type from an inferred
+ * return (TS4058). The explicit annotation gives it one.
+ */
+export interface TestApp {
+  app: ReturnType<typeof createApp>;
+  deps: Deps;
+  env: AppBindings;
+  request: (
+    path: string,
+    init?: RequestInit & { auth?: boolean; user?: string },
+  ) => Promise<Response>;
+  flush: () => Promise<void>;
+  loginAs: (email: string) => Promise<TestSignIn>;
+  sqlite: Database.Database;
+}
+
+export function buildTestApp(overrides: TestOverrides = {}): TestApp {
+  const { db, sqlite } = createTestDb();
   const waitPromises: Promise<unknown>[] = [];
   const now = overrides.now ?? (() => 1_700_000_000_000);
   const embedder = overrides.embedder ?? null;
@@ -320,24 +371,81 @@ export function buildTestApp(overrides: TestOverrides = {}) {
         : overrides.chatAgents,
   };
 
-  const env = { APP_TOKEN: overrides.appToken ?? "dev-token" };
-  // Phase-2 stopgap identity: a request acts as `x-til-test-user`, defaulting to
-  // the owner tenant every legacy fixture row is backfilled to. Phase 3 replaces
-  // the header with a real session cookie.
-  const app = createApp(() => deps, {
-    resolveUser: (c) => ({
-      id: c.req.header("x-til-test-user") ?? OWNER_USER_ID,
-    }),
-  });
+  // Claim the migration-seeded owner row as the default test user, then open a
+  // session for it. Raw sqlite, not drizzle, so `buildTestApp` stays
+  // synchronous — every existing test calls it without `await`.
+  sqlite
+    .prepare(
+      `insert into users (id, google_sub, email, name, picture, created_at, updated_at)
+       values (?, 'test:owner', 'owner@test.local', 'Owner', null, ?, ?)
+       on conflict(id) do update set google_sub = 'test:owner',
+         email = 'owner@test.local', updated_at = excluded.updated_at`,
+    )
+    .run(TEST_USER_ID, now(), now());
+  sqlite
+    .prepare(
+      "insert into sessions (id, user_id, created_at, expires_at) values (?, ?, ?, ?)",
+    )
+    .run(TEST_SESSION_ID, TEST_USER_ID, now(), now() + SESSION_TTL_MS);
+
+  const env: AppBindings = {
+    TIL_STACK: "local",
+    GOOGLE_CLIENT_ID: "test-client-id",
+    GOOGLE_CLIENT_SECRET: "test-client-secret",
+    OWNER_EMAIL: "owner@test.local",
+  };
+  for (const [key, value] of Object.entries(overrides.env ?? {})) {
+    const name = key as keyof AppBindings;
+    if (value === undefined) delete env[name];
+    else env[name] = value;
+  }
+
+  const app = createApp(() => deps);
+
+  // One session per extra test user, created on first use and reused after —
+  // so `{ user: "alice" }` behaves like a browser that stays signed in.
+  const userSessions = new Map<string, string>();
+  const ensureUser = async (id: string): Promise<string> => {
+    const cached = userSessions.get(id);
+    if (cached !== undefined) return cached;
+    const stamp = now();
+    await db
+      .insert(users)
+      .values({
+        id,
+        googleSub: `test:${id}`,
+        email: `${id}@test.local`,
+        name: null,
+        picture: null,
+        createdAt: stamp,
+        updatedAt: stamp,
+      })
+      .onConflictDoNothing();
+    const sessionId = `sess-${randomHex(16)}`;
+    await db.insert(sessions).values({
+      id: sessionId,
+      userId: id,
+      createdAt: stamp,
+      expiresAt: stamp + SESSION_TTL_MS,
+    });
+    userSessions.set(id, sessionId);
+    return sessionId;
+  };
+
   const request = async (
     path: string,
     init?: RequestInit & { auth?: boolean; user?: string },
   ) => {
     const headers = new Headers(init?.headers ?? {});
-    if (init?.auth !== false) {
-      headers.set("authorization", `Bearer ${env.APP_TOKEN}`);
+    // An explicit cookie header always wins — that is how a test replays a
+    // stale or hand-made session.
+    if (!headers.has("cookie") && init?.auth !== false) {
+      const sid =
+        init?.user === undefined
+          ? TEST_SESSION_ID
+          : await ensureUser(init.user);
+      headers.set("cookie", `${SESSION_COOKIE}=${sid}`);
     }
-    if (init?.user !== undefined) headers.set("x-til-test-user", init.user);
     const res = await app.fetch(
       new Request(`http://test.local${path}`, {
         method: init?.method,
@@ -348,13 +456,30 @@ export function buildTestApp(overrides: TestOverrides = {}) {
     );
     return res;
   };
+
+  /**
+   * Signs someone in through the real production path (`upsertGoogleUser` +
+   * `createSession`), for tests that care about the identity plumbing rather
+   * than just "some authenticated caller".
+   */
+  const loginAs = async (email: string): Promise<TestSignIn> => {
+    const user = await upsertGoogleUser(
+      db,
+      now(),
+      { sub: `test:${email}`, email, name: null, picture: null },
+      undefined,
+    );
+    const sessionId = await createSession(db, now(), user.id);
+    return { user, sessionId, cookie: `${SESSION_COOKIE}=${sessionId}` };
+  };
+
   const flush = async () => {
     while (waitPromises.length > 0) {
       const p = waitPromises.shift();
       if (p) await p;
     }
   };
-  return { app, deps, env, request, flush };
+  return { app, deps, env, request, flush, loginAs, sqlite };
 }
 
 export async function insertDigest(

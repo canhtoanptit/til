@@ -6,9 +6,13 @@ export interface Env {
   AI: Ai;
   VECTORIZE: VectorizeIndex;
   ASSETS: Fetcher;
-  APP_TOKEN: string;
   DIGEST: Workflow<DigestRunParams>;
   CHAT: DurableObjectNamespace<TilChatAgent>;
+  // Google sign-in (ADR-0013). Secrets in production, `.dev.vars` locally;
+  // optional so a worker without them still serves the SPA and /api/health.
+  GOOGLE_CLIENT_ID?: string;
+  GOOGLE_CLIENT_SECRET?: string;
+  OWNER_EMAIL?: string;
   TIL_STACK?: string;
   OLLAMA_BASE_URL?: string;
   TIL_EMBEDDER?: string;
