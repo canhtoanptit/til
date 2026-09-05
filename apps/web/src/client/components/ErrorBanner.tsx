@@ -55,6 +55,10 @@ export function friendlyMessage(error: unknown): string {
         return error.message || "The LLM call failed.";
       case "unauthorized":
         return "Your session expired — please sign in again.";
+      case "rate_limited":
+        return (
+          error.message || "Daily entry limit reached — try again tomorrow."
+        );
       default:
         return error.message || "Something went wrong.";
     }

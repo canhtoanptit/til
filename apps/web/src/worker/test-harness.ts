@@ -95,7 +95,11 @@ export interface TestOverrides {
    */
   env?: Partial<
     Record<
-      "TIL_STACK" | "GOOGLE_CLIENT_ID" | "GOOGLE_CLIENT_SECRET" | "OWNER_EMAIL",
+      | "TIL_STACK"
+      | "GOOGLE_CLIENT_ID"
+      | "GOOGLE_CLIENT_SECRET"
+      | "OWNER_EMAIL"
+      | "ENTRY_DAILY_LIMIT",
       string | undefined
     >
   >;

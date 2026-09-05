@@ -1,5 +1,16 @@
 import { Hono } from "hono";
-import { and, desc, eq, like, lt, or, sql, type SQL } from "drizzle-orm";
+import {
+  and,
+  count,
+  desc,
+  eq,
+  gte,
+  like,
+  lt,
+  or,
+  sql,
+  type SQL,
+} from "drizzle-orm";
 import { zValidator } from "@hono/zod-validator";
 import { entries } from "@til/db";
 import {
@@ -19,6 +30,23 @@ import { normalizeTag, relatedEntryRows, tagPattern } from "../retrieval.js";
 const STALE_PENDING_MS = 10 * 60 * 1000;
 const DEFAULT_LIMIT = 20;
 const MAX_LIMIT = 100;
+
+/** Hard cap on saves per user per UTC day. Override with the ENTRY_DAILY_LIMIT
+ *  env var (positive integer); anything unparsable falls back here. */
+export const DAILY_ENTRY_LIMIT = 10;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+export function resolveDailyEntryLimit(raw: string | undefined): number {
+  const parsed = Number.parseInt(raw ?? "", 10);
+  return Number.isSafeInteger(parsed) && parsed > 0
+    ? parsed
+    : DAILY_ENTRY_LIMIT;
+}
+
+/** Epoch ms are UTC by definition, so flooring to the day needs no timezone math. */
+export function utcDayStart(nowMs: number): number {
+  return nowMs - (nowMs % DAY_MS);
+}
 
 /** Which slice of the library `GET /api/entries` should return. */
 export type EntryFilter = "all" | "favorites" | "archived";
@@ -117,8 +145,37 @@ export function createEntriesRouter() {
         });
       }
 
-      const id = crypto.randomUUID();
+      // Error precedence, deliberate: 400 invalid > 409 duplicate > 429 limit.
+      // A malformed URL was never a save, and re-saving a link you already have
+      // must not consume — or even report on — quota, so the daily cap is the
+      // last gate before the insert. One clock read serves both.
       const now = deps.now();
+      const limit = resolveDailyEntryLimit(c.env.ENTRY_DAILY_LIMIT);
+      const dayStart = utcDayStart(now);
+      // Counts rows that exist NOW, so delete-then-readd frees quota and two
+      // concurrent saves can both pass at 9/10 — accepted tradeoffs for a guard
+      // that needs no extra table. Served by entries_user_created_at_idx.
+      const usedRows = await deps.db
+        .select({ n: count() })
+        .from(entries)
+        .where(
+          and(eq(entries.userId, userId), gte(entries.createdAt, dayStart)),
+        );
+      if (Number(usedRows[0]?.n ?? 0) >= limit) {
+        const retryAfterSeconds = Math.max(
+          1,
+          Math.ceil((dayStart + DAY_MS - now) / 1000),
+        );
+        throw new HttpError(
+          429,
+          "rate_limited",
+          `Daily entry limit reached (${limit}/day).`,
+          { retryAfterSeconds },
+          { "retry-after": String(retryAfterSeconds) },
+        );
+      }
+
+      const id = crypto.randomUUID();
       const contentType = detectContentTypeFromUrl(normalized.url);
       await deps.db.insert(entries).values({
         id,

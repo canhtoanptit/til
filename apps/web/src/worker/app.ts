@@ -62,6 +62,11 @@ export function createApp(
 
   app.onError((err, c) => {
     if (err instanceof HttpError) {
+      // Errors that carry transport headers (e.g. `Retry-After` on a 429) apply
+      // them here — this is the single place an HttpError becomes a Response.
+      for (const [key, value] of Object.entries(err.headers ?? {})) {
+        c.header(key, value);
+      }
       return c.json(err.toBody(), err.status as 400);
     }
     if (err instanceof ZodError) {

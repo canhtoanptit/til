@@ -328,6 +328,7 @@ export type ApiErrorCode =
   | "not_found"
   | "validation_error"
   | "llm_error"
+  | "rate_limited"
   | "network_error"
   | "unknown";
 

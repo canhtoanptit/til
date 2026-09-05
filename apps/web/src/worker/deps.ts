@@ -80,6 +80,12 @@ export interface AppBindings {
   OWNER_EMAIL?: string;
   /** Also gates `POST /api/auth/dev-login`, which only exists on `local`. */
   TIL_STACK?: string;
+  /**
+   * Optional override for the per-user daily save cap (a positive integer as a
+   * string). Unset or unparsable falls back to `DAILY_ENTRY_LIMIT` in
+   * `routes/entries.ts`.
+   */
+  ENTRY_DAILY_LIMIT?: string;
 }
 
 /** The signed-in person, resolved from the `til_session` cookie by session.ts. */
