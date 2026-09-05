@@ -8,7 +8,12 @@ import { eq, inArray } from "drizzle-orm";
 import * as schema from "@til/db";
 import { OWNER_USER_ID, entries, entryVectors } from "@til/db";
 import { cosineSimilarity, embeddingTextFor } from "@til/core";
-import type { VectorMatch, VectorRecord, VectorStore } from "@til/core";
+import type {
+  VectorMatch,
+  VectorQueryOptions,
+  VectorRecord,
+  VectorStore,
+} from "@til/core";
 import type { CorpusEntry } from "./datasets.js";
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -16,6 +21,15 @@ const migrationsDir = resolve(packageRoot, "..", "db", "migrations");
 
 /** Fixed clock so `createdAt`, week buckets and streaks are reproducible. */
 export const EVAL_NOW = 1_786_000_000_000;
+
+/**
+ * The one tenant this benchmark has. Retrieval is a per-user query in the app
+ * (migration 0012), so every seed, every vector and every query in this package
+ * is pinned to a single user id — the suite measures ranking, not isolation.
+ * It is `OWNER_USER_ID` on purpose: that is also the `user_id` SQL default, so
+ * a row seeded through raw SQL agrees with one seeded through drizzle.
+ */
+export const EVAL_USER_ID = OWNER_USER_ID;
 const DAY_MS = 24 * 60 * 60 * 1000;
 /** Spacing between fixture entries; 1.3 days spreads 50 entries over ~9 weeks. */
 const SPACING_MS = Math.round(1.3 * DAY_MS);
@@ -62,8 +76,7 @@ export async function buildEvalStack(
     db.insert(entries)
       .values({
         id: entry.id,
-        // Single-tenant benchmark corpus: everything is the owner's (0012).
-        userId: OWNER_USER_ID,
+        userId: EVAL_USER_ID,
         url: entry.url,
         canonicalUrl: entry.url,
         title: entry.title,
@@ -94,7 +107,7 @@ export async function buildEvalStack(
     if (values === undefined) return;
     records.push({
       id: entry.id,
-      userId: OWNER_USER_ID,
+      userId: EVAL_USER_ID,
       values,
       metadata: {
         domain: domainOf(entry.url),
@@ -126,7 +139,7 @@ export async function seedExtraEntry(
     .insert(entries)
     .values({
       id: entry.id,
-      userId: OWNER_USER_ID,
+      userId: EVAL_USER_ID,
       url: entry.url,
       canonicalUrl: entry.url,
       title: entry.title,
@@ -147,7 +160,7 @@ export async function seedExtraEntry(
   await stack.vectorStore.upsert([
     {
       id: entry.id,
-      userId: OWNER_USER_ID,
+      userId: EVAL_USER_ID,
       values,
       metadata: {
         domain: domainOf(entry.url),
@@ -179,6 +192,9 @@ export class SqliteVectorStore implements VectorStore {
     this.dimensions = dimensions;
   }
 
+  // `vector.userId` is deliberately dropped, exactly as D1VectorStore drops it:
+  // `entry_vectors` has no user column, its scope lives on the parent `entries`
+  // row (migration 0012) and is applied by the join in `query`.
   async upsert(vectors: VectorRecord[]): Promise<void> {
     for (const vector of vectors) {
       if (vector.values.length !== this.dimensions) {
@@ -210,9 +226,12 @@ export class SqliteVectorStore implements VectorStore {
 
   async query(
     values: number[],
-    opts: { topK: number },
+    opts: VectorQueryOptions,
   ): Promise<VectorMatch[]> {
     if (opts.topK <= 0) return [];
+    // The same join D1VectorStore uses: scoping is part of the query semantics
+    // this class is the twin of, so it belongs here even though the benchmark
+    // only ever has one tenant (EVAL_USER_ID).
     const rows = this.db
       .select({
         entryId: entryVectors.entryId,
@@ -220,6 +239,8 @@ export class SqliteVectorStore implements VectorStore {
         values: entryVectors.values,
       })
       .from(entryVectors)
+      .innerJoin(entries, eq(entries.id, entryVectors.entryId))
+      .where(eq(entries.userId, opts.userId))
       .all();
     const scored: VectorMatch[] = [];
     for (const row of rows) {
