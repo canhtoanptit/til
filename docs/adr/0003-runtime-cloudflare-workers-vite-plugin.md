@@ -14,7 +14,7 @@ Ship a **single full-stack Cloudflare Worker** built with **`@cloudflare/vite-pl
 
 - The Worker serves the built SPA via the **static-assets binding** (`env.ASSETS`), with `not_found_handling: "single-page-application"` for client-side routing.
 - The API is **Hono**, mounted so `/api/*` hits Worker code first (`run_worker_first: ["/api/*"]`).
-- Bindings: `DB` (D1), `AI` (Workers AI — `toMarkdown` + `bge-m3` embeddings), `VECTORIZE` (index `til-entries`, [ADR-0009](./0009-retrieval-insight-layer.md)), `ASSETS`; AI Gateway reached over `fetch`. Secret: `APP_TOKEN` ([ADR-0007](./0007-single-user-local-first.md)).
+- Bindings: `DB` (D1), `AI` (Workers AI — `toMarkdown` + `bge-m3` embeddings), `VECTORIZE` (index `til-entries`, [ADR-0009](./0009-retrieval-insight-layer.md)), `ASSETS`; AI Gateway reached over `fetch`. Secrets: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `OWNER_EMAIL` ([ADR-0013](./0013-google-identity-session-cookies.md) — a single `APP_TOKEN` under [ADR-0007](./0007-single-user-local-first.md) until 2026-09-05).
 - Local dev: `@cloudflare/vite-plugin` runs Vite + the Worker on miniflare with a local D1.
 
 ## Alternatives considered
