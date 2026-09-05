@@ -1,5 +1,6 @@
 import { WorkflowEntrypoint } from "cloudflare:workers";
 import type { WorkflowEvent, WorkflowStep } from "cloudflare:workers";
+import { OWNER_USER_ID } from "@til/db";
 import { buildDeps } from "./build-deps.js";
 import { runDigest, type DigestRunOutcome } from "./digest-run.js";
 import {
@@ -46,6 +47,7 @@ export class DigestWorkflow extends WorkflowEntrypoint<Env, DigestRunParams> {
       windowDays: clampWindowDays(payload?.windowDays, kind),
       maxItems: clampMaxItems(payload?.maxItems),
       kind,
+      userId: payload?.userId ?? OWNER_USER_ID,
       now: payload?.now ?? event.timestamp.getTime(),
     };
     return runDigest(deps, params, toDigestStep(step));

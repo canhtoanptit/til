@@ -16,6 +16,7 @@ export function createExportRouter() {
 
   router.get("/", (c) => {
     const deps = c.get("deps");
+    const userId = c.get("user").id;
     const raw = new URL(c.req.url).searchParams.get("format");
     const format = parseExportFormat(raw);
     // Validated BEFORE the first byte: once the stream opens, `app.onError` can
@@ -44,9 +45,9 @@ export function createExportRouter() {
     return stream(c, async (s) => {
       try {
         if (format === "markdown") {
-          await writeMarkdownExport(deps.db, exportedAt, s);
+          await writeMarkdownExport(deps.db, userId, exportedAt, s);
         } else {
-          await writeJsonExport(deps.db, exportedAt, s);
+          await writeJsonExport(deps.db, userId, exportedAt, s);
         }
       } catch (err) {
         // The status line said 200 several kilobytes ago, so the only place left

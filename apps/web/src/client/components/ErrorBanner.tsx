@@ -55,6 +55,14 @@ export function friendlyMessage(error: unknown): string {
         return error.message || "The LLM call failed.";
       case "unauthorized":
         return "Your session expired — please sign in again.";
+      // The server's own words are the useful part here ("Google account email
+      // is not verified", "sign-in is not configured"), so they lead.
+      case "auth_failed":
+        return error.message || "Sign-in failed — please try again.";
+      case "rate_limited":
+        return (
+          error.message || "Daily entry limit reached — try again tomorrow."
+        );
       default:
         return error.message || "Something went wrong.";
     }

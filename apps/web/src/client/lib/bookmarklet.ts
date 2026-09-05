@@ -3,10 +3,10 @@
  *
  * Both halves are pure string functions on purpose: the snippet must never grow a
  * dependency on the app's auth state. The bookmarklet only ever navigates to
- * `{origin}/?add={url}` — the app token stays in the browser's localStorage on
- * this origin and the TokenGate in front of the app is what authorises the save.
- * Putting a token in the snippet would paste a bearer credential into every
- * bookmarks file it is copied to.
+ * `{origin}/?add={url}` — the session cookie is HttpOnly and scoped to this
+ * origin, so the browser authorises the save on arrival and the sign-in page
+ * catches anyone who is signed out. Putting a credential in the snippet would
+ * paste it into every bookmarks file the bookmarklet is copied to.
  */
 
 /** Only the origin is interpolated into the snippet, so its quoting cannot break. */

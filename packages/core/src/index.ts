@@ -18,6 +18,7 @@ export type {
   SynthesisInput,
   SynthesisOptions,
   VectorMatch,
+  VectorQueryOptions,
   VectorRecord,
   VectorStore,
 } from "./types.js";

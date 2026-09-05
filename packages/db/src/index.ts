@@ -12,6 +12,9 @@ export {
   digestItems,
   entryVectors,
   reviews,
+  users,
+  sessions,
+  OWNER_USER_ID,
 } from "./schema.js";
 export type {
   Chat,
@@ -32,6 +35,10 @@ export type {
   NewEntryVector,
   Review,
   NewReview,
+  User,
+  NewUser,
+  Session,
+  NewSession,
 } from "./schema.js";
 
 export function createDb(d1: D1Database) {

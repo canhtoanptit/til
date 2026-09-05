@@ -1,8 +1,13 @@
-import { entryVectors } from "@til/db";
+import { entries, entryVectors } from "@til/db";
 import type { Db } from "@til/db";
 import { eq, inArray } from "drizzle-orm";
 import { cosineSimilarity } from "@til/core";
-import type { VectorMatch, VectorRecord, VectorStore } from "@til/core";
+import type {
+  VectorMatch,
+  VectorQueryOptions,
+  VectorRecord,
+  VectorStore,
+} from "@til/core";
 
 interface VectorizeMatch {
   id: string;
@@ -29,11 +34,21 @@ interface VectorizeStoredVector {
 
 export interface VectorizeIndexLike {
   upsert(
-    vectors: { id: string; values: number[]; metadata?: unknown }[],
+    vectors: {
+      id: string;
+      values: number[];
+      namespace?: string;
+      metadata?: unknown;
+    }[],
   ): Promise<unknown>;
   query(
     values: number[],
-    opts?: { topK?: number; returnValues?: boolean; returnMetadata?: unknown },
+    opts?: {
+      topK?: number;
+      namespace?: string;
+      returnValues?: boolean;
+      returnMetadata?: unknown;
+    },
   ): Promise<VectorizeMatches>;
   getByIds(ids: string[]): Promise<VectorizeStoredVector[] | null | undefined>;
   deleteByIds(ids: string[]): Promise<unknown>;
@@ -62,10 +77,14 @@ export class VectorizeStore implements VectorStore {
     for (const vector of vectors) {
       assertDims("VectorizeStore.upsert", vector.values, this.dimensions);
     }
+    // WHY namespaces and not a metadata filter: a namespace needs no index
+    // creation step, and it cannot be forgotten at query time — an unnamespaced
+    // query never sees a namespaced vector, so a missing scope fails closed.
     await this.index.upsert(
       vectors.map((vector) => ({
         id: vector.id,
         values: vector.values,
+        namespace: vector.userId,
         metadata: { ...vector.metadata },
       })),
     );
@@ -73,10 +92,13 @@ export class VectorizeStore implements VectorStore {
 
   async query(
     values: number[],
-    opts: { topK: number },
+    opts: VectorQueryOptions,
   ): Promise<VectorMatch[]> {
     assertDims("VectorizeStore.query", values, this.dimensions);
-    const result = await this.index.query(values, { topK: opts.topK });
+    const result = await this.index.query(values, {
+      topK: opts.topK,
+      namespace: opts.userId,
+    });
     const matches = result?.matches ?? [];
     const out: VectorMatch[] = [];
     for (const match of matches) {
@@ -135,6 +157,8 @@ export class D1VectorStore implements VectorStore {
     }
     const createdAt = this.now();
     for (const vector of vectors) {
+      // `vector.userId` is deliberately dropped: `entry_vectors` has no user
+      // column, its scope lives on the parent `entries` row (migration 0012).
       const row = {
         entryId: vector.id,
         embedModel: vector.metadata.embedModel,
@@ -163,7 +187,7 @@ export class D1VectorStore implements VectorStore {
   // implementation, not a scaling path; `cloud` mode uses Vectorize instead.
   async query(
     values: number[],
-    opts: { topK: number },
+    opts: VectorQueryOptions,
   ): Promise<VectorMatch[]> {
     assertDims("D1VectorStore.query", values, this.dimensions);
     if (opts.topK <= 0) return [];
@@ -174,7 +198,9 @@ export class D1VectorStore implements VectorStore {
         dims: entryVectors.dims,
         values: entryVectors.values,
       })
-      .from(entryVectors);
+      .from(entryVectors)
+      .innerJoin(entries, eq(entries.id, entryVectors.entryId))
+      .where(eq(entries.userId, opts.userId));
 
     let mismatched = 0;
     const scored: VectorMatch[] = [];

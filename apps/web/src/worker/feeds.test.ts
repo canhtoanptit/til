@@ -248,7 +248,7 @@ describe("DELETE /api/feeds/:id", () => {
     const t = buildTestApp({ now: () => NOW });
     await addFeed(t.request, "https://example.com/atom.xml");
     await t.request("/api/feeds/feed-jvns-ca", { method: "DELETE" });
-    expect(await listEnabledFeedUrls(t.deps.db)).toEqual([
+    expect(await listEnabledFeedUrls(t.deps.db, "owner")).toEqual([
       "https://blog.cloudflare.com/rss/",
       "https://simonwillison.net/atom/everything/",
       "https://example.com/atom.xml",
@@ -275,7 +275,7 @@ describe("listEnabledFeedUrls", () => {
       .set({ enabled: false })
       .where(eq(feeds.id, "feed-blog-cloudflare-com"));
 
-    expect(await listEnabledFeedUrls(t.deps.db)).toEqual([
+    expect(await listEnabledFeedUrls(t.deps.db, "owner")).toEqual([
       "https://jvns.ca/atom.xml",
       "https://simonwillison.net/atom/everything/",
       "https://late.example.com/atom.xml",
@@ -285,7 +285,7 @@ describe("listEnabledFeedUrls", () => {
   it("returns an empty list when every feed is disabled", async () => {
     const t = buildTestApp({ now: () => NOW });
     await t.deps.db.update(feeds).set({ enabled: false });
-    expect(await listEnabledFeedUrls(t.deps.db)).toEqual([]);
+    expect(await listEnabledFeedUrls(t.deps.db, "owner")).toEqual([]);
   });
 });
 
@@ -335,6 +335,7 @@ describe("runDigest reads its feeds from D1", () => {
   async function insertSettings(db: Deps["db"]): Promise<void> {
     await db.insert(settingsTable).values({
       id: 1,
+      userId: "owner",
       provider: "groq",
       model: "llama-3.3-70b",
       apiKey: "test-key",
@@ -457,6 +458,6 @@ describe("runDigest reads its feeds from D1", () => {
     );
 
     expect(seen[0]?.feeds).toEqual([...DEFAULT_RSS_FEEDS]);
-    expect(await listEnabledFeedUrls(t.deps.db)).toEqual([]);
+    expect(await listEnabledFeedUrls(t.deps.db, "owner")).toEqual([]);
   });
 });

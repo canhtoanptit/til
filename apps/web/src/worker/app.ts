@@ -1,8 +1,9 @@
 import { Hono } from "hono";
 import { ZodError } from "zod";
-import { createBearerAuth } from "./auth.js";
 import { HttpError } from "./http-error.js";
 import type { AppContextEnv, Deps } from "./deps.js";
+import { createSessionAuth } from "./session.js";
+import { createAuthRouter } from "./routes/auth.js";
 import { createChatRouter } from "./routes/chat.js";
 import { createDigestsRouter } from "./routes/digests.js";
 import { createEntriesRouter } from "./routes/entries.js";
@@ -30,7 +31,9 @@ export function createApp(
     await next();
   });
 
-  app.use("*", createBearerAuth<AppContextEnv>());
+  // Registered after the DI middleware: resolving the session cookie is a
+  // `deps.db` read, so deps must already be on the context.
+  app.use("*", createSessionAuth());
 
   app.get("/api/health", async (c) => {
     const deps = c.get("deps");
@@ -45,6 +48,7 @@ export function createApp(
     return c.json({ ok: true, stack: deps.stack, embedder });
   });
 
+  app.route("/api/auth", createAuthRouter());
   app.route("/api/entries", createEntriesRouter());
   app.route("/api/search", createSearchRouter());
   app.route("/api/tags", createTagsRouter());
@@ -58,6 +62,11 @@ export function createApp(
 
   app.onError((err, c) => {
     if (err instanceof HttpError) {
+      // Errors that carry transport headers (e.g. `Retry-After` on a 429) apply
+      // them here — this is the single place an HttpError becomes a Response.
+      for (const [key, value] of Object.entries(err.headers ?? {})) {
+        c.header(key, value);
+      }
       return c.json(err.toBody(), err.status as 400);
     }
     if (err instanceof ZodError) {

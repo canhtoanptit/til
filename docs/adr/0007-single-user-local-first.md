@@ -1,6 +1,6 @@
 # ADR-0007: Single-user, single-tenant self-hosted; auth required before deploy; BYOK key at rest in own D1
 
-- **Status:** Accepted (v2, 2026-08-02; amended 2026-08-08 with WebSocket ticket auth)
+- **Status:** Accepted (v2, 2026-08-02; amended 2026-08-08 with WebSocket ticket auth) — **auth mechanism superseded by [ADR-0013](./0013-google-identity-session-cookies.md) on 2026-09-05**: the bearer `APP_TOKEN` and the WebSocket HMAC tickets described below are retired, replaced by Google sign-in and `til_session` cookies over per-user tenancy. Everything else here still stands — self-hosted in the owner's own Cloudflare account, BYOK key at rest in their own D1 (now one row per user), full-replace `PUT /api/settings`, the SSRF guards, and the export-as-backup story.
 - **Date:** 2026-08-02
 - **Related:** [ADR-0004](./0004-database-d1-drizzle.md), [ADR-0002](./0002-ai-stack-vercel-ai-sdk-cloudflare-ai-gateway.md)
 - **History:** v1 said "local-first, no authentication in M1". Review found that framing inaccurate and the no-auth stance dangerous: a deployed Worker is public internet, data lives in D1 (not on-device), and unauthenticated endpoints holding a BYOK key are a **wallet-drain** (`POST /api/entries` burns LLM credits per call) and **key-exfiltration** vector (repointing gateway settings around the stored key).

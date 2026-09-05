@@ -104,6 +104,7 @@ async function seedCorpus(opts: SeedOptions = {}) {
       createdAt: row.createdAt,
     });
     await indexEntry(t.deps, {
+      userId: "owner",
       id: row.id,
       title: row.title,
       summary: row.summary,
@@ -133,7 +134,7 @@ describe("searchEntries (hybrid)", () => {
     const t = await seedCorpus();
     // "ownership memory safety" shares no literal token with the semantic-only
     // entry's rare words, and "zygohistomorphic" is on no topic axis.
-    const out = await searchEntries(t.deps, {
+    const out = await searchEntries(t.deps, "owner", {
       query: "zygohistomorphic ownership memory safety",
       topK: 8,
     });
@@ -144,7 +145,7 @@ describe("searchEntries (hybrid)", () => {
 
   it("finds a purely semantic match with no shared keyword at all", async () => {
     const t = await seedCorpus();
-    const out = await searchEntries(t.deps, {
+    const out = await searchEntries(t.deps, "owner", {
       query: "kubernetes",
       topK: 3,
     });
@@ -153,7 +154,7 @@ describe("searchEntries (hybrid)", () => {
 
   it("respects topK", async () => {
     const t = await seedCorpus();
-    const out = await searchEntries(t.deps, {
+    const out = await searchEntries(t.deps, "owner", {
       query: "index database kubernetes ownership",
       topK: 2,
     });
@@ -162,7 +163,10 @@ describe("searchEntries (hybrid)", () => {
 
   it("returns the contract item shape with a fused score", async () => {
     const t = await seedCorpus();
-    const out = await searchEntries(t.deps, { query: "sqlite index", topK: 1 });
+    const out = await searchEntries(t.deps, "owner", {
+      query: "sqlite index",
+      topK: 1,
+    });
     const item = out.items[0];
     expect(item).toBeDefined();
     expect(Object.keys(item ?? {}).sort()).toEqual([
@@ -181,7 +185,7 @@ describe("searchEntries (hybrid)", () => {
 
   it("filters by tag", async () => {
     const t = await seedCorpus();
-    const out = await searchEntries(t.deps, {
+    const out = await searchEntries(t.deps, "owner", {
       query: "index database ownership kubernetes",
       topK: 10,
       tag: "sqlite",
@@ -191,7 +195,7 @@ describe("searchEntries (hybrid)", () => {
 
   it("does not let a tag filter match a longer tag by prefix", async () => {
     const t = await seedCorpus();
-    const out = await searchEntries(t.deps, {
+    const out = await searchEntries(t.deps, "owner", {
       query: "ownership memory safety",
       topK: 10,
       tag: "memory",
@@ -201,7 +205,7 @@ describe("searchEntries (hybrid)", () => {
 
   it("filters by sinceDays", async () => {
     const t = await seedCorpus();
-    const out = await searchEntries(t.deps, {
+    const out = await searchEntries(t.deps, "owner", {
       query: "index database ownership kubernetes scheduler",
       topK: 10,
       sinceDays: 7,
@@ -214,7 +218,9 @@ describe("searchEntries (hybrid)", () => {
 
   it("returns nothing for a blank query", async () => {
     const t = await seedCorpus();
-    await expect(searchEntries(t.deps, { query: "   " })).resolves.toEqual({
+    await expect(
+      searchEntries(t.deps, "owner", { query: "   " }),
+    ).resolves.toEqual({
       items: [],
     });
   });
@@ -222,7 +228,7 @@ describe("searchEntries (hybrid)", () => {
   it("degrades to FTS-only when the embedder throws", async () => {
     const t = await seedCorpus({ embedder: makeThrowingEmbedder() });
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    const out = await searchEntries(t.deps, {
+    const out = await searchEntries(t.deps, "owner", {
       query: "zygohistomorphic",
       topK: 8,
     });
@@ -232,7 +238,10 @@ describe("searchEntries (hybrid)", () => {
 
   it("degrades to FTS-only when there is no embedder at all", async () => {
     const t = await seedCorpus({ embedder: null });
-    const out = await searchEntries(t.deps, { query: "sqlite", topK: 8 });
+    const out = await searchEntries(t.deps, "owner", {
+      query: "sqlite",
+      topK: 8,
+    });
     expect(out.items.map((i) => i.id)).toEqual(["db-1"]);
   });
 
@@ -240,7 +249,7 @@ describe("searchEntries (hybrid)", () => {
     const t = await seedCorpus();
     // A bag of function words must make the keyword leg abstain, so every score
     // here is the semantic leg's contribution alone: weight / (k + rank).
-    const out = await searchEntries(t.deps, {
+    const out = await searchEntries(t.deps, "owner", {
       query: "what is it that they do with the thing",
       topK: 8,
     });
@@ -257,7 +266,7 @@ describe("searchEntries (hybrid)", () => {
     const t = await seedCorpus();
     // The shipped weights make the keyword leg a corroborating vote: its
     // exclusive hit still surfaces, but it cannot outrank a semantic match.
-    const out = await searchEntries(t.deps, {
+    const out = await searchEntries(t.deps, "owner", {
       query: "zygohistomorphic ownership memory safety",
       topK: 8,
     });
@@ -271,7 +280,7 @@ describe("searchEntries (hybrid)", () => {
 
   it("promotes an entry both legs agree on to the top", async () => {
     const t = await seedCorpus();
-    const out = await searchEntries(t.deps, {
+    const out = await searchEntries(t.deps, "owner", {
       query: "kubernetes pods cluster ownership",
       topK: 8,
     });
@@ -284,7 +293,7 @@ describe("searchEntries (hybrid)", () => {
       embedder: embedder((texts) => calls.push(texts)),
     });
     const before = calls.length;
-    await searchEntries(t.deps, { query: "sqlite index", topK: 5 });
+    await searchEntries(t.deps, "owner", { query: "sqlite index", topK: 5 });
     expect(calls.length - before).toBe(1);
   });
 });
@@ -308,7 +317,7 @@ describe("getEntryForTool", () => {
       .set({ contentMarkdown: "the whole article".repeat(500) })
       .where(eq(entries.id, "e-1"));
 
-    const out = await getEntryForTool(t.deps, { id: "e-1" });
+    const out = await getEntryForTool(t.deps, "owner", { id: "e-1" });
     expect(out).not.toBeNull();
     expect(Object.keys(out ?? {}).sort()).toEqual([
       "createdAt",
@@ -326,7 +335,9 @@ describe("getEntryForTool", () => {
 
   it("returns null for an unknown id", async () => {
     const t = buildTestApp();
-    await expect(getEntryForTool(t.deps, { id: "nope" })).resolves.toBeNull();
+    await expect(
+      getEntryForTool(t.deps, "owner", { id: "nope" }),
+    ).resolves.toBeNull();
   });
 });
 
@@ -368,7 +379,7 @@ describe("stats", () => {
 
   it("totals counts every entry and breaks it down by status", async () => {
     const deps = await seedStats();
-    const out = await stats(deps, { kind: "totals" });
+    const out = await stats(deps, "owner", { kind: "totals" });
     expect(out.kind).toBe("totals");
     // WHY this assertion exists: the M2 trap was a correlated raw count(*)
     // silently returning 0, so a real non-zero total is the regression guard.
@@ -377,13 +388,13 @@ describe("stats", () => {
 
   it("totals honours sinceDays", async () => {
     const deps = await seedStats();
-    const out = await stats(deps, { kind: "totals", sinceDays: 7 });
+    const out = await stats(deps, "owner", { kind: "totals", sinceDays: 7 });
     expect(out.rows[0]).toMatchObject({ entries: 4, ready: 3, pending: 1 });
   });
 
   it("per_week buckets by ISO week, newest first", async () => {
     const deps = await seedStats();
-    const out = await stats(deps, { kind: "per_week" });
+    const out = await stats(deps, "owner", { kind: "per_week" });
     expect(out.kind).toBe("per_week");
     expect(out.rows.length).toBeGreaterThanOrEqual(2);
     const weeks = out.rows.map((r) => String(r.week));
@@ -395,7 +406,7 @@ describe("stats", () => {
 
   it("top_tags expands the JSON tags column and ranks by count", async () => {
     const deps = await seedStats();
-    const out = await stats(deps, { kind: "top_tags" });
+    const out = await stats(deps, "owner", { kind: "top_tags" });
     expect(out.rows).toEqual([
       { tag: "rust", count: 3 },
       { tag: "wasm", count: 2 },
@@ -404,7 +415,7 @@ describe("stats", () => {
 
   it("top_domains groups without the unqualified-count trap", async () => {
     const deps = await seedStats();
-    const out = await stats(deps, { kind: "top_domains" });
+    const out = await stats(deps, "owner", { kind: "top_domains" });
     expect(out.rows).toEqual([
       { domain: "a.com", count: 3 },
       { domain: "b.com", count: 1 },
@@ -414,7 +425,7 @@ describe("stats", () => {
 
   it("streak counts consecutive days up to today", async () => {
     const deps = await seedStats();
-    const out = await stats(deps, { kind: "streak" });
+    const out = await stats(deps, "owner", { kind: "streak" });
     const row = out.rows[0];
     expect(row).toMatchObject({
       currentDays: 3,
@@ -431,13 +442,13 @@ describe("stats", () => {
       canonicalUrl: "https://a.com/old",
       createdAt: NOW - 30 * DAY,
     });
-    const out = await stats(t.deps, { kind: "streak" });
+    const out = await stats(t.deps, "owner", { kind: "streak" });
     expect(out.rows[0]).toMatchObject({ currentDays: 0, longestDays: 1 });
   });
 
   it("returns an empty-but-shaped streak row for an empty corpus", async () => {
     const t = buildTestApp({ now: () => NOW });
-    const out = await stats(t.deps, { kind: "streak" });
+    const out = await stats(t.deps, "owner", { kind: "streak" });
     expect(out.rows).toEqual([
       { currentDays: 0, longestDays: 0, activeDays: 0, lastSavedOn: "" },
     ]);
@@ -446,7 +457,7 @@ describe("stats", () => {
   it("returns empty rows for aggregates over an empty corpus", async () => {
     const t = buildTestApp({ now: () => NOW });
     for (const kind of ["per_week", "top_tags", "top_domains"] as const) {
-      const out = await stats(t.deps, { kind });
+      const out = await stats(t.deps, "owner", { kind });
       expect(out).toEqual({ kind, rows: [] });
     }
   });

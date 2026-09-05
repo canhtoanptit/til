@@ -54,17 +54,18 @@ export interface ReportSnapshot {
  */
 export async function collectReportSnapshot(
   deps: Deps,
+  userId: string,
   opts: { runAt: number; windowDays: number },
 ): Promise<ReportSnapshot> {
   const pinned: Deps = { ...deps, now: () => opts.runAt };
   const since = opts.runAt - opts.windowDays * DAY_MS;
 
   const [totals, domains, tags, reviewsGraded, pool] = await Promise.all([
-    stats(pinned, { kind: "totals", sinceDays: opts.windowDays }),
-    stats(pinned, { kind: "top_domains", sinceDays: opts.windowDays }),
-    stats(pinned, { kind: "top_tags", sinceDays: opts.windowDays }),
-    countReviewsGraded(deps, since),
-    readEntryPool(deps, since),
+    stats(pinned, userId, { kind: "totals", sinceDays: opts.windowDays }),
+    stats(pinned, userId, { kind: "top_domains", sinceDays: opts.windowDays }),
+    stats(pinned, userId, { kind: "top_tags", sinceDays: opts.windowDays }),
+    countReviewsGraded(deps, userId, since),
+    readEntryPool(deps, userId, since),
   ]);
 
   const totalsRow = totals.rows[0];
@@ -127,6 +128,7 @@ export function reportSkipReason(snapshot: ReportSnapshot): string | null {
 
 async function readEntryPool(
   deps: Deps,
+  userId: string,
   since: number,
 ): Promise<ReportEntrySnapshot[]> {
   const rows = await deps.db
@@ -141,7 +143,13 @@ async function readEntryPool(
       createdAt: entries.createdAt,
     })
     .from(entries)
-    .where(and(gte(entries.createdAt, since), eq(entries.status, "ready")))
+    .where(
+      and(
+        eq(entries.userId, userId),
+        gte(entries.createdAt, since),
+        eq(entries.status, "ready"),
+      ),
+    )
     // Recency, and `id` after it so a batch of entries saved in the same
     // millisecond cannot reorder between a run and its replay.
     .orderBy(desc(entries.createdAt), desc(entries.id))
@@ -161,14 +169,18 @@ async function readEntryPool(
   }));
 }
 
-async function countReviewsGraded(deps: Deps, since: number): Promise<number> {
+async function countReviewsGraded(
+  deps: Deps,
+  userId: string,
+  since: number,
+): Promise<number> {
   // Cheap enough to be worth including: one indexed-ish scan of a table with one
   // row per entry. `count()` renders `count(*)`, which has no column to resolve,
   // so it sidesteps the unqualified-raw-column trap documented in retrieval.ts.
   const rows = await deps.db
     .select({ n: count() })
     .from(reviews)
-    .where(gte(reviews.reviewedAt, since));
+    .where(and(eq(reviews.userId, userId), gte(reviews.reviewedAt, since)));
   return Number(rows[0]?.n ?? 0);
 }
 

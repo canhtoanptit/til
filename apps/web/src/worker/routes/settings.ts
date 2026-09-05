@@ -48,7 +48,12 @@ export function createSettingsRouter() {
 
   router.get("/", async (c) => {
     const deps = c.get("deps");
-    const rows = await deps.db.select().from(settingsTable).limit(1);
+    const userId = c.get("user").id;
+    const rows = await deps.db
+      .select()
+      .from(settingsTable)
+      .where(eq(settingsTable.userId, userId))
+      .limit(1);
     const row = rows[0];
     if (!row) {
       throw new HttpError(404, "not_found", "Settings not configured.");
@@ -69,6 +74,7 @@ export function createSettingsRouter() {
     }),
     async (c) => {
       const deps = c.get("deps");
+      const userId = c.get("user").id;
       const body = c.req.valid("json");
       const now = deps.now();
 
@@ -82,6 +88,7 @@ export function createSettingsRouter() {
           cfAigToken: settingsTable.cfAigToken,
         })
         .from(settingsTable)
+        .where(eq(settingsTable.userId, userId))
         .limit(1);
 
       const stored = existing[0];
@@ -106,10 +113,11 @@ export function createSettingsRouter() {
             cfAigToken,
             updatedAt: now,
           })
+          // The row was found scoped above, so its own PK is already this user's.
           .where(eq(settingsTable.id, stored.id));
       } else {
         await deps.db.insert(settingsTable).values({
-          id: 1,
+          userId,
           provider: body.provider,
           model: body.model,
           apiKey,
@@ -121,7 +129,11 @@ export function createSettingsRouter() {
         });
       }
 
-      const rows = await deps.db.select().from(settingsTable).limit(1);
+      const rows = await deps.db
+        .select()
+        .from(settingsTable)
+        .where(eq(settingsTable.userId, userId))
+        .limit(1);
       const row = rows[0];
       if (!row) {
         throw new Error("Settings row missing after upsert.");
@@ -132,7 +144,12 @@ export function createSettingsRouter() {
 
   router.post("/test", async (c) => {
     const deps = c.get("deps");
-    const rows = await deps.db.select().from(settingsTable).limit(1);
+    const userId = c.get("user").id;
+    const rows = await deps.db
+      .select()
+      .from(settingsTable)
+      .where(eq(settingsTable.userId, userId))
+      .limit(1);
     const row = rows[0];
     if (!row) {
       throw new HttpError(404, "not_found", "Settings not configured.");

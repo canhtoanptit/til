@@ -2,7 +2,7 @@
 
 - **Status:** Accepted (v2, 2026-08-02 — AI stack revised to Vercel AI SDK, retrieval layer and auth added after review)
 - **Date:** 2026-08-02
-- **Related:** ADRs [0001](./adr/0001-cross-platform-web-first-tauri2.md)–[0012](./adr/0012-ui-system-shadcn.md) · [Implementation plan](./implementation-plan.md)
+- **Related:** ADRs [0001](./adr/0001-cross-platform-web-first-tauri2.md)–[0013](./adr/0013-google-identity-session-cookies.md) · [Implementation plan](./implementation-plan.md)
 
 ---
 
@@ -24,14 +24,14 @@ Secondary goal: this is a deliberate playground for building a small **AI system
 
 **Non-goals (for now)**
 
-- Multi-user / accounts / sharing (single-user, single-tenant self-hosted — see [ADR-0007](./adr/0007-single-user-local-first.md)).
+- Sharing between users. Accounts do exist since 2026-09-05 — Google sign-in and per-user tenancy ([ADR-0013](./adr/0013-google-identity-session-cookies.md)) — but a library is private to its owner and there is nothing to publish, follow or share.
 - Beating paywalls or scraping bot-protected sites.
 - Native (non-webview) mobile UI.
 - Real-time collaboration.
 
 ## 3. Users & scope
 
-One user (me), running my own instance. BYOK key and all data live in my own Cloudflare D1. No authentication in local dev; a bearer token (`APP_TOKEN`) is **mandatory before any deploy** ([ADR-0007](./adr/0007-single-user-local-first.md)).
+Anyone with a Google account, on one deployed instance, each seeing only their own data ([ADR-0013](./adr/0013-google-identity-session-cookies.md), which supersedes ADR-0007's single-tenant stance). Every user brings their own provider key and gets their own `settings` row; all data lives in the operator's Cloudflare D1, scoped by a `user_id` column on every owned row. Sign-in is a Google OIDC code flow; a `til_session` cookie (D1-backed, 30-day TTL) authenticates every `/api/*` call, including the chat WebSocket upgrade. Local dev signs in through a dev-login form that exists only when `TIL_STACK=local`. Entry creation is capped at **10 saves per user per UTC day**.
 
 ## 4. High-level architecture
 
@@ -41,7 +41,7 @@ One user (me), running my own instance. BYOK key and all data live in my own Clo
 │                                                                   │
 │  React+Vite SPA ──(static assets binding: env.ASSETS)             │
 │        │                                                          │
-│        │  fetch /api/*  (Authorization: Bearer APP_TOKEN)         │
+│        │  fetch /api/*  (til_session cookie)                      │
 │        ▼                                                          │
 │   Hono API ────────► D1 (SQLite) [entries, settings, entries_fts] │
 │        │                                                          │
@@ -80,20 +80,20 @@ Rationale for the monorepo split: [ADR-0008](./adr/0008-monorepo-pnpm-turborepo.
 
 ## 6. Technology choices
 
-| Layer                    | Choice                                                                                              | ADR                                                                                                                  |
-| ------------------------ | --------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| Frontend                 | React + Vite (web-first), Tailwind, React Router, TanStack Query                                    | [0001](./adr/0001-cross-platform-web-first-tauri2.md)                                                                |
-| Desktop/mobile (later)   | Tauri 2 wrapping the same build                                                                     | [0001](./adr/0001-cross-platform-web-first-tauri2.md)                                                                |
-| API                      | Hono on Cloudflare Workers                                                                          | [0003](./adr/0003-runtime-cloudflare-workers-vite-plugin.md)                                                         |
-| Build/deploy             | `@cloudflare/vite-plugin` (single Worker)                                                           | [0003](./adr/0003-runtime-cloudflare-workers-vite-plugin.md)                                                         |
-| Database                 | Cloudflare D1 + Drizzle                                                                             | [0004](./adr/0004-database-d1-drizzle.md)                                                                            |
-| LLM                      | Vercel AI SDK v6 via Cloudflare AI Gateway, BYOK (explicit providers only)                          | [0002](./adr/0002-ai-stack-vercel-ai-sdk-cloudflare-ai-gateway.md), [0005](./adr/0005-byok-llmclient-abstraction.md) |
-| Retrieval & insight      | Workers AI `bge-m3` + Vectorize + D1 FTS5, embed at ingest                                          | [0009](./adr/0009-retrieval-insight-layer.md)                                                                        |
-| M2 digest pipeline       | Cloudflare Workflows + Cron Triggers + AI SDK                                                       | [0002](./adr/0002-ai-stack-vercel-ai-sdk-cloudflare-ai-gateway.md)                                                   |
-| M3 chat                  | Cloudflare Agents SDK (`AIChatAgent` DO, WebSocket-only) + `streamChat` in core; UI: `useAgentChat` | [0002](./adr/0002-ai-stack-vercel-ai-sdk-cloudflare-ai-gateway.md), [0009](./adr/0009-retrieval-insight-layer.md)    |
-| Local vs cloud adapters  | `TIL_STACK=local` (Readability + Ollama bge-m3 + D1 cosine) vs `cloud` (Workers AI + Vectorize)     | [0010](./adr/0010-dual-mode-local-cloud-stack.md)                                                                    |
-| Extraction               | `env.AI.toMarkdown()` behind `Extractor` seam + Browser Rendering fallback                          | [0006](./adr/0006-content-extraction-to-markdown.md)                                                                 |
-| Auth (from first deploy) | Bearer `APP_TOKEN` Worker secret + optional CF Access                                               | [0007](./adr/0007-single-user-local-first.md)                                                                        |
+| Layer                   | Choice                                                                                              | ADR                                                                                                                  |
+| ----------------------- | --------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| Frontend                | React + Vite (web-first), Tailwind, React Router, TanStack Query                                    | [0001](./adr/0001-cross-platform-web-first-tauri2.md)                                                                |
+| Desktop/mobile (later)  | Tauri 2 wrapping the same build                                                                     | [0001](./adr/0001-cross-platform-web-first-tauri2.md)                                                                |
+| API                     | Hono on Cloudflare Workers                                                                          | [0003](./adr/0003-runtime-cloudflare-workers-vite-plugin.md)                                                         |
+| Build/deploy            | `@cloudflare/vite-plugin` (single Worker)                                                           | [0003](./adr/0003-runtime-cloudflare-workers-vite-plugin.md)                                                         |
+| Database                | Cloudflare D1 + Drizzle                                                                             | [0004](./adr/0004-database-d1-drizzle.md)                                                                            |
+| LLM                     | Vercel AI SDK v6 via Cloudflare AI Gateway, BYOK (explicit providers only)                          | [0002](./adr/0002-ai-stack-vercel-ai-sdk-cloudflare-ai-gateway.md), [0005](./adr/0005-byok-llmclient-abstraction.md) |
+| Retrieval & insight     | Workers AI `bge-m3` + Vectorize + D1 FTS5, embed at ingest                                          | [0009](./adr/0009-retrieval-insight-layer.md)                                                                        |
+| M2 digest pipeline      | Cloudflare Workflows + Cron Triggers + AI SDK                                                       | [0002](./adr/0002-ai-stack-vercel-ai-sdk-cloudflare-ai-gateway.md)                                                   |
+| M3 chat                 | Cloudflare Agents SDK (`AIChatAgent` DO, WebSocket-only) + `streamChat` in core; UI: `useAgentChat` | [0002](./adr/0002-ai-stack-vercel-ai-sdk-cloudflare-ai-gateway.md), [0009](./adr/0009-retrieval-insight-layer.md)    |
+| Local vs cloud adapters | `TIL_STACK=local` (Readability + Ollama bge-m3 + D1 cosine) vs `cloud` (Workers AI + Vectorize)     | [0010](./adr/0010-dual-mode-local-cloud-stack.md)                                                                    |
+| Extraction              | `env.AI.toMarkdown()` behind `Extractor` seam + Browser Rendering fallback                          | [0006](./adr/0006-content-extraction-to-markdown.md)                                                                 |
+| Auth & tenancy          | Google OIDC code flow → D1-backed `til_session` cookie; `user_id` on every owned row                | [0013](./adr/0013-google-identity-session-cookies.md), [0007](./adr/0007-single-user-local-first.md)                 |
 
 ## 7. Data model (D1)
 
@@ -102,6 +102,7 @@ Rationale for the monorepo split: [ADR-0008](./adr/0008-monorepo-pnpm-turborepo.
 | column                      | type        | notes                                   |
 | --------------------------- | ----------- | --------------------------------------- |
 | `id`                        | text (pk)   | uuid                                    |
+| `user_id`                   | text        | owning user (0012; see below)           |
 | `url`                       | text        | as submitted                            |
 | `canonical_url`             | text        | normalized                              |
 | `title`                     | text        | from extraction/LLM                     |
@@ -115,16 +116,21 @@ Rationale for the monorepo split: [ADR-0008](./adr/0008-monorepo-pnpm-turborepo.
 | `error`                     | text        | when `failed`                           |
 | `created_at` / `updated_at` | integer     | epoch ms                                |
 
-Indexes: **unique on `canonical_url`** (dedupe — resubmitting a URL returns the existing entry), plus `(status)`, `(created_at desc)`.
+Indexes: **unique on `(user_id, canonical_url)`** (dedupe is per user — resubmitting a URL returns _your_ existing entry, and two people may save the same link), plus `(status)`, `(created_at desc)`, `(user_id, created_at)`.
 
 **`entries_fts`** — FTS5 external-content virtual table over `title, summary, takeaway, tags, content_markdown`, synced by insert/update/delete triggers ([ADR-0009](./adr/0009-retrieval-insight-layer.md)). Hand-written migration (drizzle-kit can't generate virtual tables).
 
-**Vectorize index `til-entries`** (not in D1): 1024-dim cosine, one vector per `ready` entry (`id` = entry id) over `title + takeaway + summary + tags`; metadata `{ domain, createdAt, embedModel }`. Upserted on `ready`, deleted on entry delete, re-upserted on reingest.
+**Vectorize index `til-entries`** (not in D1): 1024-dim cosine, one vector per `ready` entry (`id` = entry id) over `title + takeaway + summary + tags`; metadata `{ domain, createdAt, embedModel }`. Upserted on `ready`, deleted on entry delete, re-upserted on reingest. **Tenancy is a namespace, not a metadata filter**: every vector is written and queried under `namespace = user_id`, which needs no metadata-index creation step and cannot be forgotten at query time ([ADR-0013](./adr/0013-google-identity-session-cookies.md)). The local-mode `entry_vectors` store carries no user column and scopes by joining its parent `entries` row instead.
 
-**`settings`** (singleton row, `id = 1`)
+**`users`** — `id` (text pk; `crypto.randomUUID()`, or the literal `'owner'` for the pre-0012 tenant), unique nullable `google_sub`, `email`, `name`, `picture`, `created_at`/`updated_at`. The `owner` row is seeded by migration 0012 with a sentinel email and a NULL `google_sub`; the first verified Google account matching the `OWNER_EMAIL` secret claims it, and with it every row that predates multi-user.
+
+**`sessions`** — `id` (256-bit hex, the value of the `til_session` cookie), `user_id` (FK → `users`, cascade), `created_at`, `expires_at`. Fixed 30-day TTL, no sliding renewal; expired rows are swept opportunistically on the read that finds them.
+
+**`settings`** (one row per user — `UNIQUE(user_id)`; BYOK is per user, and ingest reads the settings of the entry's owner)
 
 | column                                            | notes                                                                                                                                        |
 | ------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `user_id`                                         | owning user (unique)                                                                                                                         |
 | `provider`                                        | `openai` \| `anthropic` \| `groq`                                                                                                            |
 | `model`                                           | e.g. `gpt-4.1` / `claude-sonnet-4-6`                                                                                                         |
 | `api_key`                                         | BYOK; never returned unmasked; `PUT` full-replace except keep-key-when-routing-unchanged ([ADR-0007](./adr/0007-single-user-local-first.md)) |
@@ -135,39 +141,45 @@ Built since v2 (see migrations): `digests` + `digest_items` (M2), `entry_vectors
 
 Built in M-FEAT1 / M-FEAT2 (migrations `0005`–`0011`): `feeds` (digest source list, replacing the hardcoded defaults), `reviews` (SM-2-lite state keyed to `entries.id`), `feedback` (👍/👎 on chat answers), a nullable `interest_score` on `digest_items` for personalized ranking, a `kind` on `digests` (`weekly` | `monthly-report`), and on `entries` a `content_type` plus the library columns `favorite`, `archived`, `note`.
 
+Built in M5 (migration `0012_multi_user`, [ADR-0013](./adr/0013-google-identity-session-cookies.md)): `users` + `sessions`, and a `user_id TEXT NOT NULL DEFAULT 'owner'` column on `entries`, `digests`, `feeds`, `reviews`, `feedback`, `chats` and `settings` — the SQL default _is_ the backfill for a deployed single-user database, not an app behaviour, so the Drizzle columns omit it and every insert site must name its user or fail to compile. `digest_items` and `entry_vectors` deliberately get none; they hang off a parented row and are scoped by joining it. Uniqueness moved from global to per-user (`entries (user_id, canonical_url)`, `feeds (user_id, url)`, `settings UNIQUE(user_id)`), and the FTS triggers name their columns explicitly, so `user_id` is invisible to the keyword index. Next free migration number: `0013`.
+
 Migrations: hand-numbered SQL, applied by filename sort via `wrangler d1 migrations apply til`. Most are hand-written, not generated — the policy and the `db:generate` footgun are documented in [`packages/db/migrations/README.md`](../packages/db/migrations/README.md).
 
 ## 8. API surface (Hono, under `/api`)
 
-All routes require `Authorization: Bearer <APP_TOKEN>` except `GET /api/health` ([ADR-0007](./adr/0007-single-user-local-first.md)). Exact request/response shapes: [implementation plan, Contract C5](./implementation-plan.md#c5--api-contract).
+All routes require a live `til_session` cookie except `GET /api/health` and the `/api/auth/*` entry points; without one the answer is `401 unauthorized` ([ADR-0013](./adr/0013-google-identity-session-cookies.md)). Every authenticated route is scoped to the session's user — another user's id is a `404`, never someone else's row. Exact request/response shapes: [implementation plan, Contract C5](./implementation-plan.md#c5--api-contract).
 
-| Method | Path                        | Purpose                                                                                                                   |
-| ------ | --------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| POST   | `/api/entries`              | `{url}` → create `pending` entry, kick off ingest; `409` + existing id on duplicate `canonical_url`                       |
-| GET    | `/api/entries`              | list (keyset-paginated); `?filter=favorites\|archived` and `?tag=` narrow it; lazily fails entries `pending` > 10 min     |
-| GET    | `/api/entries/:id`          | detail (client polls until `ready`)                                                                                       |
-| PATCH  | `/api/entries/:id`          | library edits — any of `{favorite, archived, note}`; empty-string note clears it to null                                  |
-| DELETE | `/api/entries/:id`          | remove (also deletes the Vectorize vector)                                                                                |
-| GET    | `/api/entries/:id/related`  | nearest neighbours by vector (`?limit=`, ≤20); `{available:false}` when there is no embedder or no vector                 |
-| POST   | `/api/entries/:id/reingest` | retry a `failed`/stale entry (re-extracts, re-digests, re-embeds)                                                         |
-| POST   | `/api/entries/reembed`      | backfill vectors for `ready` entries missing them (after enabling an embedder)                                            |
-| GET    | `/api/tags`                 | tag facets `{tag, count}` for the browse UI, count desc; archived entries excluded                                        |
-| GET    | `/api/search?q=`            | hybrid search — vector + `entries_fts` fused by RRF, degrading to FTS-only with no embedder                               |
-| GET    | `/api/reviews/queue`        | due cards + `dueCount` (`?limit=`, ≤50) — question side only, so the answer stays hidden                                  |
-| POST   | `/api/reviews/enroll`       | add cards: `{entryId}` for one, `{all:true}` to backfill every `ready` entry without one                                  |
-| POST   | `/api/reviews/:entryId`     | grade a card `{grade:1–4}` → next SM-2-lite state (`dueAt`, `intervalDays`, `ease`, `lapses`)                             |
-| GET    | `/api/digests`              | list digest runs; `GET /:id` detail, `DELETE /:id`; lazily fails runs `pending` > 15 min                                  |
-| POST   | `/api/digests/run`          | manual trigger (202) — optional `{windowDays, maxItems, kind}`; `kind` is `weekly` (default) or `monthly-report`, strict  |
-| GET    | `/api/feeds`                | feed list; `POST` add `{url}` (`409` on duplicate), `PUT /:id` `{enabled}` to pause, `DELETE /:id`                        |
-| POST   | `/api/feedback`             | 👍/👎 `{kind}` plus optional `{conversationId, messageId, entryId, comment}` — write-only signal, no dedupe               |
-| WS     | `/api/chat/:id`             | **WebSocket only** — chat turns as Agents SDK frames; there is no HTTP chat endpoint                                      |
-| POST   | `/api/chat/ticket`          | mint a 60 s HMAC ticket authorising the WS upgrade (bearer-authed; see [ADR-0007](./adr/0007-single-user-local-first.md)) |
-| GET    | `/api/chat`                 | conversation list; `GET /:id/messages` transcript; `DELETE /:id` clears it                                                |
-| GET    | `/api/settings`             | current config (key masked to last 4)                                                                                     |
-| PUT    | `/api/settings`             | update BYOK config — full replace; `apiKey` omittable only if provider/account/gateway unchanged                          |
-| POST   | `/api/settings/test`        | `LLMClient.ping()` — validate key/gateway                                                                                 |
-| GET    | `/api/health`               | liveness (no auth)                                                                                                        |
-| GET    | `/api/export`               | streamed full backup as JSON; `?format=markdown` for a single readable `.md` bundle (see below)                           |
+| Method | Path                        | Purpose                                                                                                                                                                      |
+| ------ | --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| POST   | `/api/entries`              | `{url}` → create `pending` entry, kick off ingest; `409` + existing id on duplicate `canonical_url`; `429 rate_limited` + `Retry-After` past 10 saves/UTC-day                |
+| GET    | `/api/entries`              | list (keyset-paginated); `?filter=favorites\|archived` and `?tag=` narrow it; lazily fails entries `pending` > 10 min                                                        |
+| GET    | `/api/entries/:id`          | detail (client polls until `ready`)                                                                                                                                          |
+| PATCH  | `/api/entries/:id`          | library edits — any of `{favorite, archived, note}`; empty-string note clears it to null                                                                                     |
+| DELETE | `/api/entries/:id`          | remove (also deletes the Vectorize vector)                                                                                                                                   |
+| GET    | `/api/entries/:id/related`  | nearest neighbours by vector (`?limit=`, ≤20); `{available:false}` when there is no embedder or no vector                                                                    |
+| POST   | `/api/entries/:id/reingest` | retry a `failed`/stale entry (re-extracts, re-digests, re-embeds)                                                                                                            |
+| POST   | `/api/entries/reembed`      | backfill vectors for `ready` entries missing them (after enabling an embedder)                                                                                               |
+| GET    | `/api/tags`                 | tag facets `{tag, count}` for the browse UI, count desc; archived entries excluded                                                                                           |
+| GET    | `/api/search?q=`            | hybrid search — vector + `entries_fts` fused by RRF, degrading to FTS-only with no embedder                                                                                  |
+| GET    | `/api/reviews/queue`        | due cards + `dueCount` (`?limit=`, ≤50) — question side only, so the answer stays hidden                                                                                     |
+| POST   | `/api/reviews/enroll`       | add cards: `{entryId}` for one, `{all:true}` to backfill every `ready` entry without one                                                                                     |
+| POST   | `/api/reviews/:entryId`     | grade a card `{grade:1–4}` → next SM-2-lite state (`dueAt`, `intervalDays`, `ease`, `lapses`)                                                                                |
+| GET    | `/api/digests`              | list digest runs; `GET /:id` detail, `DELETE /:id`; lazily fails runs `pending` > 15 min                                                                                     |
+| POST   | `/api/digests/run`          | manual trigger (202) — optional `{windowDays, maxItems, kind}`; `kind` is `weekly` (default) or `monthly-report`, strict                                                     |
+| GET    | `/api/feeds`                | feed list; `POST` add `{url}` (`409` on duplicate), `PUT /:id` `{enabled}` to pause, `DELETE /:id`                                                                           |
+| POST   | `/api/feedback`             | 👍/👎 `{kind}` plus optional `{conversationId, messageId, entryId, comment}` — write-only signal, no dedupe                                                                  |
+| WS     | `/api/chat/:id`             | **WebSocket only** — chat turns as Agents SDK frames; there is no HTTP chat endpoint. Authenticated by the `til_session` cookie, which rides the same-origin upgrade request |
+| GET    | `/api/chat`                 | conversation list; `GET /:id/messages` transcript; `DELETE /:id` clears it                                                                                                   |
+| GET    | `/api/settings`             | current config (key masked to last 4)                                                                                                                                        |
+| PUT    | `/api/settings`             | update BYOK config — full replace; `apiKey` omittable only if provider/account/gateway unchanged                                                                             |
+| POST   | `/api/settings/test`        | `LLMClient.ping()` — validate key/gateway                                                                                                                                    |
+| GET    | `/api/health`               | liveness (no auth)                                                                                                                                                           |
+| GET    | `/api/auth/google`          | start sign-in — sets the 10-min `til_oauth_state` cookie, `302` to Google (`503` until the OAuth secrets are set)                                                            |
+| GET    | `/api/auth/callback`        | Google's redirect target — verifies state + `id_token` claims, upserts the user, sets `til_session`, `302` to `/`                                                            |
+| GET    | `/api/auth/me`              | the signed-in user `{id, email, name, picture}`, or `401`                                                                                                                    |
+| POST   | `/api/auth/logout`          | deletes the session row and clears the cookie; `204` whatever the cookie was                                                                                                 |
+| POST   | `/api/auth/dev-login`       | `{email}` → a session without Google. Exists **only** when `TIL_STACK=local`; `404` otherwise, before body validation                                                        |
+| GET    | `/api/export`               | streamed full backup as JSON; `?format=markdown` for a single readable `.md` bundle (see below)                                                                              |
 
 ### 8.1 What an export deliberately leaves out
 
@@ -242,7 +254,7 @@ M2's digest pipeline runs as a **Cloudflare Workflow** (durable steps + cron). M
 ## 11. Frontend (M1)
 
 - **Shell:** header + nav (Feed / Settings). Tailwind for styling (works identically in the Tauri webview later).
-- **Token gate:** first visit asks for the `APP_TOKEN` (stored in `localStorage`, attached as `Authorization` header; a `401` clears it and re-prompts). Skipped transparently in local dev via the dev token.
+- **Sign-in gate:** the app asks `GET /api/auth/me` before rendering anything; without a session it shows a login page with **Continue with Google** — plus a dev-login email form when `/api/health` reports `stack: local`. The shell carries the signed-in identity and a sign-out action; a `401` from any call drops back to the login page ([ADR-0013](./adr/0013-google-identity-session-cookies.md)). _(Was a token gate over `localStorage` until 2026-09-05.)_
 - **Feed:** "Add a link" input at top → optimistic `pending` card → poll to `ready`; **search box** (`/api/search`); list of cards (title, source domain, takeaway snippet, tags, date); empty state; retry on `failed`; duplicate submission jumps to the existing entry.
 - **Entry detail** (route/modal): title, source link, summary, **takeaway**, follow-up question, tags, collapsible extracted markdown, reingest/delete.
 - **Settings:** provider select, model, API key (password field, masked once saved), CF account id + gateway id + optional gateway token, **Test connection**.
@@ -251,9 +263,9 @@ M2's digest pipeline runs as a **Cloudflare Workflow** (durable steps + cron). M
 ## 12. Milestones
 
 - **M1 — Web thin slice (this design). ✅ Complete, verified 2026-08-03** (Groq via authenticated CF AI Gateway; real `ready` digest + live FTS hit). Everything in §7–§11, including the ingest-time index (vectors + FTS). Single-tenant, single user. _Definition of done in §13; phase-by-phase plan with agent briefs in the [implementation plan](./implementation-plan.md)._
-- **Deploy hardening (was M1.5 — deferred to after M3 on 2026-08-03).** Everything through M3 is built and verified locally first; Workers AI and Vectorize have no local emulator, so local runs use substitute adapters (Readability extraction, Ollama/remote `bge-m3`, D1 brute-force cosine) behind the existing seams. `APP_TOKEN` + optional CF Access, create real D1/Vectorize/AI Gateway, `wrangler deploy`, scheduled D1 export → R2, optionally move the BYOK key to gateway-stored keys ([ADR-0007](./adr/0007-single-user-local-first.md)).
+- **Deploy hardening (was M1.5 — deferred to after M3 on 2026-08-03).** Everything through M3 is built and verified locally first; Workers AI and Vectorize have no local emulator, so local runs use substitute adapters (Readability extraction, Ollama/remote `bge-m3`, D1 brute-force cosine) behind the existing seams. `APP_TOKEN` + optional CF Access, create real D1/Vectorize/AI Gateway, `wrangler deploy`, scheduled D1 export → R2, optionally move the BYOK key to gateway-stored keys ([ADR-0007](./adr/0007-single-user-local-first.md)). _(The token shipped as described and was retired in M5 — [ADR-0013](./adr/0013-google-identity-session-cookies.md).)_
 - **M2 — Interesting-things digest.** A **Cloudflare Workflow** (durable steps: query-plan → multi-source fetch across keyless sources (HN/Lobsters/arXiv/RSS — **Reddit dropped: unauthenticated JSON returned 403 from May 2026 and OAuth is closed to personal scripts**) → rank into scored "evidence clusters" → synthesize) + AI SDK calls, scheduled via Cron Triggers — the `mvanhorn/last30days-skill` _pattern_, Worker-native. A pipeline, not an autonomous agent.
-- **M3 — Chat agent. Backend complete 2026-08-08** (UI in progress). Agents SDK `AIChatAgent` on a Durable Object with SQLite-persisted sessions; the AI-SDK tool loop lives in `packages/core` as `streamChat`, so the DO never imports `ai`. Tools per [ADR-0009](./adr/0009-retrieval-insight-layer.md): hybrid `search_entries` (vector + FTS5 fused by RRF), `get_entry`, `stats`. All read-only; tool output is framed as untrusted data. Three implementation realities worth carrying forward: chat is **WebSocket-only** (`@cloudflare/ai-chat` exposes no HTTP chat path), the WS handshake is authorised by a **60 s HMAC ticket** because browsers cannot set handshake headers ([ADR-0007](./adr/0007-single-user-local-first.md)), and the Agents SDK **re-requires `nodejs_compat`** ([ADR-0003](./adr/0003-runtime-cloudflare-workers-vite-plugin.md)).
+- **M3 — Chat agent. Backend complete 2026-08-08** (UI in progress). Agents SDK `AIChatAgent` on a Durable Object with SQLite-persisted sessions; the AI-SDK tool loop lives in `packages/core` as `streamChat`, so the DO never imports `ai`. Tools per [ADR-0009](./adr/0009-retrieval-insight-layer.md): hybrid `search_entries` (vector + FTS5 fused by RRF), `get_entry`, `stats`. All read-only; tool output is framed as untrusted data. Three implementation realities worth carrying forward: chat is **WebSocket-only** (`@cloudflare/ai-chat` exposes no HTTP chat path), the WS handshake was authorised by a **60 s HMAC ticket** because browsers cannot set handshake headers ([ADR-0007](./adr/0007-single-user-local-first.md); retired 2026-09-05 — cookies ride a same-origin upgrade, so the session cookie authorises it directly, [ADR-0013](./adr/0013-google-identity-session-cookies.md)), and the Agents SDK **re-requires `nodejs_compat`** ([ADR-0003](./adr/0003-runtime-cloudflare-workers-vite-plugin.md)).
   _The following milestones were added 2026-08-09 after M3 shipped; M4/M5 keep their historical numbers because other docs reference them. Execution order (reordered same day — deploy moved ahead of the feature waves once the owner adopted an all-on-Cloudflare posture; their machine cannot run Ollama): M-EVAL → M-UI → **deploy** → M-FEAT1 → M-FEAT2 → M4._
 
 - **M-EVAL — Measurement** ([ADR-0011](./adr/0011-evaluation-and-measurement.md)). `@til/evals`: golden-set retrieval metrics (Recall@5, MRR, nDCG@10; FTS-vs-vector-vs-hybrid ablation), deterministic chat checks (tool selection, citation precision, refusal, injection canaries), opt-in LLM-judge suite (faithfulness/relevance, judge ≠ generator), history log per run. Prerequisite: local Ollama `bge-m3`. Online half (feedback thumbs, click-through) lands post-deploy.
@@ -266,7 +278,7 @@ M2's digest pipeline runs as a **Cloudflare Workflow** (durable steps + cron). M
   - _Bookmarklet capture_ — `?add=<url>` handled by the feed page; no token ever embedded in the bookmarklet.
 - **M-FEAT2 — Comprehensive-product wave** (contracts sketched in the [implementation plan](./implementation-plan.md)): library organization (favorites/archive, tag browse, per-entry note), export/backup endpoint, content types (PDF via cloud `toMarkdown`; experimental YouTube transcripts), monthly reading report (digest `kind` column + monthly cron), and — deployed-only — weekly-digest **email delivery** via the `send_email` binding plus **email-in capture** via Email Routing.
 - **M4 — Desktop + mobile.** PWA pass first (installability, zero store friction, **share target** for mobile capture), then wrap the same client build with Tauri 2. Client API base URL becomes configurable; API adds CORS for the Tauri origin. Store-distribution caveats noted in [ADR-0001](./adr/0001-cross-platform-web-first-tauri2.md).
-- **M5 — (optional).** Multi-user (auth + per-user keys + multi-tenant D1), Browser-Rendering extraction, email-in capture (Email Workers), digest email delivery, YouTube/PDF ingestion, monthly reading report.
+- **M5 — Multi-user. Shipped 2026-09-05** ([ADR-0013](./adr/0013-google-identity-session-cookies.md)): Google sign-in + D1 session cookies replacing the bearer token and the chat WS tickets, `user_id` tenancy on every owned row (migration 0012), per-user BYOK settings, per-user Vectorize namespaces, digest/report cron fan-out per eligible user, and a 10-saves/user/UTC-day cap. Still open from the original M5 sketch: Browser-Rendering extraction, email-in capture and digest email delivery (both need a custom domain — P27). YouTube/PDF ingestion and the monthly report landed earlier, in M-FEAT2.
 
 ## 13. Verification (M1 definition of done)
 
@@ -280,23 +292,25 @@ M2's digest pipeline runs as a **Cloudflare Workflow** (durable steps + cron). M
 
 ## 14. Risks & mitigations
 
-| Risk                                                                     | Mitigation                                                                                                                                                                                                                             |
-| ------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Deployed Worker holds BYOK key with weak auth → wallet-drain / key exfil | Bearer `APP_TOKEN` mandatory before deploy; full-replace `PUT /api/settings`; optional CF Access ([ADR-0007](./adr/0007-single-user-local-first.md))                                                                                   |
-| SSRF / open proxy via ingest URL                                         | Scheme allowlist, private-host blocks, size/time caps, final-URL revalidation ([ADR-0007](./adr/0007-single-user-local-first.md))                                                                                                      |
-| AI SDK major-version churn (v4→v5→v6→v7)                                 | Exact-pin `ai@6.x`; all imports contained in `packages/core` behind `LLMClient`; `DirectLLMClient` fallback ([ADR-0002](./adr/0002-ai-stack-vercel-ai-sdk-cloudflare-ai-gateway.md), [0005](./adr/0005-byok-llmclient-abstraction.md)) |
-| Accidental routing through Vercel's paid gateway                         | Guardrail: explicit provider instances only, plain model strings banned ([ADR-0002](./adr/0002-ai-stack-vercel-ai-sdk-cloudflare-ai-gateway.md))                                                                                       |
-| Prompt injection via ingested content                                    | Digest path has no tools; content framed as untrusted data; M3 chat tools are read-only, args zod-clamped and results size-capped ([ADR-0005](./adr/0005-byok-llmclient-abstraction.md))                                               |
-| Long articles exceeding provider per-minute token limits                 | Digest prompt capped at 24k chars (~6k tokens) — 48k previously failed outright on Groq's free tier                                                                                                                                    |
-| Chat WS credential visible in access logs                                | 60 s HMAC ticket, accepted only on a WS upgrade under `/api/chat/`; `APP_TOKEN` never appears in a URL ([ADR-0007](./adr/0007-single-user-local-first.md))                                                                             |
-| `nodejs_compat` re-enabled for the Agents SDK                            | Bundle 417 → 811 kB gzip, well under limits; flag is scoped to the Worker and revisitable if chat is dropped ([ADR-0003](./adr/0003-runtime-cloudflare-workers-vite-plugin.md))                                                        |
-| `waitUntil` is best-effort → stuck `pending` entries                     | Lazy stale sweep (>10 min → `failed`) + manual reingest; Cloudflare Workflows is the durable upgrade path (M2)                                                                                                                         |
-| Extraction fails (paywall/JS/bot)                                        | Fail entry gracefully + retry; Browser Rendering fallback in M-later ([ADR-0006](./adr/0006-content-extraction-to-markdown.md))                                                                                                        |
-| AI Gateway needs CF account/gateway                                      | Dev can bypass to provider-direct via `DirectLLMClient`                                                                                                                                                                                |
-| Worker CPU/time/bundle limits, extraction cost                           | Likely a paid Workers plan; async ingest via `waitUntil`; no `nodejs_compat` keeps the bundle lean                                                                                                                                     |
-| BYOK key at rest in D1                                                   | Masked in responses; M1.5: envelope encryption or AI Gateway stored keys ([ADR-0007](./adr/0007-single-user-local-first.md))                                                                                                           |
-| Single copy of a growing knowledge base                                  | M1.5: scheduled D1 export → R2; documented manual `wrangler d1 export`                                                                                                                                                                 |
-| Embedding model change invalidates index                                 | `embedModel` recorded in vector metadata; re-embed is a batch reprocess ([ADR-0009](./adr/0009-retrieval-insight-layer.md))                                                                                                            |
+| Risk                                                                      | Mitigation                                                                                                                                                                                                                                                                                                                 |
+| ------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Deployed Worker holds BYOK keys with weak auth → wallet-drain / key exfil | Google sign-in + D1 session cookie on every route; one settings row **per user**, so a key can only spend its own owner's credits; 10 saves/user/UTC-day; full-replace `PUT /api/settings` ([ADR-0013](./adr/0013-google-identity-session-cookies.md), [ADR-0007](./adr/0007-single-user-local-first.md))                  |
+| SSRF / open proxy via ingest URL                                          | Scheme allowlist, private-host blocks, size/time caps, final-URL revalidation ([ADR-0007](./adr/0007-single-user-local-first.md))                                                                                                                                                                                          |
+| AI SDK major-version churn (v4→v5→v6→v7)                                  | Exact-pin `ai@6.x`; all imports contained in `packages/core` behind `LLMClient`; `DirectLLMClient` fallback ([ADR-0002](./adr/0002-ai-stack-vercel-ai-sdk-cloudflare-ai-gateway.md), [0005](./adr/0005-byok-llmclient-abstraction.md))                                                                                     |
+| Accidental routing through Vercel's paid gateway                          | Guardrail: explicit provider instances only, plain model strings banned ([ADR-0002](./adr/0002-ai-stack-vercel-ai-sdk-cloudflare-ai-gateway.md))                                                                                                                                                                           |
+| Prompt injection via ingested content                                     | Digest path has no tools; content framed as untrusted data; M3 chat tools are read-only, args zod-clamped and results size-capped ([ADR-0005](./adr/0005-byok-llmclient-abstraction.md))                                                                                                                                   |
+| Long articles exceeding provider per-minute token limits                  | Digest prompt capped at 24k chars (~6k tokens) — 48k previously failed outright on Groq's free tier                                                                                                                                                                                                                        |
+| Chat WS credential visible in access logs                                 | No credential in the URL at all: the HttpOnly `til_session` cookie rides the same-origin upgrade, which retired the 60 s HMAC ticket that used to appear in logs ([ADR-0013](./adr/0013-google-identity-session-cookies.md))                                                                                               |
+| Forged `id_token` (its signature is not JWKS-verified)                    | The token is only ever read from Google's token endpoint over TLS, in exchange for a code + client secret; claims (`iss`/`aud`/`exp`/`email_verified`) are validated. Any future path that accepts an `id_token` from a browser must verify against JWKS first ([ADR-0013](./adr/0013-google-identity-session-cookies.md)) |
+| One user reading another's entries, digests or chats                      | `user_id` on every owned row, every query scoped, Vectorize namespaced per user; foreign ids answer `404`, not `403`, so existence never leaks; asserted by a permanent cross-tenant test matrix ([ADR-0013](./adr/0013-google-identity-session-cookies.md))                                                               |
+| `nodejs_compat` re-enabled for the Agents SDK                             | Bundle 417 → 811 kB gzip, well under limits; flag is scoped to the Worker and revisitable if chat is dropped ([ADR-0003](./adr/0003-runtime-cloudflare-workers-vite-plugin.md))                                                                                                                                            |
+| `waitUntil` is best-effort → stuck `pending` entries                      | Lazy stale sweep (>10 min → `failed`) + manual reingest; Cloudflare Workflows is the durable upgrade path (M2)                                                                                                                                                                                                             |
+| Extraction fails (paywall/JS/bot)                                         | Fail entry gracefully + retry; Browser Rendering fallback in M-later ([ADR-0006](./adr/0006-content-extraction-to-markdown.md))                                                                                                                                                                                            |
+| AI Gateway needs CF account/gateway                                       | Dev can bypass to provider-direct via `DirectLLMClient`                                                                                                                                                                                                                                                                    |
+| Worker CPU/time/bundle limits, extraction cost                            | Likely a paid Workers plan; async ingest via `waitUntil`; no `nodejs_compat` keeps the bundle lean                                                                                                                                                                                                                         |
+| BYOK key at rest in D1                                                    | Masked in responses; M1.5: envelope encryption or AI Gateway stored keys ([ADR-0007](./adr/0007-single-user-local-first.md))                                                                                                                                                                                               |
+| Single copy of a growing knowledge base                                   | M1.5: scheduled D1 export → R2; documented manual `wrangler d1 export`                                                                                                                                                                                                                                                     |
+| Embedding model change invalidates index                                  | `embedModel` recorded in vector metadata; re-embed is a batch reprocess ([ADR-0009](./adr/0009-retrieval-insight-layer.md))                                                                                                                                                                                                |
 
 ## 15. Prerequisites
 

@@ -6,11 +6,11 @@
 
 **Paste a link, and an LLM turns it into something you'll actually remember.**
 
-TIL is a single-user, self-hosted reading companion. Save a URL and it extracts the article, writes a short summary, pulls out the single most interesting takeaway, tags it, and suggests a follow-up question worth exploring. Over time you get a searchable, organizable library of what you've learned — plus a weekly digest of interesting things from around the web, and a monthly report on your own reading.
+TIL is a self-hosted reading companion. Save a URL and it extracts the article, writes a short summary, pulls out the single most interesting takeaway, tags it, and suggests a follow-up question worth exploring. Over time you get a searchable, organizable library of what you've learned — plus a weekly digest of interesting things from around the web, and a monthly report on your own reading.
 
-It's built to be run by one person, in their own Cloudflare account, with their own LLM API key. No accounts, no third party holding your data or your key.
+You run it in your own Cloudflare account. Sign-in is Google, and every user gets their own library, their own settings and their own LLM API key — nobody, including the person hosting it, reads anyone else's data through the app ([ADR-0013](./docs/adr/0013-google-identity-session-cookies.md)). No third party holds your data or your key.
 
-> **Status:** working software, active development, and deployed — capture (M1), the weekly digest (M2), the chat agent (M3), the eval harness, the UI refresh, and both feature waves (review queue, related entries, feedback, personalized ranking, library organization, export, extra content types, monthly report) are complete and verified against real data. It also still runs entirely locally.
+> **Status:** working software, active development, and deployed — capture (M1), the weekly digest (M2), the chat agent (M3), the eval harness, the UI refresh, and both feature waves (review queue, related entries, feedback, personalized ranking, library organization, export, extra content types, monthly report) are complete and verified against real data — as is multi-user (M5): Google sign-in, per-user isolation and a daily save cap. It also still runs entirely locally.
 
 ---
 
@@ -46,7 +46,7 @@ One full-stack Cloudflare Worker serves the React SPA *and* the API, so there's 
 ┌─────────────────────────────────────────────────────────────────┐
 │                     Cloudflare Worker ("til")                     │
 │  React + Vite SPA ──(static assets binding)                       │
-│        │  fetch /api/*  (Authorization: Bearer APP_TOKEN)          │
+│        │  fetch /api/*  (til_session cookie)                       │
 │        ▼                                                          │
 │   Hono API ────────► D1 (SQLite) [entries, settings, digests, FTS] │
 │        │                                                          │
@@ -63,7 +63,7 @@ Every external capability sits behind a small interface (`LLMClient`, `Extractor
 
 **Tech stack:** TypeScript · React 19 + Vite + Tailwind 4 · Hono on Cloudflare Workers · D1 + Drizzle ORM · Cloudflare Workflows · Vercel AI SDK · pnpm workspaces + Turborepo · Vitest.
 
-Design rationale lives in [`docs/`](./docs/README.md) — a technical design document plus 12 ADRs covering each load-bearing decision and the alternatives that were rejected. Deploying to your own account is a step-by-step guide: [docs/deploy.md](./docs/deploy.md).
+Design rationale lives in [`docs/`](./docs/README.md) — a technical design document plus 13 ADRs covering each load-bearing decision and the alternatives that were rejected. Deploying to your own account is a step-by-step guide: [docs/deploy.md](./docs/deploy.md).
 
 ---
 
@@ -82,8 +82,8 @@ git clone https://github.com/canhtoanptit/til.git
 cd til
 pnpm install
 
-# local auth token for the API (loaded from the Worker's directory)
-cp apps/web/.dev.vars.example apps/web/.dev.vars     # APP_TOKEN=dev-token
+# local env for the Worker (OWNER_EMAIL, TIL_STACK, embedder settings)
+cp apps/web/.dev.vars.example apps/web/.dev.vars     # defaults are fine locally
 
 # create the local D1 database
 pnpm --filter @til/web exec wrangler d1 migrations apply til --local
@@ -93,7 +93,7 @@ pnpm dev                                # http://localhost:5173
 
 Then in the browser:
 
-1. Enter the token from `.dev.vars` (`dev-token` by default) at the gate.
+1. **Sign in.** Locally the login page offers a dev-login form (it exists only when `TIL_STACK=local`) — use the `OWNER_EMAIL` value from `.dev.vars` (`dev@example.com` by default) so you own the seeded data. **Continue with Google** also works once you've set `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` ([docs/deploy.md](./docs/deploy.md) walks through creating the OAuth client).
 2. Go to **Settings** → pick your provider, model and API key, add your Cloudflare account ID and gateway ID → **Save** → **Test connection**.
    - **Model choice matters.** The chat agent needs reliable tool calling and the digest needs strict JSON. On Groq, `openai/gpt-oss-20b` handles both; `llama-3.3-70b-versatile` streams prose fine but emits tool calls Groq's own validator rejects, so chat questions that need a search will fail.
 3. Go to **Feed** → paste an article URL and watch it become a digest.
@@ -108,8 +108,11 @@ Everything above works without this — search just stays keyword-only, and `GET
 ```bash
 ollama pull bge-m3                                    # ~1.2 GB, the same model production uses
 # restart dev, then backfill vectors for what you already saved:
-curl -X POST -H "Authorization: Bearer dev-token" http://localhost:5173/api/entries/reembed
+curl -X POST -b "til_session=<your session id>" http://localhost:5173/api/entries/reembed
 ```
+
+> `curl` needs the same session cookie the browser holds: copy the `til_session` value from DevTools → Application → Cookies, or mint one with
+> `curl -i -X POST -H 'content-type: application/json' -d '{"email":"dev@example.com"}' http://localhost:5173/api/auth/dev-login` and read it off the `Set-Cookie` header.
 
 The alternative is `TIL_STACK=cloud`, which uses Workers AI and Vectorize instead — no local model, but it needs a `CLOUDFLARE_API_TOKEN` and those bindings uncommented in `wrangler.jsonc`. See [ADR-0010](./docs/adr/0010-dual-mode-local-cloud-stack.md).
 
@@ -142,7 +145,7 @@ docs/                # technical design, ADRs, implementation plan
 
 | Where | Setting | Notes |
 |---|---|---|
-| `apps/web/.dev.vars` locally, Worker secret in production | `APP_TOKEN` | Bearer token guarding every `/api/*` route except `/api/health`. **Required before deploying** — the API holds your provider key. |
+| `apps/web/.dev.vars` locally, Worker secrets in production | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `OWNER_EMAIL` | Google sign-in. The first two come from an OAuth client you create ([docs/deploy.md](./docs/deploy.md) step 9); without them the `/api/auth/*` endpoints answer `503` and nobody can sign in. `OWNER_EMAIL` is the account that claims the pre-existing (pre-multi-user) data on its first sign-in — case-insensitive, and it works for the local dev-login too. Optional: `ENTRY_DAILY_LIMIT` overrides the 10-saves-per-user-per-day cap. |
 | Settings page (stored in D1) | provider, model, API key, CF account ID, CF gateway ID, optional gateway token | The key is masked in every response and never sent to the browser. It can be omitted on save to keep the stored one, unless you change provider or gateway routing. |
 | `apps/web/.dev.vars` / `wrangler.jsonc` `vars` | `TIL_STACK` | `local` (default) or `cloud` — selects the adapter set per [ADR-0010](./docs/adr/0010-dual-mode-local-cloud-stack.md). `OLLAMA_BASE_URL` overrides the local embedder endpoint. |
 | `wrangler.jsonc` | bindings, weekly cron, chat Durable Object | The Workers AI and Vectorize bindings are commented out by default: neither has a local emulator, and enabling them makes local dev require a Cloudflare API token. `nodejs_compat` is on for the Agents SDK. |
@@ -159,9 +162,11 @@ docs/                # technical design, ADRs, implementation plan
 
 ## Security
 
-- The provider API key lives only in your own D1 database and is never returned unmasked. Storage is plaintext in the current milestone — envelope encryption and Cloudflare AI Gateway stored keys are the planned upgrades.
-- The API requires a bearer token; deploying without one exposes an endpoint that can spend your LLM credits.
-- Chat runs over a WebSocket, and browsers cannot set headers on a WS handshake. Rather than putting the app token in a URL, `POST /api/chat/ticket` mints a 60-second HMAC ticket that is accepted **only** on a chat WS upgrade. The ticket is briefly visible in access logs; the app token never is.
+- Each user's provider API key lives only in your own D1 database, in that user's own settings row, and is never returned unmasked. Storage is plaintext in the current milestone — envelope encryption and Cloudflare AI Gateway stored keys are the planned upgrades.
+- Every `/api/*` route except `/api/health` and the sign-in endpoints needs a live session; the `til_session` cookie is HttpOnly, `SameSite=Lax`, `Secure` over https, opaque (256 random bits) and backed by a D1 row, so signing out revokes it server-side rather than waiting for it to expire.
+- Data is isolated per user by a `user_id` column on every owned row, with per-user Vectorize namespaces for semantic search. Another user's id answers `404`, not `403`, so the app never confirms that someone else's entry exists. A permanent cross-tenant test matrix asserts this route by route.
+- Chat runs over a WebSocket, and browsers cannot set headers on a WS handshake — but cookies ride a same-origin upgrade, so the session cookie authorises it and no credential ever appears in a URL or an access log.
+- Saving is capped at 10 entries per user per UTC day, so a stranger with an account cannot burn through your Workers AI or extraction budget.
 - Chat tools are strictly read-only and cannot modify or delete anything. Tool arguments are validated and clamped, and results are size-capped before reaching the model.
 - URL ingestion blocks non-HTTP(S) schemes and loopback, private, link-local and metadata addresses, with size, timeout and redirect limits.
 

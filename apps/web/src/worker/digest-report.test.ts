@@ -23,7 +23,10 @@ function app() {
 }
 
 function collect(deps: Deps) {
-  return collectReportSnapshot(deps, { runAt: RUN_AT, windowDays: WINDOW });
+  return collectReportSnapshot(deps, "owner", {
+    runAt: RUN_AT,
+    windowDays: WINDOW,
+  });
 }
 
 /** A save `daysAgo` before the run instant, not before `now()`. */
@@ -171,9 +174,24 @@ describe("collectReportSnapshot", () => {
     await saved(t.deps, { id: "b", daysAgo: 2 });
     await saved(t.deps, { id: "c", daysAgo: 3 });
     await t.deps.db.insert(reviews).values([
-      { entryId: "a", state: "review", reviewedAt: RUN_AT - 2 * DAY },
-      { entryId: "b", state: "review", reviewedAt: RUN_AT - 29 * DAY },
-      { entryId: "c", state: "review", reviewedAt: RUN_AT - 90 * DAY },
+      {
+        userId: "owner",
+        entryId: "a",
+        state: "review",
+        reviewedAt: RUN_AT - 2 * DAY,
+      },
+      {
+        userId: "owner",
+        entryId: "b",
+        state: "review",
+        reviewedAt: RUN_AT - 29 * DAY,
+      },
+      {
+        userId: "owner",
+        entryId: "c",
+        state: "review",
+        reviewedAt: RUN_AT - 90 * DAY,
+      },
     ]);
 
     const snapshot = await collect(t.deps);
@@ -185,7 +203,9 @@ describe("collectReportSnapshot", () => {
     await saved(t.deps, { id: "a", daysAgo: 1 });
     await t.deps.db
       .insert(reviews)
-      .values([{ entryId: "a", state: "new", reviewedAt: null }]);
+      .values([
+        { userId: "owner", entryId: "a", state: "new", reviewedAt: null },
+      ]);
 
     const snapshot = await collect(t.deps);
     expect(snapshot.context.reviewsGraded).toBe(0);

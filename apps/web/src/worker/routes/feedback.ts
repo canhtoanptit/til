@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { zValidator } from "@hono/zod-validator";
 import { feedback } from "@til/db";
 import type { AppContextEnv } from "../deps.js";
@@ -30,6 +30,7 @@ export function createFeedbackRouter() {
 
   router.get("/", async (c) => {
     const deps = c.get("deps");
+    const userId = c.get("user").id;
     const url = new URL(c.req.url);
     const conversationId = (
       url.searchParams.get("conversationId") ?? ""
@@ -51,7 +52,12 @@ export function createFeedbackRouter() {
     const rows = await deps.db
       .select()
       .from(feedback)
-      .where(eq(feedback.conversationId, conversationId))
+      .where(
+        and(
+          eq(feedback.userId, userId),
+          eq(feedback.conversationId, conversationId),
+        ),
+      )
       // The id tiebreak matters: two votes in the same millisecond must come back
       // in one fixed order, or "the latest one" is a coin toss.
       .orderBy(desc(feedback.createdAt), desc(feedback.id))
@@ -73,9 +79,11 @@ export function createFeedbackRouter() {
     }),
     async (c) => {
       const deps = c.get("deps");
+      const userId = c.get("user").id;
       const body = c.req.valid("json");
       const row = {
         id: crypto.randomUUID(),
+        userId,
         conversationId: body.conversationId ?? null,
         messageId: body.messageId ?? null,
         entryId: body.entryId ?? null,

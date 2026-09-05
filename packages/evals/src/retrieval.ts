@@ -6,6 +6,7 @@ import type {
   KeywordVote,
   RankedId,
 } from "@til/core";
+import { EVAL_USER_ID } from "./runner.js";
 import type { EvalStack } from "./runner.js";
 
 export type RetrievalMode = "fts" | "vector" | "hybrid";
@@ -144,7 +145,12 @@ export const DEFAULT_RETRIEVAL_CONFIG: RetrievalConfig = {
   policy: SHIPPED_POLICY,
 };
 
-/** The keyword leg: FTS5 `MATCH` ordered by bm25, exactly as the app queries it. */
+/**
+ * The keyword leg: FTS5 `MATCH` ordered by bm25, exactly as the app queries it —
+ * the tenant predicate included. It is spelled with the `e.` alias for the same
+ * reason as in the app: an unaliased column would resolve against `entries_fts`,
+ * which exposes columns of the same name.
+ */
 export function ftsRanks(
   stack: EvalStack,
   query: string,
@@ -160,7 +166,7 @@ export function ftsRanks(
     sql`
       SELECT e.id AS id FROM entries e
       JOIN entries_fts f ON f.rowid = e.rowid
-      WHERE entries_fts MATCH ${clean}
+      WHERE entries_fts MATCH ${clean} AND e.user_id = ${EVAL_USER_ID}
       ORDER BY rank
       LIMIT ${limit}
     `,
@@ -168,14 +174,17 @@ export function ftsRanks(
   return rows.map((row, index) => ({ id: row.id, rank: index + 1 }));
 }
 
-/** The semantic leg: cosine over the stored vectors. */
+/** The semantic leg: cosine over the stored vectors, scoped like the app's. */
 export async function vectorRanks(
   stack: EvalStack,
   queryVector: number[],
   limit: number,
 ): Promise<RankedId[]> {
   if (limit <= 0) return [];
-  const matches = await stack.vectorStore.query(queryVector, { topK: limit });
+  const matches = await stack.vectorStore.query(queryVector, {
+    topK: limit,
+    userId: EVAL_USER_ID,
+  });
   return matches.map((match, index) => ({ id: match.id, rank: index + 1 }));
 }
 

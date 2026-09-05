@@ -173,6 +173,8 @@ export interface VectorMatch {
 
 export interface VectorRecord {
   id: string;
+  /** The owning tenant: the Vectorize namespace / the D1 join key. */
+  userId: string;
   values: number[];
   metadata: {
     domain: string;
@@ -181,14 +183,22 @@ export interface VectorRecord {
   };
 }
 
+export interface VectorQueryOptions {
+  topK: number;
+  userId: string;
+}
+
 export interface VectorStore {
   upsert(vectors: VectorRecord[]): Promise<void>;
-  query(values: number[], opts: { topK: number }): Promise<VectorMatch[]>;
+  query(values: number[], opts: VectorQueryOptions): Promise<VectorMatch[]>;
   /**
    * The stored vector for one id, or null when there is nothing usable — the id
    * has no vector, or the stored one no longer matches the index's dimensions.
    * Implementations MUST NOT hand back an off-dimension vector: the only thing a
    * caller can do with the result is feed it to `query`, which rejects those.
+   *
+   * `getVector`/`deleteByIds` stay unscoped: ids are uuids and every caller
+   * verifies ownership of the entry before reaching for its vector.
    */
   getVector(id: string): Promise<number[] | null>;
   deleteByIds(ids: string[]): Promise<void>;

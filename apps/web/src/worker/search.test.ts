@@ -111,6 +111,7 @@ describe("GET /api/search", () => {
       tags: ["kubernetes"],
     });
     await indexEntry(t.deps, {
+      userId: "owner",
       id: "k8s-1",
       title: "Pods and nodes",
       summary: "How the cluster places pods",

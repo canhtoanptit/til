@@ -107,6 +107,15 @@ export const createFeedbackSchema = z.object({
   comment: z.string().min(1).max(MAX_FEEDBACK_COMMENT).optional(),
 });
 
+// WHY only an email: the local dev-login has no password to check — the gate is
+// `TIL_STACK === "local"`, not the body. The 254 cap is RFC 5321's address limit,
+// so the field cannot be used to push a large string through the users table.
+export const devLoginSchema = z.object({
+  email: z.email().max(254),
+});
+
+export type DevLoginBody = z.infer<typeof devLoginSchema>;
+
 export type CreateFeedbackBody = z.infer<typeof createFeedbackSchema>;
 
 export type CreateEntryBody = z.infer<typeof createEntrySchema>;

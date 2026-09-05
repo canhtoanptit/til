@@ -19,6 +19,7 @@ function unit(values: number[]): number[] {
 function record(id: string, values: number[]): VectorRecord {
   return {
     id,
+    userId: "owner",
     values: unit(values),
     metadata: { domain: "example.com", createdAt: 1, embedModel: "stub-embed" },
   };
@@ -43,7 +44,10 @@ describe("D1VectorStore", () => {
       record("c", [0, 0, 0, 1]),
     ]);
 
-    const matches = await store.query(unit([1, 0, 0, 0]), { topK: 3 });
+    const matches = await store.query(unit([1, 0, 0, 0]), {
+      topK: 3,
+      userId: "owner",
+    });
     expect(matches.map((m) => m.id)).toEqual(["a", "b", "c"]);
     expect(matches[0]?.score).toBeCloseTo(1, 5);
     expect(matches[2]?.score).toBeCloseTo(0, 5);
@@ -55,7 +59,10 @@ describe("D1VectorStore", () => {
       record("b", [0.9, 0.1, 0, 0]),
       record("c", [0, 0, 0, 1]),
     ]);
-    const matches = await store.query(unit([1, 0, 0, 0]), { topK: 2 });
+    const matches = await store.query(unit([1, 0, 0, 0]), {
+      topK: 2,
+      userId: "owner",
+    });
     expect(matches.map((m) => m.id)).toEqual(["a", "b"]);
   });
 
@@ -65,7 +72,10 @@ describe("D1VectorStore", () => {
 
     const rows = await db.select().from(entryVectors);
     expect(rows).toHaveLength(1);
-    const matches = await store.query(unit([0, 0, 0, 1]), { topK: 3 });
+    const matches = await store.query(unit([0, 0, 0, 1]), {
+      topK: 3,
+      userId: "owner",
+    });
     expect(matches[0]?.score).toBeCloseTo(1, 5);
   });
 
@@ -87,7 +97,10 @@ describe("D1VectorStore", () => {
     });
 
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    const matches = await store.query(unit([1, 0, 0, 0]), { topK: 5 });
+    const matches = await store.query(unit([1, 0, 0, 0]), {
+      topK: 5,
+      userId: "owner",
+    });
     expect(matches.map((m) => m.id)).toEqual(["a"]);
     expect(warn).toHaveBeenCalledWith(
       expect.stringContaining("skipped 1 vector"),
@@ -104,9 +117,9 @@ describe("D1VectorStore", () => {
       createdAt: 1,
     });
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    await expect(store.query(unit([1, 0, 0, 0]), { topK: 5 })).resolves.toEqual(
-      [],
-    );
+    await expect(
+      store.query(unit([1, 0, 0, 0]), { topK: 5, userId: "owner" }),
+    ).resolves.toEqual([]);
     warn.mockRestore();
   });
 
@@ -115,14 +128,15 @@ describe("D1VectorStore", () => {
       store.upsert([
         {
           id: "a",
+          userId: "owner",
           values: [1, 0, 0],
           metadata: { domain: "", createdAt: 1, embedModel: "x" },
         },
       ]),
     ).rejects.toThrow(/3 dimensions, index expects 4/);
-    await expect(store.query([1, 0, 0], { topK: 1 })).rejects.toThrow(
-      /3 dimensions, index expects 4/,
-    );
+    await expect(
+      store.query([1, 0, 0], { topK: 1, userId: "owner" }),
+    ).rejects.toThrow(/3 dimensions, index expects 4/);
   });
 
   it("cascades when the owning entry is deleted", async () => {
@@ -181,13 +195,13 @@ describe("D1VectorStore", () => {
   });
 
   it("returns nothing for an empty index or a non-positive topK", async () => {
-    await expect(store.query(unit([1, 0, 0, 0]), { topK: 3 })).resolves.toEqual(
-      [],
-    );
+    await expect(
+      store.query(unit([1, 0, 0, 0]), { topK: 3, userId: "owner" }),
+    ).resolves.toEqual([]);
     await store.upsert([record("a", [1, 0, 0, 0])]);
-    await expect(store.query(unit([1, 0, 0, 0]), { topK: 0 })).resolves.toEqual(
-      [],
-    );
+    await expect(
+      store.query(unit([1, 0, 0, 0]), { topK: 0, userId: "owner" }),
+    ).resolves.toEqual([]);
   });
 });
 
@@ -198,7 +212,12 @@ describe("VectorizeStore", () => {
   function stubIndex(
     stored: { id: string; values: number[] | Float32Array }[] = [],
   ) {
-    const upserts: { id: string; values: number[]; metadata?: unknown }[] = [];
+    const upserts: {
+      id: string;
+      values: number[];
+      namespace?: string;
+      metadata?: unknown;
+    }[] = [];
     const queries: { values: number[]; opts?: unknown }[] = [];
     const deletes: string[][] = [];
     const gets: string[][] = [];
@@ -239,6 +258,8 @@ describe("VectorizeStore", () => {
     await store.upsert([record("a", [1, 0, 0, 0])]);
     expect(stub.upserts).toHaveLength(1);
     expect(stub.upserts[0]?.id).toBe("a");
+    // The tenant rides as a Vectorize namespace, never as filterable metadata.
+    expect(stub.upserts[0]?.namespace).toBe("owner");
     expect(stub.upserts[0]?.metadata).toEqual({
       domain: "example.com",
       createdAt: 1,
@@ -249,12 +270,15 @@ describe("VectorizeStore", () => {
   it("maps matches to VectorMatch and passes topK through", async () => {
     const stub = stubIndex();
     const store = new VectorizeStore(stub.index, DIMS);
-    const matches = await store.query(unit([1, 0, 0, 0]), { topK: 7 });
+    const matches = await store.query(unit([1, 0, 0, 0]), {
+      topK: 7,
+      userId: "owner",
+    });
     expect(matches).toEqual([
       { id: "a", score: 0.91 },
       { id: "b", score: 0.42 },
     ]);
-    expect(stub.queries[0]?.opts).toEqual({ topK: 7 });
+    expect(stub.queries[0]?.opts).toEqual({ topK: 7, namespace: "owner" });
   });
 
   it("forwards deleteByIds and skips empty calls", async () => {
@@ -272,6 +296,7 @@ describe("VectorizeStore", () => {
       store.upsert([
         {
           id: "a",
+          userId: "owner",
           values: [1, 2],
           metadata: { domain: "", createdAt: 1, embedModel: "x" },
         },
@@ -290,9 +315,9 @@ describe("VectorizeStore", () => {
       },
       DIMS,
     );
-    await expect(store.query(unit([1, 0, 0, 0]), { topK: 3 })).resolves.toEqual(
-      [],
-    );
+    await expect(
+      store.query(unit([1, 0, 0, 0]), { topK: 3, userId: "owner" }),
+    ).resolves.toEqual([]);
   });
 
   it("getVector fetches one id through getByIds", async () => {

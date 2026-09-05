@@ -1,9 +1,17 @@
-APP_TOKEN=dev-token
+# Google sign-in (optional locally — the dev-login form works without it).
+# Create an OAuth client in Google Cloud Console (see docs/deploy.md) and add
+# http://localhost:5173/api/auth/callback as an authorized redirect URI.
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
+# The Google account (or dev-login email) that claims the pre-seeded owner row
+# and its data on first sign-in. Case-insensitive.
+OWNER_EMAIL=dev@example.com
 
 # ADR-0010: which adapter set to run. `local` = Readability extraction +
 # Ollama bge-m3 + D1VectorStore (works fully offline). `cloud` = env.AI
 # toMarkdown + Workers AI bge-m3 + Vectorize, which needs those bindings
 # uncommented in wrangler.jsonc plus CLOUDFLARE_API_TOKEN. Unset means `local`.
+# Also gates POST /api/auth/dev-login, which exists only when this is `local`.
 TIL_STACK=local
 
 # Which embedding leg `local` mode uses (ADR-0010 amendment):

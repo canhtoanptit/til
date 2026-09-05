@@ -18,9 +18,18 @@ export interface FetchPageFn {
 /**
  * The Agents SDK routes `/{prefix}/{kebab-cased binding name}/{instance}`. With
  * the binding named CHAT this prefix puts the agent's own surface on the
- * contract path `/api/chat/:id`, inside the space the bearer middleware guards.
+ * contract path `/api/chat/:id`, inside the space the session middleware guards.
  */
 export const CHAT_AGENT_PREFIX = "api";
+
+/**
+ * Set by the chat proxy on requests forwarded into the CHAT Durable Object.
+ * The DO has no session cookie of its own, so this header is how it learns who
+ * it belongs to — and it is only ever stamped after `routes/chat.ts` has
+ * checked the conversation against the `chats` index. Always `set`, never
+ * appended, so a value a client tried to smuggle in is overwritten.
+ */
+export const USER_ID_HEADER = "x-til-user-id";
 
 /** The subset of the chat Durable Object the REST routes need, over DO RPC. */
 export interface ChatConversationStub {
@@ -59,11 +68,35 @@ export interface Deps {
   chatAgents: ChatAgentBinding | null;
 }
 
-export interface AppToken {
-  APP_TOKEN: string;
+/**
+ * The plain-value bindings the request path reads. All optional: a worker with
+ * no Google client configured still serves `/api/health` and the SPA, and the
+ * auth routes fail closed with 503 rather than at startup.
+ */
+export interface AppBindings {
+  GOOGLE_CLIENT_ID?: string;
+  GOOGLE_CLIENT_SECRET?: string;
+  /** The address whose first sign-in claims the pre-seeded `owner` tenant. */
+  OWNER_EMAIL?: string;
+  /** Also gates `POST /api/auth/dev-login`, which only exists on `local`. */
+  TIL_STACK?: string;
+  /**
+   * Optional override for the per-user daily save cap (a positive integer as a
+   * string). Unset or unparsable falls back to `DAILY_ENTRY_LIMIT` in
+   * `routes/entries.ts`.
+   */
+  ENTRY_DAILY_LIMIT?: string;
+}
+
+/** The signed-in person, resolved from the `til_session` cookie by session.ts. */
+export interface SessionUser {
+  id: string;
+  email: string;
+  name: string | null;
+  picture: string | null;
 }
 
 export interface AppContextEnv {
-  Bindings: AppToken;
-  Variables: { deps: Deps };
+  Bindings: AppBindings;
+  Variables: { deps: Deps; user: SessionUser };
 }

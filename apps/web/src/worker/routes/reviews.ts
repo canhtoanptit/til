@@ -16,8 +16,9 @@ const DEFAULT_LIMIT = 10;
 const MAX_LIMIT = 50;
 
 // WHY: D1 caps a statement at 100 bound parameters, and each enrolled card binds
-// six, so "enroll everything" has to go out in small batches or it fails in the
-// cloud stack exactly when a library is big enough to be worth reviewing.
+// seven (six, plus the user_id of migration 0012), so "enroll everything" has to
+// go out in small batches or it fails in the cloud stack exactly when a library
+// is big enough to be worth reviewing. 10 × 7 = 70 < 100 — do not raise it.
 const ENROLL_CHUNK = 10;
 
 /** A card with no dueAt has never been scheduled, so it counts as due. */
@@ -25,21 +26,28 @@ function dueFilter(now: number) {
   return or(isNull(reviews.dueAt), lte(reviews.dueAt, now));
 }
 
-async function countDue(deps: Deps, now: number): Promise<number> {
+async function countDue(
+  deps: Deps,
+  userId: string,
+  now: number,
+): Promise<number> {
   const rows = await deps.db
     .select({ n: count() })
     .from(reviews)
-    .where(dueFilter(now));
+    .where(and(eq(reviews.userId, userId), dueFilter(now)));
   return Number(rows[0]?.n ?? 0);
 }
 
 /**
- * Every enrolled card, due or not — what tells a first run apart from a finished
- * one. Unfiltered `count(*)` over the primary-key index, so it stays a cheap
- * lookup no matter how big the library gets.
+ * Every enrolled card of this user, due or not — what tells a first run apart
+ * from a finished one. A `count(*)` over `reviews_user_due_at_idx`, so it stays
+ * a cheap lookup no matter how big the library gets.
  */
-async function countEnrolled(deps: Deps): Promise<number> {
-  const rows = await deps.db.select({ n: count() }).from(reviews);
+async function countEnrolled(deps: Deps, userId: string): Promise<number> {
+  const rows = await deps.db
+    .select({ n: count() })
+    .from(reviews)
+    .where(eq(reviews.userId, userId));
   return Number(rows[0]?.n ?? 0);
 }
 
@@ -48,6 +56,7 @@ export function createReviewsRouter() {
 
   router.get("/queue", async (c) => {
     const deps = c.get("deps");
+    const userId = c.get("user").id;
     const url = new URL(c.req.url);
     const limitRaw = Number(url.searchParams.get("limit") ?? DEFAULT_LIMIT);
     const limit = Math.min(
@@ -76,15 +85,15 @@ export function createReviewsRouter() {
       })
       .from(reviews)
       .innerJoin(entries, eq(entries.id, reviews.entryId))
-      .where(dueFilter(now))
+      .where(and(eq(reviews.userId, userId), dueFilter(now)))
       // Longest-overdue first; entryId only to make ties deterministic.
       .orderBy(asc(reviews.dueAt), asc(reviews.entryId))
       .limit(limit);
 
     return c.json({
       items: rows.map(toReviewQueueItemDTO),
-      dueCount: await countDue(deps, now),
-      enrolledCount: await countEnrolled(deps),
+      dueCount: await countDue(deps, userId, now),
+      enrolledCount: await countEnrolled(deps, userId),
     });
   });
 
@@ -103,6 +112,7 @@ export function createReviewsRouter() {
     }),
     async (c) => {
       const deps = c.get("deps");
+      const userId = c.get("user").id;
       const body = c.req.valid("json");
       const now = deps.now();
       const fresh = initialReviewCard(now);
@@ -112,7 +122,7 @@ export function createReviewsRouter() {
         const entry = await deps.db
           .select({ id: entries.id })
           .from(entries)
-          .where(eq(entries.id, entryId))
+          .where(and(eq(entries.id, entryId), eq(entries.userId, userId)))
           .limit(1);
         if (!entry[0]) {
           throw new HttpError(404, "not_found", "Entry not found.");
@@ -122,7 +132,7 @@ export function createReviewsRouter() {
         const existing = await deps.db
           .select({ entryId: reviews.entryId })
           .from(reviews)
-          .where(eq(reviews.entryId, entryId))
+          .where(and(eq(reviews.entryId, entryId), eq(reviews.userId, userId)))
           .limit(1);
         if (existing[0]) {
           return c.json({ enrolled: 0, skipped: 1 });
@@ -130,6 +140,7 @@ export function createReviewsRouter() {
         await deps.db
           .insert(reviews)
           .values({
+            userId,
             entryId,
             state: fresh.state,
             dueAt: fresh.dueAt,
@@ -147,7 +158,13 @@ export function createReviewsRouter() {
         .select({ id: entries.id })
         .from(entries)
         .leftJoin(reviews, eq(reviews.entryId, entries.id))
-        .where(and(eq(entries.status, "ready"), isNull(reviews.entryId)));
+        .where(
+          and(
+            eq(entries.status, "ready"),
+            eq(entries.userId, userId),
+            isNull(reviews.entryId),
+          ),
+        );
 
       for (let i = 0; i < candidates.length; i += ENROLL_CHUNK) {
         const chunk = candidates.slice(i, i + ENROLL_CHUNK);
@@ -155,6 +172,7 @@ export function createReviewsRouter() {
           .insert(reviews)
           .values(
             chunk.map((row) => ({
+              userId,
               entryId: row.id,
               state: fresh.state,
               dueAt: fresh.dueAt,
@@ -169,7 +187,7 @@ export function createReviewsRouter() {
       const readyRows = await deps.db
         .select({ n: count() })
         .from(entries)
-        .where(eq(entries.status, "ready"));
+        .where(and(eq(entries.status, "ready"), eq(entries.userId, userId)));
       const ready = Number(readyRows[0]?.n ?? 0);
       return c.json({
         enrolled: candidates.length,
@@ -191,6 +209,7 @@ export function createReviewsRouter() {
     }),
     async (c) => {
       const deps = c.get("deps");
+      const userId = c.get("user").id;
       const entryId = c.req.param("entryId");
       const { grade } = c.req.valid("json");
       // Narrows what zod already checked, so the scheduler is never handed a
@@ -206,7 +225,7 @@ export function createReviewsRouter() {
       const rows = await deps.db
         .select()
         .from(reviews)
-        .where(eq(reviews.entryId, entryId))
+        .where(and(eq(reviews.entryId, entryId), eq(reviews.userId, userId)))
         .limit(1);
       const row = rows[0];
       if (!row) {
@@ -239,7 +258,7 @@ export function createReviewsRouter() {
           lastGrade: next.lastGrade,
           reviewedAt: next.reviewedAt,
         })
-        .where(eq(reviews.entryId, entryId));
+        .where(and(eq(reviews.entryId, entryId), eq(reviews.userId, userId)));
 
       return c.json(toReviewScheduleDTO({ entryId, ...next }));
     },

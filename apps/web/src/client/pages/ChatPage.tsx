@@ -1,8 +1,6 @@
 import {
   Suspense,
-  useCallback,
   useEffect,
-  useMemo,
   useRef,
   useState,
   type KeyboardEvent,
@@ -12,7 +10,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAgent } from "agents/react";
 import { useAgentChat } from "@cloudflare/ai-chat/react";
 import { toast } from "sonner";
-import { api, getToken, type FeedbackKind } from "../api";
+import { api, type FeedbackKind } from "../api";
 import { ChatErrorBoundary } from "../components/ChatErrorBoundary";
 import { ChatMessageView } from "../components/ChatMessageView";
 import {
@@ -27,7 +25,7 @@ import {
   voteSucceeded,
 } from "../components/chat-feedback";
 import { ConfirmDialog } from "../components/ConfirmDialog";
-import { ErrorBanner, friendlyMessage } from "../components/ErrorBanner";
+import { friendlyMessage } from "../components/ErrorBanner";
 import { Spinner } from "../components/Spinner";
 import {
   chatConversationTitle,
@@ -36,10 +34,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
-
-/** The signed ticket lives 60s server-side; re-mint well inside that so a
- * partysocket reconnect never presents an expired one. */
-const TICKET_CACHE_TTL_MS = 30_000;
 
 const SUGGESTIONS = [
   "What have I saved about CSS?",
@@ -150,10 +144,12 @@ export function ChatPage() {
 
       <ChatErrorBoundary onReset={() => setAttempt((n) => n + 1)}>
         <Suspense fallback={<Spinner label="Connecting to your reading…" />}>
+          {/* The key is the Retry: bumping `attempt` remounts the whole
+              conversation, which is what tears down a dead socket and opens a
+              fresh one. */}
           <Conversation
             key={`${id}:${attempt}`}
             conversationId={id}
-            attempt={attempt}
             seedDraft={seedDraft}
             onRetry={() => setAttempt((n) => n + 1)}
           />
@@ -165,19 +161,15 @@ export function ChatPage() {
 
 function Conversation({
   conversationId,
-  attempt,
   seedDraft,
   onRetry,
 }: {
   conversationId: string;
-  attempt: number;
   seedDraft: string | null;
   onRetry: () => void;
 }) {
   const qc = useQueryClient();
-  const token = getToken() ?? "";
   const [draft, setDraft] = useState("");
-  const [ticketError, setTicketError] = useState<unknown>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const seeded = useRef(false);
@@ -203,37 +195,14 @@ function Conversation({
     setVotes((state) => seedVotes(state, rows));
   }, [loggedVotes.data]);
 
-  // WHY swallow instead of reject: `useAgent` resolves this with React `use()`,
-  // so a rejection would throw during render. `request` has already cleared the
-  // token on a 401, which flips the app back to the sign-in gate by itself.
-  const mintTicket = useCallback(async (): Promise<Record<string, string>> => {
-    try {
-      const { ticket } = await api.mintChatTicket();
-      setTicketError(null);
-      return { ticket };
-    } catch (err) {
-      setTicketError(err);
-      return {};
-    }
-  }, []);
-
-  const queryDeps = useMemo(() => [attempt], [attempt]);
-  const headers = useMemo(
-    () => ({ authorization: `Bearer ${token}` }),
-    [token],
-  );
-
+  // Nothing to authenticate with by hand: the socket is same-origin, so the
+  // browser puts the HttpOnly `til_session` cookie on the upgrade request itself
+  // — which is exactly why the old short-lived WS ticket could be retired.
   const agent = useAgent({
     agent: "CHAT",
     name: conversationId,
     // Our routes live under /api, not the SDK default /agents.
     prefix: "api",
-    query: mintTicket,
-    queryDeps,
-    cacheTtl: TICKET_CACHE_TTL_MS,
-    // Without a ticket the handshake can only ever be rejected, so stop
-    // reconnecting and wait for the explicit Retry instead.
-    enabled: ticketError === null,
   });
 
   const {
@@ -247,10 +216,9 @@ function Conversation({
     isRecovering,
     connectionError,
   } = useAgentChat({
+    // The initial GET <agentUrl>/get-messages is plain HTTP, same-origin, and
+    // carries the same cookie — so it needs no headers either.
     agent,
-    // The initial GET <agentUrl>/get-messages is plain HTTP and silently
-    // returns [] without this.
-    headers,
   });
 
   const busy = isStreaming || isRecovering || status === "submitted";
@@ -319,15 +287,11 @@ function Conversation({
     textareaRef.current?.focus();
   }
 
-  const blocked = ticketError !== null || connectionError !== null;
+  const blocked = connectionError !== null;
 
   return (
     <div className="space-y-4">
-      {ticketError !== null && (
-        <ErrorBanner error={ticketError} onRetry={onRetry} />
-      )}
-
-      {ticketError === null && connectionError !== null && (
+      {connectionError !== null && (
         <div
           role="alert"
           className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"

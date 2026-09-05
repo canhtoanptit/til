@@ -8,10 +8,54 @@ import {
   index,
 } from "drizzle-orm/sqlite-core";
 
+/**
+ * The placeholder tenant every pre-multi-user row was backfilled to (migration
+ * 0012); claimed via OWNER_EMAIL at first login.
+ */
+export const OWNER_USER_ID = "owner";
+
+export const users = sqliteTable(
+  "users",
+  {
+    id: text("id").primaryKey(),
+    googleSub: text("google_sub"),
+    email: text("email").notNull(),
+    name: text("name"),
+    picture: text("picture"),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (t) => [uniqueIndex("users_google_sub_uq").on(t.googleSub)],
+);
+
+export const sessions = sqliteTable(
+  "sessions",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    createdAt: integer("created_at").notNull(),
+    expiresAt: integer("expires_at").notNull(),
+  },
+  (t) => [
+    index("sessions_user_id_idx").on(t.userId),
+    index("sessions_expires_at_idx").on(t.expiresAt),
+  ],
+);
+
 export const entries = sqliteTable(
   "entries",
   {
     id: text("id").primaryKey(),
+    /**
+     * Tenant key (migration 0012). The SQL column carries DEFAULT 'owner' — that is
+     * the backfill for pre-0012 rows, not an app behaviour — so it is deliberately
+     * NOT declared here: every insert site must name its user or fail to compile.
+     * No .references(): SQLite cannot add an FK via ALTER TABLE (app-level
+     * integrity, the `feedback` stance).
+     */
+    userId: text("user_id").notNull(),
     url: text("url").notNull(),
     canonicalUrl: text("canonical_url").notNull(),
     title: text("title"),
@@ -52,28 +96,43 @@ export const entries = sqliteTable(
     updatedAt: integer("updated_at").notNull(),
   },
   (t) => [
-    uniqueIndex("entries_canonical_url_uq").on(t.canonicalUrl),
+    uniqueIndex("entries_user_canonical_url_uq").on(t.userId, t.canonicalUrl),
     index("entries_status_idx").on(t.status),
     index("entries_created_at_idx").on(t.createdAt),
+    index("entries_user_created_at_idx").on(t.userId, t.createdAt),
   ],
 );
 
-export const settings = sqliteTable("settings", {
-  id: integer("id").primaryKey(),
-  provider: text("provider").notNull(),
-  model: text("model").notNull(),
-  apiKey: text("api_key").notNull(),
-  cfAccountId: text("cf_account_id").notNull(),
-  cfGatewayId: text("cf_gateway_id").notNull(),
-  cfAigToken: text("cf_aig_token"),
-  createdAt: integer("created_at").notNull(),
-  updatedAt: integer("updated_at").notNull(),
-});
+export const settings = sqliteTable(
+  "settings",
+  {
+    /**
+     * `autoIncrement` here is type-level only: it is what makes `id` optional in
+     * `NewSettings`, so a per-user insert can let the rowid self-assign. The real
+     * DDL (0000) is a plain `integer PRIMARY KEY` rowid alias and is frozen —
+     * migrations are append-only, and a rowid alias already self-assigns.
+     */
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    /** Tenant key (migration 0012) — see the comment on `entries.userId`. */
+    userId: text("user_id").notNull(),
+    provider: text("provider").notNull(),
+    model: text("model").notNull(),
+    apiKey: text("api_key").notNull(),
+    cfAccountId: text("cf_account_id").notNull(),
+    cfGatewayId: text("cf_gateway_id").notNull(),
+    cfAigToken: text("cf_aig_token"),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (t) => [uniqueIndex("settings_user_uq").on(t.userId)],
+);
 
 export const digests = sqliteTable(
   "digests",
   {
     id: text("id").primaryKey(),
+    /** Tenant key (migration 0012) — see the comment on `entries.userId`. */
+    userId: text("user_id").notNull(),
     runAt: integer("run_at").notNull(),
     windowDays: integer("window_days").notNull(),
     /**
@@ -89,7 +148,10 @@ export const digests = sqliteTable(
     createdAt: integer("created_at").notNull(),
     updatedAt: integer("updated_at").notNull(),
   },
-  (t) => [index("digests_run_at_idx").on(desc(t.runAt))],
+  (t) => [
+    index("digests_run_at_idx").on(desc(t.runAt)),
+    index("digests_user_run_at_idx").on(t.userId, desc(t.runAt)),
+  ],
 );
 
 export const digestItems = sqliteTable(
@@ -128,12 +190,17 @@ export const chats = sqliteTable(
   "chats",
   {
     id: text("id").primaryKey(),
+    /** Tenant key (migration 0012) — see the comment on `entries.userId`. */
+    userId: text("user_id").notNull(),
     title: text("title"),
     messageCount: integer("message_count").notNull().default(0),
     createdAt: integer("created_at").notNull(),
     updatedAt: integer("updated_at").notNull(),
   },
-  (t) => [index("chats_updated_at_idx").on(desc(t.updatedAt))],
+  (t) => [
+    index("chats_updated_at_idx").on(desc(t.updatedAt)),
+    index("chats_user_updated_at_idx").on(t.userId, desc(t.updatedAt)),
+  ],
 );
 
 /**
@@ -145,6 +212,8 @@ export const feeds = sqliteTable(
   "feeds",
   {
     id: text("id").primaryKey(),
+    /** Tenant key (migration 0012) — see the comment on `entries.userId`. */
+    userId: text("user_id").notNull(),
     url: text("url").notNull(),
     title: text("title"),
     enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
@@ -152,7 +221,7 @@ export const feeds = sqliteTable(
     updatedAt: integer("updated_at").notNull(),
   },
   (t) => [
-    uniqueIndex("feeds_url_uq").on(t.url),
+    uniqueIndex("feeds_user_url_uq").on(t.userId, t.url),
     index("feeds_enabled_idx").on(t.enabled),
   ],
 );
@@ -169,6 +238,8 @@ export const reviews = sqliteTable(
     entryId: text("entry_id")
       .primaryKey()
       .references(() => entries.id, { onDelete: "cascade" }),
+    /** Tenant key (migration 0012) — see the comment on `entries.userId`. */
+    userId: text("user_id").notNull(),
     state: text("state").notNull().default("new"),
     dueAt: integer("due_at"),
     intervalDays: real("interval_days"),
@@ -177,7 +248,10 @@ export const reviews = sqliteTable(
     lastGrade: integer("last_grade"),
     reviewedAt: integer("reviewed_at"),
   },
-  (t) => [index("reviews_due_at_idx").on(t.dueAt)],
+  (t) => [
+    index("reviews_due_at_idx").on(t.dueAt),
+    index("reviews_user_due_at_idx").on(t.userId, t.dueAt),
+  ],
 );
 
 /**
@@ -196,6 +270,8 @@ export const feedback = sqliteTable(
   "feedback",
   {
     id: text("id").primaryKey(),
+    /** Tenant key (migration 0012) — see the comment on `entries.userId`. */
+    userId: text("user_id").notNull(),
     conversationId: text("conversation_id"),
     messageId: text("message_id"),
     entryId: text("entry_id"),
@@ -203,7 +279,10 @@ export const feedback = sqliteTable(
     comment: text("comment"),
     createdAt: integer("created_at").notNull(),
   },
-  (t) => [index("feedback_created_at_idx").on(desc(t.createdAt))],
+  (t) => [
+    index("feedback_created_at_idx").on(desc(t.createdAt)),
+    index("feedback_user_created_at_idx").on(t.userId, desc(t.createdAt)),
+  ],
 );
 
 export const entryVectors = sqliteTable("entry_vectors", {
@@ -217,6 +296,10 @@ export const entryVectors = sqliteTable("entry_vectors", {
   createdAt: integer("created_at").notNull(),
 });
 
+export type User = typeof users.$inferSelect;
+export type NewUser = typeof users.$inferInsert;
+export type Session = typeof sessions.$inferSelect;
+export type NewSession = typeof sessions.$inferInsert;
 export type Entry = typeof entries.$inferSelect;
 export type NewEntry = typeof entries.$inferInsert;
 export type Settings = typeof settings.$inferSelect;

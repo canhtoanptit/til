@@ -9,6 +9,8 @@ export const REEMBED_MAX_ENTRIES = 200;
 
 export interface IndexableEntry {
   id: string;
+  /** Tenant key — see the note on `entries.userId` in the db schema. */
+  userId: string;
   title: string | null;
   summary: string | null;
   takeaway: string | null;
@@ -43,6 +45,7 @@ export async function indexEntry(
     await vectorStore.upsert([
       {
         id: entry.id,
+        userId: entry.userId,
         values,
         metadata: {
           domain: entry.sourceDomain ?? "",
@@ -64,6 +67,7 @@ export async function indexEntry(
 /** Backfills vectors for `ready` entries that have none, or a stale one. */
 export async function reembedEntries(
   deps: Deps,
+  userId: string,
   opts: { limit?: number } = {},
 ): Promise<ReembedResult> {
   const { embedder, vectorStore } = deps;
@@ -84,7 +88,7 @@ export async function reembedEntries(
       updatedAt: entries.updatedAt,
     })
     .from(entries)
-    .where(eq(entries.status, "ready"))
+    .where(and(eq(entries.status, "ready"), eq(entries.userId, userId)))
     .orderBy(asc(entries.createdAt))
     .limit(limit);
 
@@ -107,6 +111,7 @@ export async function reembedEntries(
     }
     const entry: IndexableEntry = {
       id: row.id,
+      userId,
       title: row.title ?? null,
       summary: row.summary ?? null,
       takeaway: row.takeaway ?? null,
@@ -139,6 +144,7 @@ export async function reembedEntries(
         }
         records.push({
           id: entry.id,
+          userId: entry.userId,
           values,
           metadata: {
             domain: entry.sourceDomain ?? "",
@@ -161,7 +167,11 @@ export async function reembedEntries(
   return { embedded, skipped, failed };
 }
 
-/** entryId → vector createdAt, for vectors matching the current embedder. */
+/**
+ * entryId → vector createdAt, for vectors matching the current embedder.
+ * Deliberately unscoped: `entry_vectors` has no user column, entry ids are
+ * uuids, and the map is only ever probed with ids from this user's scan.
+ */
 async function loadFreshVectorIds(
   deps: Deps,
   embedder: NonNullable<Deps["embedder"]>,

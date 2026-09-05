@@ -1,6 +1,6 @@
 # TIL — Design Docs
 
-Design documentation for **TIL** ("Today I Learned"): a cross-platform, single-user app where you paste a link and an LLM extracts the content and surfaces the most interesting takeaway, building a searchable feed of what you've learned — plus a periodic "interesting things" digest and a chat agent that answers questions about your learning.
+Design documentation for **TIL** ("Today I Learned"): a cross-platform, multi-user app where you paste a link and an LLM extracts the content and surfaces the most interesting takeaway, building a searchable feed of what you've learned — plus a periodic "interesting things" digest and a chat agent that answers questions about your learning.
 
 ## Status: Accepted — implementation planned, nothing built yet
 
@@ -28,6 +28,7 @@ Start with the **[Technical Design (TDR)](./tech-design.md)** for the full pictu
 | [adr/0010](./adr/0010-dual-mode-local-cloud-stack.md)                  | Dual-mode stack: `TIL_STACK=local` (Readability + Ollama + D1 cosine) vs `cloud`                          |
 | [adr/0011](./adr/0011-evaluation-and-measurement.md)                   | Evals: hand-rolled offline harness, deterministic-first, judge ≠ generator                                |
 | [adr/0012](./adr/0012-ui-system-shadcn.md)                             | UI system: shadcn/ui vendored, adopted before the feature wave                                            |
+| [adr/0013](./adr/0013-google-identity-session-cookies.md)              | Multi-user: Google sign-in + D1 session cookies, `user_id` tenancy — supersedes 0007's auth               |
 
 ## Decision summary
 
@@ -39,7 +40,7 @@ Start with the **[Technical Design (TDR)](./tech-design.md)** for the full pictu
 | 4   | Database            | Cloudflare D1 (SQLite) + Drizzle                                                   | Postgres; raw SQL                                                     |
 | 5   | BYOK access         | `LLMClient` seam; `AISDKClient` primary + hand-written `DirectLLMClient` fallback  | Bind directly to the SDK everywhere; fallback-only                    |
 | 6   | Extraction          | `env.AI.toMarkdown()` behind an `Extractor` seam; Browser Rendering fallback       | Readability + linkedom in-isolate; external APIs                      |
-| 7   | Users & auth        | Single-tenant self-hosted; bearer `APP_TOKEN` mandatory before deploy              | Multi-user SaaS from day 1; no-auth-when-deployed                     |
+| 7   | Users & auth        | Google sign-in + D1 session cookies; per-user `user_id` tenancy; 10 saves/day      | shared bearer token; CF Access; Lucia/Auth.js; hosted IdP             |
 | 8   | Repo                | pnpm workspaces + Turborepo                                                        | Single package; Nx                                                    |
 | 9   | Retrieval & insight | Workers AI `bge-m3` + Vectorize + D1 FTS5, embed at ingest; insights via SQL tools | AI Search (managed); provider embeddings; FTS-only                    |
 | 10  | Evaluation          | `@til/evals` hand-rolled harness; deterministic metrics first, LLM-judge opt-in    | promptfoo; Evalite; Ragas; Langfuse/Braintrust                        |
@@ -58,4 +59,4 @@ Start with the **[Technical Design (TDR)](./tech-design.md)** for the full pictu
 - **M2** — "Interesting things" digest: Cloudflare Workflow + cron (the `last30days` pattern, Worker-native).
 - **M3** — Chat agent: Agents SDK + hybrid retrieval + SQL insight tools; AI Elements/assistant-ui.
 - **M4** — Desktop + mobile: PWA, then Tauri 2.
-- **M5** — (optional) multi-user, richer extraction, spaced-repetition review.
+- **M5** — multi-user SaaS: Google sign-in + session cookies ([ADR-0013](./adr/0013-google-identity-session-cookies.md)), per-user tenancy on every table, 10/day entry cap. (Richer extraction and spaced-repetition review shipped earlier, in P25/P22.)

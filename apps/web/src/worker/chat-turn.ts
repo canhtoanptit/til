@@ -1,4 +1,5 @@
 import { settings as settingsTable } from "@til/db";
+import { eq } from "drizzle-orm";
 import {
   CHAT_DEFAULT_MAX_STEPS,
   chatNoticeResponse,
@@ -14,6 +15,8 @@ export const CHAT_NO_SETTINGS_NOTICE =
   "I cannot answer yet: no LLM provider is configured. Open Settings, save a provider, model and API key, then ask me again.";
 
 export interface ChatTurnOptions {
+  /** Whose library the tools read and whose BYOK settings pay for the turn. */
+  userId: string;
   conversationId: string;
   /** The persisted transcript, UIMessage-shaped; converted inside core. */
   messages: unknown;
@@ -30,9 +33,18 @@ export async function chatTurnResponse(
   deps: Deps,
   opts: ChatTurnOptions,
 ): Promise<Response> {
-  await touchConversation(deps, opts.conversationId, opts.messages);
+  await touchConversation(
+    deps,
+    opts.userId,
+    opts.conversationId,
+    opts.messages,
+  );
 
-  const rows = await deps.db.select().from(settingsTable).limit(1);
+  const rows = await deps.db
+    .select()
+    .from(settingsTable)
+    .where(eq(settingsTable.userId, opts.userId))
+    .limit(1);
   const row = rows[0];
   // WHY a notice and not a throw: an unconfigured provider is the user's most
   // likely first experience of chat, and a thrown error reaches them as an
@@ -42,7 +54,7 @@ export async function chatTurnResponse(
   return streamChat({
     settings: toLLMSettings(row),
     messages: opts.messages,
-    tools: buildChatTools(deps),
+    tools: buildChatTools(deps, opts.userId),
     maxSteps: opts.maxSteps ?? CHAT_DEFAULT_MAX_STEPS,
     fetchImpl: deps.fetchImpl,
     ...(opts.abortSignal ? { abortSignal: opts.abortSignal } : {}),
@@ -52,12 +64,13 @@ export async function chatTurnResponse(
 /** Best-effort: the conversation list must never cost the user their answer. */
 export async function touchConversation(
   deps: Deps,
+  userId: string,
   conversationId: string,
   messages: unknown,
 ): Promise<void> {
   const list = Array.isArray(messages) ? messages : [];
   try {
-    await indexConversation(deps, conversationId, {
+    await indexConversation(deps, userId, conversationId, {
       title: firstUserTitle(list),
       messageCount: list.length,
     });

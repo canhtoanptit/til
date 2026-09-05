@@ -6,12 +6,20 @@ import {
   type DigestSynthesis,
   type LLMClient,
 } from "@til/core";
-import { digestItems, digests, settings as settingsTable } from "@til/db";
+import {
+  OWNER_USER_ID,
+  digestItems,
+  digests,
+  entries,
+  feeds,
+  settings as settingsTable,
+} from "@til/db";
 import type { NewDigestItem } from "@til/db";
-import { eq } from "drizzle-orm";
+import { and, asc, eq, gte } from "drizzle-orm";
 import type { Deps } from "./deps.js";
 import {
   CANDIDATES_PER_SOURCE,
+  MONTHLY_REPORT_WINDOW_DAYS,
   clampMaxItems,
   clampWindowDays,
   digestKindForCron,
@@ -34,6 +42,8 @@ import {
 import { listEnabledFeedUrls } from "./feeds.js";
 import { HttpError } from "./http-error.js";
 import { toLLMSettings } from "./settings.js";
+
+const DAY_MS = 86_400_000;
 
 const PLAN: DigestStepConfig = {
   retries: { limit: 2, delay: "1 second", backoff: "exponential" },
@@ -100,6 +110,8 @@ const MARK_FAILED: DigestStepConfig = {
 
 export interface DigestPlan {
   digestId: string;
+  /** Whose run this is; resolved once in `planRun` and read by every step. */
+  userId: string;
   runAt: number;
   windowDays: number;
   maxItems: number;
@@ -127,6 +139,7 @@ export interface StartDigestInput {
 
 export interface StartedDigestRun {
   id: string;
+  userId: string;
   runAt: number;
   windowDays: number;
   maxItems: number;
@@ -140,6 +153,7 @@ export interface StartedDigestRun {
  */
 export async function startDigestRun(
   deps: Deps,
+  userId: string,
   input: StartDigestInput = {},
 ): Promise<StartedDigestRun> {
   const workflow = deps.digestWorkflow;
@@ -159,6 +173,7 @@ export async function startDigestRun(
 
   await deps.db.insert(digests).values({
     id,
+    userId,
     runAt,
     windowDays,
     kind,
@@ -170,7 +185,7 @@ export async function startDigestRun(
   try {
     await workflow.create({
       id,
-      params: { digestId: id, windowDays, maxItems, kind, now: runAt },
+      params: { digestId: id, userId, windowDays, maxItems, kind, now: runAt },
     });
   } catch (err) {
     const message = describeError(err);
@@ -189,19 +204,77 @@ export async function startDigestRun(
     );
   }
 
-  return { id, runAt, windowDays, maxItems, kind };
+  return { id, userId, runAt, windowDays, maxItems, kind };
 }
 
 /**
- * The cron entry point. Which flavour a schedule asks for is decided from the cron
- * expression alone (see `digestKindForCron`), so this is the whole of the routing
- * and it is testable without a Workers runtime.
+ * The cron entry point: one run per eligible user. Which flavour a schedule asks
+ * for is decided from the cron expression alone (see `digestKindForCron`), so
+ * this is the whole of the routing and it is testable without a Workers runtime.
+ *
+ * Sequential on purpose — the runs share one D1, and each becomes its own
+ * Workflow instance (instance id = digest row id, so ids stay unique per
+ * user-run). Weekly eligibility is "≥1 enabled feed AND a settings row": the LLM
+ * is hard-required by `synthesize`, and although HN/Lobsters/arXiv would happily
+ * run feedless, a user who configured nothing must not receive unsolicited runs.
+ * Monthly eligibility is "≥1 ready entry in the 30-day window" — the exact pool
+ * the report reads. One user's failure logs and moves on, so a broken tenant can
+ * never cost everybody else their digest.
  */
 export async function startScheduledRun(
   deps: Deps,
   cron: string,
-): Promise<StartedDigestRun> {
-  return startDigestRun(deps, { kind: digestKindForCron(cron) });
+): Promise<StartedDigestRun[]> {
+  const kind = digestKindForCron(cron);
+  const userIds =
+    kind === "monthly-report"
+      ? await reportRecipientIds(
+          deps,
+          deps.now() - MONTHLY_REPORT_WINDOW_DAYS * DAY_MS,
+        )
+      : await weeklyRecipientIds(deps);
+
+  const started: StartedDigestRun[] = [];
+  for (const userId of userIds) {
+    try {
+      started.push(await startDigestRun(deps, userId, { kind }));
+    } catch (err) {
+      console.error(
+        `[cron ${cron}] could not start ${kind} run for user ${userId}:`,
+        describeError(err),
+      );
+    }
+  }
+  return started;
+}
+
+/** Users with at least one enabled feed AND a settings row, ordered for determinism. */
+async function weeklyRecipientIds(deps: Deps): Promise<string[]> {
+  const rows = await deps.db
+    .selectDistinct({ userId: feeds.userId })
+    .from(feeds)
+    .innerJoin(settingsTable, eq(settingsTable.userId, feeds.userId))
+    .where(eq(feeds.enabled, true))
+    .orderBy(asc(feeds.userId));
+  return rows.map((row) => row.userId);
+}
+
+/**
+ * Users with at least one `ready` entry saved since `since`. No settings join:
+ * `synthesize` still needs one, but a user with a month of reading and no LLM
+ * configured gets a failed row that says exactly that, which is the more useful
+ * signal than silence.
+ */
+async function reportRecipientIds(
+  deps: Deps,
+  since: number,
+): Promise<string[]> {
+  const rows = await deps.db
+    .selectDistinct({ userId: entries.userId })
+    .from(entries)
+    .where(and(eq(entries.status, "ready"), gte(entries.createdAt, since)))
+    .orderBy(asc(entries.userId));
+  return rows.map((row) => row.userId);
 }
 
 export async function runDigest(
@@ -280,7 +353,7 @@ async function runMonthlyReport(
   step: DigestStep,
 ): Promise<{ itemCount: number }> {
   const snapshot = await step.do("collect-entries", COLLECT, () =>
-    collectReportSnapshot(deps, {
+    collectReportSnapshot(deps, plan.userId, {
       runAt: plan.runAt,
       windowDays: plan.windowDays,
     }),
@@ -323,10 +396,12 @@ async function planRun(
   const kind = normalizeDigestKind(params.kind);
   const windowDays = clampWindowDays(params.windowDays, kind);
   const maxItems = clampMaxItems(params.maxItems);
+  // Optional on the payload so a pre-0012 instance mid-flight replays as owner.
+  const userId = params.userId ?? OWNER_USER_ID;
   // A monthly report reads no external sources, so it neither needs the feed list
   // nor should pay a D1 read for one.
   const feeds =
-    kind === "monthly-report" ? [] : await listEnabledFeedUrls(deps.db);
+    kind === "monthly-report" ? [] : await listEnabledFeedUrls(deps.db, userId);
 
   const existing = await deps.db
     .select({ id: digests.id })
@@ -348,6 +423,7 @@ async function planRun(
   } else {
     await deps.db.insert(digests).values({
       id: params.digestId,
+      userId,
       runAt,
       windowDays,
       kind,
@@ -359,6 +435,7 @@ async function planRun(
 
   return {
     digestId: params.digestId,
+    userId,
     runAt,
     windowDays,
     maxItems,
@@ -453,7 +530,7 @@ async function personalize(
 
   try {
     const result = await step.do("personalize", PERSONALIZE, () =>
-      personalizeRanked(deps, ranked),
+      personalizeRanked(deps, plan.userId, ranked),
     );
     if (result === null) return null;
     console.log(
@@ -483,7 +560,11 @@ async function synthesize(
     "windowDays" | "maxItems"
   >,
 ) {
-  const rows = await deps.db.select().from(settingsTable).limit(1);
+  const rows = await deps.db
+    .select()
+    .from(settingsTable)
+    .where(eq(settingsTable.userId, plan.userId))
+    .limit(1);
   const row = rows[0];
   if (!row) {
     throw new Error(

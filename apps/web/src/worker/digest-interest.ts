@@ -1,6 +1,6 @@
 import { cosineSimilarity } from "@til/core";
 import { entries } from "@til/db";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import type { Deps } from "./deps.js";
 import {
   blendRankedItems,
@@ -38,6 +38,7 @@ export interface Personalization {
  */
 export async function personalizeRanked(
   deps: Deps,
+  userId: string,
   ranked: readonly RankedItem[],
   opts: { limit?: number } = {},
 ): Promise<Personalization | null> {
@@ -45,7 +46,7 @@ export async function personalizeRanked(
   if (!embedder || !vectorStore) return null;
   if (ranked.length === 0) return null;
 
-  const profile = await loadInterestProfile(deps, opts.limit);
+  const profile = await loadInterestProfile(deps, userId, opts.limit);
   // No saved reading to compare against: skip the embed call rather than bill for
   // a comparison whose answer is already known to be "no signal".
   if (profile.length === 0) return null;
@@ -71,7 +72,7 @@ export async function personalizeRanked(
 }
 
 /**
- * The owner's most recently saved entries' vectors, newest first, capped at
+ * This user's most recently saved entries' vectors, newest first, capped at
  * `MAX_INTEREST_VECTORS`.
  *
  * Recency is `entries.created_at`, not the vector's own timestamp: the entries
@@ -82,6 +83,7 @@ export async function personalizeRanked(
  */
 export async function loadInterestProfile(
   deps: Deps,
+  userId: string,
   limit = MAX_INTEREST_VECTORS,
 ): Promise<number[][]> {
   const { vectorStore } = deps;
@@ -92,7 +94,7 @@ export async function loadInterestProfile(
   const rows = await deps.db
     .select({ id: entries.id })
     .from(entries)
-    .where(eq(entries.status, "ready"))
+    .where(and(eq(entries.status, "ready"), eq(entries.userId, userId)))
     // `id` breaks ties so a profile is the same set on every replay of a run.
     .orderBy(desc(entries.createdAt), desc(entries.id))
     .limit(capped);

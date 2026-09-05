@@ -320,6 +320,7 @@ describe("digests schema", () => {
       .insert(digests)
       .values({
         id: "d-report",
+        userId: "owner",
         runAt,
         windowDays: 30,
         kind: "monthly-report",
@@ -333,6 +334,7 @@ describe("digests schema", () => {
       .insert(digests)
       .values({
         id: "d-weekly-default",
+        userId: "owner",
         runAt,
         windowDays: 7,
         status: "ready",
@@ -493,6 +495,7 @@ describe("digests schema", () => {
       .insert(digests)
       .values({
         id: "d-orm",
+        userId: "owner",
         runAt,
         windowDays: 7,
         status: "ready",
@@ -643,6 +646,7 @@ describe("feeds schema", () => {
       .insert(feeds)
       .values({
         id: "f-orm",
+        userId: "owner",
         url: "https://orm.example.com/atom.xml",
         title: "ORM feed",
         enabled: false,
@@ -677,7 +681,8 @@ describe("feeds schema", () => {
       .prepare("SELECT name, tbl_name FROM sqlite_master WHERE type='index'")
       .all() as { name: string; tbl_name: string }[];
     const byName = new Map(indexes.map((i) => [i.name, i.tbl_name]));
-    expect(byName.get("feeds_url_uq")).toBe("feeds");
+    // 0012 replaced the global feeds_url_uq with the per-user composite.
+    expect(byName.get("feeds_user_url_uq")).toBe("feeds");
     expect(byName.get("feeds_enabled_idx")).toBe("feeds");
   });
 });
@@ -813,6 +818,7 @@ describe("library columns (0009)", () => {
       .insert(entries)
       .values({
         id: "e-orm",
+        userId: "owner",
         url: "https://orm.example.com/a",
         canonicalUrl: "https://orm.example.com/a",
         title: "ORM entry",
@@ -999,6 +1005,7 @@ describe("content type column (0010)", () => {
       .insert(entries)
       .values({
         id: "e-orm-ct",
+        userId: "owner",
         url: "https://orm.example.com/v",
         canonicalUrl: "https://orm.example.com/v",
         title: "A talk",
@@ -1018,6 +1025,7 @@ describe("content type column (0010)", () => {
       .insert(entries)
       .values({
         id: "e-orm-default",
+        userId: "owner",
         url: "https://orm.example.com/a",
         canonicalUrl: "https://orm.example.com/a",
         tags: "[]",
@@ -1100,6 +1108,8 @@ describe("feedback schema", () => {
       .get("f-min") as Record<string, unknown>;
     expect(row).toEqual({
       id: "f-min",
+      // 0012's DEFAULT 'owner' is the backfill for every pre-multi-user row.
+      user_id: "owner",
       conversation_id: null,
       message_id: null,
       entry_id: null,
@@ -1178,6 +1188,7 @@ describe("feedback schema", () => {
       .insert(feedback)
       .values({
         id: "f-orm",
+        userId: "owner",
         conversationId: "conv-orm",
         messageId: "msg-orm",
         kind: "up",
@@ -1194,6 +1205,7 @@ describe("feedback schema", () => {
       .at(0);
     expect(row).toEqual({
       id: "f-orm",
+      userId: "owner",
       conversationId: "conv-orm",
       messageId: "msg-orm",
       entryId: null,
@@ -1218,5 +1230,286 @@ describe("feedback schema", () => {
     expect(
       db.prepare(`SELECT count(*) AS n FROM entries_fts`).get(),
     ).toMatchObject({ n: 1 });
+  });
+});
+
+describe("multi-user (0012)", () => {
+  let db: Database.Database;
+
+  beforeEach(() => {
+    db = new Database(":memory:");
+    db.pragma("foreign_keys = ON");
+    applyMigrations(db);
+  });
+
+  /** The seven tables that gained a tenant key. */
+  const SCOPED_TABLES = [
+    "entries",
+    "settings",
+    "digests",
+    "chats",
+    "feeds",
+    "reviews",
+    "feedback",
+  ];
+
+  function indexesByName(): Map<string, string> {
+    const indexes = db
+      .prepare("SELECT name, tbl_name FROM sqlite_master WHERE type='index'")
+      .all() as { name: string; tbl_name: string }[];
+    return new Map(indexes.map((i) => [i.name, i.tbl_name]));
+  }
+
+  /** A raw entries INSERT that names its tenant, the shape the app now writes. */
+  function insertEntryAs(
+    userId: string,
+    id: string,
+    canonicalUrl: string,
+  ): void {
+    const now = Date.now();
+    db.prepare(
+      `INSERT INTO entries (id, user_id, url, canonical_url, tags, status, created_at, updated_at)
+       VALUES (@id, @user_id, @canonical_url, @canonical_url, '[]', 'ready', @now, @now)`,
+    ).run({ id, user_id: userId, canonical_url: canonicalUrl, now });
+  }
+
+  function insertSettingsAs(userId: string): void {
+    const now = Date.now();
+    // No `id`: the column is a rowid alias and self-assigns, which is what
+    // dropped the old hardcoded singleton `id = 1`.
+    db.prepare(
+      `INSERT INTO settings (user_id, provider, model, api_key, cf_account_id, cf_gateway_id, created_at, updated_at)
+       VALUES (@user_id, 'openai', 'gpt-x', 'sk-test', 'acct', 'gw', @now, @now)`,
+    ).run({ user_id: userId, now });
+  }
+
+  it("creates users and sessions with their indexes", () => {
+    const tables = (
+      db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as {
+        name: string;
+      }[]
+    ).map((t) => t.name);
+    expect(tables).toContain("users");
+    expect(tables).toContain("sessions");
+
+    const byName = indexesByName();
+    expect(byName.get("users_google_sub_uq")).toBe("users");
+    expect(byName.get("sessions_user_id_idx")).toBe("sessions");
+    expect(byName.get("sessions_expires_at_idx")).toBe("sessions");
+  });
+
+  it("seeds the placeholder owner, and re-running the seed is a no-op", () => {
+    const row = db
+      .prepare(`SELECT id, google_sub, email, name FROM users WHERE id = ?`)
+      .get("owner") as {
+      id: string;
+      google_sub: string | null;
+      email: string;
+      name: string | null;
+    };
+    // google_sub stays NULL until OWNER_EMAIL claims the row at first login.
+    expect(row).toEqual({
+      id: "owner",
+      google_sub: null,
+      email: "owner@placeholder.invalid",
+      name: "Owner",
+    });
+
+    const sql = readFileSync(
+      join(migrationsDir, "0012_multi_user.sql"),
+      "utf8",
+    );
+    const from = sql.indexOf("INSERT OR IGNORE INTO");
+    const seed = sql.slice(from, sql.indexOf("--> statement-breakpoint", from));
+    db.exec(seed);
+
+    expect(db.prepare(`SELECT count(*) AS n FROM users`).get()).toMatchObject({
+      n: 1,
+    });
+  });
+
+  it("adds user_id to every scoped table as NOT NULL TEXT defaulting to 'owner'", () => {
+    for (const table of SCOPED_TABLES) {
+      const cols = db.prepare(`PRAGMA table_info(${table})`).all() as {
+        name: string;
+        type: string;
+        notnull: number;
+        dflt_value: string | null;
+      }[];
+      const col = new Map(cols.map((c) => [c.name, c])).get("user_id");
+      // The default is the backfill for every row already in the deployed
+      // database — PRAGMA reports it with the SQL quotes it was declared with.
+      expect(col, `${table}.user_id`).toMatchObject({
+        type: "TEXT",
+        notnull: 1,
+        dflt_value: "'owner'",
+      });
+    }
+  });
+
+  it("reads pre-0012 rows as the owner's, with no backfill statement", () => {
+    // These helpers name only the pre-0012 columns, exactly like the INSERTs the
+    // single-user app shipped.
+    insertEntry(db, { id: "e-legacy-user", canonical_url: "https://x.test/l" });
+    insertDigest(db, { id: "d-legacy-user" });
+
+    expect(
+      db
+        .prepare(`SELECT user_id FROM entries WHERE id = ?`)
+        .get("e-legacy-user"),
+    ).toEqual({ user_id: "owner" });
+    expect(
+      db
+        .prepare(`SELECT user_id FROM digests WHERE id = ?`)
+        .get("d-legacy-user"),
+    ).toEqual({ user_id: "owner" });
+
+    // The 0005 seed rows were written by an earlier migration, not by the app.
+    const feedOwners = db
+      .prepare(`SELECT DISTINCT user_id FROM feeds`)
+      .all() as { user_id: string }[];
+    expect(feedOwners).toEqual([{ user_id: "owner" }]);
+  });
+
+  it("scopes canonical_url and feed url uniqueness to one user", () => {
+    insertEntryAs("alice", "e-alice", "https://example.com/shared");
+    // Two people may save the same link.
+    expect(() =>
+      insertEntryAs("bob", "e-bob", "https://example.com/shared"),
+    ).not.toThrow();
+    expect(() =>
+      insertEntryAs("alice", "e-alice-2", "https://example.com/shared"),
+    ).toThrow(/UNIQUE|constraint/i);
+
+    const now = Date.now();
+    const insertFeed = db.prepare(
+      `INSERT INTO feeds (id, user_id, url, created_at, updated_at)
+       VALUES (@id, @user_id, @url, @now, @now)`,
+    );
+    insertFeed.run({
+      id: "f-alice",
+      user_id: "alice",
+      url: "https://jvns.ca/atom.xml",
+      now,
+    });
+    // Same URL as the owner's 0005 seed row — a different tenant, so allowed.
+    expect(() =>
+      insertFeed.run({
+        id: "f-alice-2",
+        user_id: "alice",
+        url: "https://jvns.ca/atom.xml",
+        now,
+      }),
+    ).toThrow(/UNIQUE|constraint/i);
+  });
+
+  it("allows one settings row per user and no more", () => {
+    // The 0000 singleton row is the owner's now; a second one for the same user
+    // is what settings_user_uq exists to stop.
+    insertSettingsAs("alice");
+    expect(() => insertSettingsAs("alice")).toThrow(/UNIQUE|constraint/i);
+    expect(() => insertSettingsAs("bob")).not.toThrow();
+
+    const rows = db
+      .prepare(`SELECT id, user_id FROM settings ORDER BY id`)
+      .all() as { id: number; user_id: string }[];
+    expect(rows.map((r) => r.user_id)).toEqual(["alice", "bob"]);
+    // id was omitted by both inserts: the rowid alias self-assigns.
+    expect(rows.every((r) => Number.isInteger(r.id) && r.id > 0)).toBe(true);
+    expect(new Set(rows.map((r) => r.id)).size).toBe(2);
+  });
+
+  it("swaps the global unique indexes for the per-user composites", () => {
+    const byName = indexesByName();
+    expect(byName.get("entries_user_canonical_url_uq")).toBe("entries");
+    expect(byName.get("entries_user_created_at_idx")).toBe("entries");
+    expect(byName.get("feeds_user_url_uq")).toBe("feeds");
+    expect(byName.get("settings_user_uq")).toBe("settings");
+    expect(byName.get("chats_user_updated_at_idx")).toBe("chats");
+    expect(byName.get("digests_user_run_at_idx")).toBe("digests");
+    expect(byName.get("reviews_user_due_at_idx")).toBe("reviews");
+    expect(byName.get("feedback_user_created_at_idx")).toBe("feedback");
+
+    // The two globals they replaced are dropped, not kept alongside.
+    expect(byName.has("entries_canonical_url_uq")).toBe(false);
+    expect(byName.has("feeds_url_uq")).toBe(false);
+
+    // The pre-0012 single-column indexes stay: migrations are append-only and
+    // digests_run_at_idx is asserted as a contract index above.
+    expect(byName.get("digests_run_at_idx")).toBe("digests");
+    expect(byName.get("entries_created_at_idx")).toBe("entries");
+  });
+
+  it("keeps entries_fts intact when only user_id is updated", () => {
+    // The 0001 triggers fire on any UPDATE, but they name their columns, so this
+    // is a delete-then-reinsert of the same terms — a no-op re-index, the same
+    // reasoning 0009 and 0010 already rely on.
+    insertEntry(db, {
+      id: "e-tenant-fts",
+      canonical_url: "https://example.com/tenant-fts",
+      takeaway: "postgres replication tuning",
+    });
+    const before = db
+      .prepare(`SELECT count(*) AS n FROM entries_fts`)
+      .get() as { n: number };
+
+    db.prepare(`UPDATE entries SET user_id = ? WHERE id = ?`).run(
+      "alice",
+      "e-tenant-fts",
+    );
+
+    expect(db.prepare(`SELECT count(*) AS n FROM entries_fts`).get()).toEqual(
+      before,
+    );
+    const hit = db
+      .prepare(
+        `SELECT e.id FROM entries_fts f JOIN entries e ON e.rowid = f.rowid WHERE entries_fts MATCH ?`,
+      )
+      .get("replication") as { id: string } | undefined;
+    expect(hit?.id).toBe("e-tenant-fts");
+
+    // A tenant key is not searchable text — 0001 lists the five columns it
+    // mirrors and `user_id` is not among them.
+    expect(
+      db
+        .prepare(`SELECT rowid FROM entries_fts WHERE entries_fts MATCH ?`)
+        .all("alice"),
+    ).toHaveLength(0);
+  });
+
+  it("cascades sessions when their user is deleted", () => {
+    const now = Date.now();
+    db.prepare(
+      `INSERT INTO users (id, google_sub, email, name, picture, created_at, updated_at)
+       VALUES ('u-1', 'sub-1', 'u1@example.com', 'U One', NULL, @now, @now)`,
+    ).run({ now });
+    const insertSession = db.prepare(
+      `INSERT INTO sessions (id, user_id, created_at, expires_at) VALUES (@id, @user_id, @now, @exp)`,
+    );
+    insertSession.run({ id: "s-1", user_id: "u-1", now, exp: now + 1_000 });
+    insertSession.run({
+      id: "s-owner",
+      user_id: "owner",
+      now,
+      exp: now + 1_000,
+    });
+
+    // sessions is the one new FK — unlike the ADD COLUMN tenant keys, it could
+    // be declared in CREATE TABLE.
+    expect(() =>
+      insertSession.run({
+        id: "s-orphan",
+        user_id: "no-such-user",
+        now,
+        exp: now + 1_000,
+      }),
+    ).toThrow(/FOREIGN KEY constraint failed/i);
+
+    db.prepare(`DELETE FROM users WHERE id = ?`).run("u-1");
+
+    const remaining = db
+      .prepare(`SELECT id FROM sessions ORDER BY id`)
+      .all() as { id: string }[];
+    expect(remaining.map((r) => r.id)).toEqual(["s-owner"]);
   });
 });

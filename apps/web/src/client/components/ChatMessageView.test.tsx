@@ -19,7 +19,6 @@ const mocks = vi.hoisted(() => ({
   listChats: vi.fn(),
   getEntry: vi.fn(),
   deleteChat: vi.fn(),
-  mintChatTicket: vi.fn(),
   toastSuccess: vi.fn(),
   toastError: vi.fn(),
   chatState: {
@@ -42,7 +41,6 @@ vi.mock("../api", async (importOriginal) => {
       listChats: mocks.listChats,
       getEntry: mocks.getEntry,
       deleteChat: mocks.deleteChat,
-      mintChatTicket: mocks.mintChatTicket,
     },
   };
 });

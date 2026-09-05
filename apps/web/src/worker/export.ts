@@ -1,4 +1,4 @@
-import { and, asc, eq, gt, or } from "drizzle-orm";
+import { and, asc, eq, getTableColumns, gt, or } from "drizzle-orm";
 import type { Column, GetColumnData, SQL } from "drizzle-orm";
 import {
   digestItems,
@@ -175,7 +175,16 @@ interface PairCursor<A, B> {
   b: B;
 }
 
-export function exportEntries(db: Deps["db"]): AsyncGenerator<ExportEntry> {
+/**
+ * Every walk is scoped to one user: the tenant predicate ANDs alongside the
+ * keyset one, so the two-column total order is untouched. Exported rows now
+ * carry a `userId` field with a constant value — deliberate: the JSON is a
+ * restore format, and a row without its tenant cannot be restored.
+ */
+export function exportEntries(
+  db: Deps["db"],
+  userId: string,
+): AsyncGenerator<ExportEntry> {
   return (async function* () {
     const rows = batched<Entry, PairCursor<number, string>>(
       (cursor) =>
@@ -183,9 +192,12 @@ export function exportEntries(db: Deps["db"]): AsyncGenerator<ExportEntry> {
           .select()
           .from(entries)
           .where(
-            cursor === null
-              ? undefined
-              : afterPair(entries.createdAt, cursor.a, entries.id, cursor.b),
+            and(
+              eq(entries.userId, userId),
+              cursor === null
+                ? undefined
+                : afterPair(entries.createdAt, cursor.a, entries.id, cursor.b),
+            ),
           )
           .orderBy(asc(entries.createdAt), asc(entries.id))
           .limit(EXPORT_BATCH_SIZE),
@@ -197,16 +209,22 @@ export function exportEntries(db: Deps["db"]): AsyncGenerator<ExportEntry> {
   })();
 }
 
-export function exportDigests(db: Deps["db"]): AsyncGenerator<ExportDigest> {
+export function exportDigests(
+  db: Deps["db"],
+  userId: string,
+): AsyncGenerator<ExportDigest> {
   return batched<DigestRun, PairCursor<number, string>>(
     (cursor) =>
       db
         .select()
         .from(digests)
         .where(
-          cursor === null
-            ? undefined
-            : afterPair(digests.runAt, cursor.a, digests.id, cursor.b),
+          and(
+            eq(digests.userId, userId),
+            cursor === null
+              ? undefined
+              : afterPair(digests.runAt, cursor.a, digests.id, cursor.b),
+          ),
         )
         .orderBy(asc(digests.runAt), asc(digests.id))
         .limit(EXPORT_BATCH_SIZE),
@@ -220,9 +238,14 @@ export function exportDigests(db: Deps["db"]): AsyncGenerator<ExportDigest> {
  *
  * Pass `digestId` to walk one digest's items: that is what the markdown writer
  * uses, so it never has to hold the whole join table to group it.
+ *
+ * `digest_items` carries no user column, so the scope is an INNER JOIN onto the
+ * parent digest. `getTableColumns` keeps the projection at exactly the
+ * `DigestItem` row shape the join would otherwise nest.
  */
 export function exportDigestItems(
   db: Deps["db"],
+  userId: string,
   digestId?: string,
 ): AsyncGenerator<ExportDigestItem> {
   return (async function* () {
@@ -234,10 +257,12 @@ export function exportDigestItems(
     >(
       (cursor) =>
         db
-          .select()
+          .select(getTableColumns(digestItems))
           .from(digestItems)
+          .innerJoin(digests, eq(digests.id, digestItems.digestId))
           .where(
             and(
+              eq(digests.userId, userId),
               scope,
               cursor === null
                 ? undefined
@@ -269,30 +294,44 @@ export function exportDigestItems(
   })();
 }
 
-export function exportReviews(db: Deps["db"]): AsyncGenerator<ExportReview> {
+export function exportReviews(
+  db: Deps["db"],
+  userId: string,
+): AsyncGenerator<ExportReview> {
   // entryId is the primary key, so on its own it is already a total order.
   return batched<Review, string>(
     (cursor) =>
       db
         .select()
         .from(reviews)
-        .where(cursor === null ? undefined : gt(reviews.entryId, cursor))
+        .where(
+          and(
+            eq(reviews.userId, userId),
+            cursor === null ? undefined : gt(reviews.entryId, cursor),
+          ),
+        )
         .orderBy(asc(reviews.entryId))
         .limit(EXPORT_BATCH_SIZE),
     (row) => row.entryId,
   );
 }
 
-export function exportFeeds(db: Deps["db"]): AsyncGenerator<ExportFeed> {
+export function exportFeeds(
+  db: Deps["db"],
+  userId: string,
+): AsyncGenerator<ExportFeed> {
   return batched<Feed, PairCursor<number, string>>(
     (cursor) =>
       db
         .select()
         .from(feeds)
         .where(
-          cursor === null
-            ? undefined
-            : afterPair(feeds.createdAt, cursor.a, feeds.id, cursor.b),
+          and(
+            eq(feeds.userId, userId),
+            cursor === null
+              ? undefined
+              : afterPair(feeds.createdAt, cursor.a, feeds.id, cursor.b),
+          ),
         )
         .orderBy(asc(feeds.createdAt), asc(feeds.id))
         .limit(EXPORT_BATCH_SIZE),
@@ -300,16 +339,22 @@ export function exportFeeds(db: Deps["db"]): AsyncGenerator<ExportFeed> {
   );
 }
 
-export function exportFeedback(db: Deps["db"]): AsyncGenerator<ExportFeedback> {
+export function exportFeedback(
+  db: Deps["db"],
+  userId: string,
+): AsyncGenerator<ExportFeedback> {
   return batched<Feedback, PairCursor<number, string>>(
     (cursor) =>
       db
         .select()
         .from(feedback)
         .where(
-          cursor === null
-            ? undefined
-            : afterPair(feedback.createdAt, cursor.a, feedback.id, cursor.b),
+          and(
+            eq(feedback.userId, userId),
+            cursor === null
+              ? undefined
+              : afterPair(feedback.createdAt, cursor.a, feedback.id, cursor.b),
+          ),
         )
         .orderBy(asc(feedback.createdAt), asc(feedback.id))
         .limit(EXPORT_BATCH_SIZE),
@@ -355,6 +400,7 @@ function zeroCounts(): ExportCounts {
  */
 export async function writeJsonExport(
   db: Deps["db"],
+  userId: string,
   exportedAt: number,
   sink: ExportSink,
 ): Promise<ExportCounts> {
@@ -380,12 +426,12 @@ export async function writeJsonExport(
     await sink.write("]");
   };
 
-  await walk("entries", exportEntries(db));
-  await walk("digests", exportDigests(db));
-  await walk("digestItems", exportDigestItems(db));
-  await walk("reviews", exportReviews(db));
-  await walk("feeds", exportFeeds(db));
-  await walk("feedback", exportFeedback(db));
+  await walk("entries", exportEntries(db, userId));
+  await walk("digests", exportDigests(db, userId));
+  await walk("digestItems", exportDigestItems(db, userId));
+  await walk("reviews", exportReviews(db, userId));
+  await walk("feeds", exportFeeds(db, userId));
+  await walk("feedback", exportFeedback(db, userId));
 
   await sink.write(`,"counts":${JSON.stringify(counts)}}\n`);
   return counts;
@@ -412,6 +458,7 @@ function orDash(value: string | null | undefined): string {
  */
 export async function writeMarkdownExport(
   db: Deps["db"],
+  userId: string,
   exportedAt: number,
   sink: ExportSink,
 ): Promise<ExportCounts> {
@@ -429,7 +476,7 @@ export async function writeMarkdownExport(
   );
 
   await sink.write(`\n## Entries\n`);
-  for await (const row of exportEntries(db)) {
+  for await (const row of exportEntries(db, userId)) {
     counts.entries += 1;
     const tags = row.tags.length > 0 ? row.tags.join(", ") : "—";
     await sink.write(
@@ -455,7 +502,7 @@ export async function writeMarkdownExport(
   // putting them last keeps the entry sections contiguous for someone scrolling
   // through their library.
   await sink.write(`\n## Digests\n`);
-  for await (const row of exportDigests(db)) {
+  for await (const row of exportDigests(db, userId)) {
     counts.digests += 1;
     await sink.write(
       `\n---\n\n### ${orDash(row.title)}\n\n` +
@@ -466,7 +513,7 @@ export async function writeMarkdownExport(
     // One scoped walk per digest rather than grouping the whole join table in a
     // Map: the point of this endpoint is that it never holds a table in memory.
     let items = 0;
-    for await (const item of exportDigestItems(db, row.id)) {
+    for await (const item of exportDigestItems(db, userId, row.id)) {
       if (items === 0) await sink.write(`\n`);
       items += 1;
       counts.digestItems += 1;

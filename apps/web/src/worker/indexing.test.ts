@@ -24,6 +24,7 @@ async function seedSettings(
 ) {
   await db.insert(settings).values({
     id: 1,
+    userId: "owner",
     provider: "openai",
     model: "gpt-4o-mini",
     apiKey: "sk-test",
@@ -39,6 +40,7 @@ describe("indexEntry", () => {
     const t = buildTestApp({ now: () => NOW, embedder: embedder() });
     await insertEntry(t.deps.db, { id: "e-1", createdAt: NOW });
     const ok = await indexEntry(t.deps, {
+      userId: "owner",
       id: "e-1",
       title: "Alpha things",
       summary: "About alpha.",
@@ -63,6 +65,7 @@ describe("indexEntry", () => {
     await insertEntry(t.deps.db, { id: "e-1", createdAt: NOW });
     await expect(
       indexEntry(t.deps, {
+        userId: "owner",
         id: "e-1",
         title: "T",
         summary: "S",
@@ -83,6 +86,7 @@ describe("indexEntry", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     await expect(
       indexEntry(t.deps, {
+        userId: "owner",
         id: "e-1",
         title: "T",
         summary: "S",
@@ -104,6 +108,7 @@ describe("indexEntry", () => {
     await insertEntry(t.deps.db, { id: "e-1", createdAt: NOW });
     await expect(
       indexEntry(t.deps, {
+        userId: "owner",
         id: "e-1",
         title: null,
         summary: null,
@@ -298,7 +303,7 @@ describe("POST /api/entries/reembed", () => {
         createdAt: NOW,
       });
     }
-    await reembedEntries(t.deps, {});
+    await reembedEntries(t.deps, "owner", {});
     expect(calls).toHaveLength(2);
     expect(calls[0]).toHaveLength(16);
     expect(calls[1]).toHaveLength(4);
@@ -311,7 +316,7 @@ describe("POST /api/entries/reembed", () => {
       canonicalUrl: "https://x/1",
       createdAt: NOW,
     });
-    const result = await reembedEntries(t.deps, { limit: 9_999 });
+    const result = await reembedEntries(t.deps, "owner", { limit: 9_999 });
     expect(result.embedded).toBe(1);
   });
 

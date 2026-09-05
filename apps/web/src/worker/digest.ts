@@ -100,6 +100,11 @@ export type DigestRunParams = {
    * weekly run it started as.
    */
   kind?: DigestKind;
+  /**
+   * Whose run this is. Optional for the same reason `kind` is: a payload written
+   * before 0012 (an instance mid-flight across the deploy) replays as the owner.
+   */
+  userId?: string;
   // Set by the trigger so every step (and the digests row) shares one instant.
   now?: number;
 };
